@@ -1,0 +1,14 @@
+# 环境变量配置（含敏感凭证）
+.env
+
+# Python 缓存
+__pycache__/
+*.pyc
+*.pyo
+
+# 系统文件
+.DS_Store
+Thumbs.db
+
+# Codegraph 运行时文件
+.codegraph/daemon.pid
