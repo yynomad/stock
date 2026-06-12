@@ -82,85 +82,122 @@ ATR_PERIOD             = 14    # ATR 计算周期
 ATR_STOP_MULTIPLIER    = 2.0   # 追踪止损 = 最高价 - N倍ATR
 LIMIT_ENTRY_PCT        = 0.005 # 限价单距支撑的偏移（0.5%）
 
+# ── 持仓配置文件路径（shares + avg_cost，gitignored）───────────────
+POSITIONS_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "positions.json")
+
+
+def load_positions_config():
+    """从 positions.json 加载持仓数据，合并到 WATCHLIST。"""
+    if not os.path.exists(POSITIONS_FILE):
+        return
+    try:
+        import json
+        with open(POSITIONS_FILE, "r", encoding="utf-8") as f:
+            positions = json.load(f)
+        for sym, pos in positions.items():
+            if sym in WATCHLIST:
+                if pos.get("shares") is not None:
+                    WATCHLIST[sym]["shares"] = pos["shares"]
+                if pos.get("avg_cost") is not None:
+                    WATCHLIST[sym]["avg_cost"] = pos["avg_cost"]
+        logging.info(f"从 positions.json 加载了 {len(positions)} 个标的持仓")
+    except Exception as e:
+        logging.warning(f"加载 positions.json 失败: {e}")
+
+
+load_positions_config()
+
+
 # ══════════════════════════════════════════════════════════════════════
 #  监控标的配置表
-#  不再依赖持仓，WATCHLIST 即为分析范围
+#  持仓数据（shares/avg_cost）已移至 positions.json，不再硬编码在脚本中
 #  1321.T 是 Yahoo Finance 上东京证券交易所的日经225 ETF 代码
 # ══════════════════════════════════════════════════════════════════════
 WATCHLIST = {
     "QQQ": {
         "currency_sign": "$",
         "display_name":  "QQQ  纳指100 ETF",
-        "shares": None,
-        "avg_cost": None,
     },
     "1321.T": {
         "currency_sign": "¥",
         "display_name":  "1321 野村日经225",
-        "shares": None,
-        "avg_cost": None,
     },
     "EWY": {
         "currency_sign": "$",
         "display_name":  "EWY  韩国指数 ETF",
-        "shares": None,
-        "avg_cost": None,
     },
     "GOOG": {
         "currency_sign": "$",
         "display_name":  "GOOG 谷歌",
-        "shares": None,
-        "avg_cost": None,
     },
     "NVDA": {
         "currency_sign": "$",
         "display_name":  "NVDA 英伟达",
-        "shares": None,
-        "avg_cost": None,
     },
     "AAPL": {
         "currency_sign": "$",
         "display_name":  "AAPL 苹果",
-        "shares": None,
-        "avg_cost": None,
     },
     "RDDT": {
         "currency_sign": "$",
         "display_name":  "RDDT Reddit",
-        "shares": None,
-        "avg_cost": None,
     },
     "MRVL": {
         "currency_sign": "$",
         "display_name":  "MRVL Marvell",
-        "shares": None,
-        "avg_cost": None,
     },
     "DELL": {
         "currency_sign": "$",
         "display_name":  "DELL 戴尔",
-        "shares": None,
-        "avg_cost": None,
     },
     "NOK": {
         "currency_sign": "$",
         "display_name":  "NOK 诺基亚",
-        "shares": None,
-        "avg_cost": None,
     },
     "IBKR": {
         "currency_sign": "$",
         "display_name":  "IBKR 盈透",
-        "shares": None,
-        "avg_cost": None,
     },
     "XFAB.SW": {
         "currency_sign": "€",
         "display_name":  "XFAB",
-        "shares": None,
-        "avg_cost": None,
     },
 }
+
+
+# ── 持仓数据文件（本地敏感数据，不提交 git）───────────────────────
+POSITIONS_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "positions.json")
+
+
+def _load_positions_from_file():
+    """从 positions.json 加载本地持仓数据，合并到 WATCHLIST。"""
+    if not os.path.exists(POSITIONS_FILE):
+        return
+    try:
+        import json
+        with open(POSITIONS_FILE, "r", encoding="utf-8") as f:
+            pos_data = json.load(f)
+        for sym, pos in pos_data.items():
+            if sym in WATCHLIST:
+                if pos.get("shares") is not None:
+                    WATCHLIST[sym]["shares"] = pos["shares"]
+                if pos.get("avg_cost") is not None:
+                    WATCHLIST[sym]["avg_cost"] = pos["avg_cost"]
+            else:
+                # positions.json 有但 WATCHLIST 没有的标的，自动添加
+                cs = "¥" if "currency" in pos and pos["currency"] == "JPY" else "$"
+                WATCHLIST[sym] = {
+                    "currency_sign": cs,
+                    "display_name": sym,
+                    "shares": pos.get("shares"),
+                    "avg_cost": pos.get("avg_cost"),
+                }
+        logging.info(f"从 positions.json 加载 {len(pos_data)} 个持仓")
+    except Exception as e:
+        logging.warning(f"加载 positions.json 失败: {e}")
+
+
+_load_positions_from_file()
 
 
 # ══════════════════════════════════════════════════════════════════════

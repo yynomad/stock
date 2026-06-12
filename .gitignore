@@ -7,6 +7,9 @@ positions.*
 *.jpeg
 *.png
 
+# 持仓数据（含个人数据）
+positions.json
+
 # 持仓截图（含个人财务信息）
 positions.jpg
 positions.png
