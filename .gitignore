@@ -1,6 +1,21 @@
 # 环境变量配置（含敏感凭证）
 .env
 
+# 持仓截图（含个人数据）
+positions.*
+*.jpg
+*.jpeg
+*.png
+
+# 持仓截图（含个人财务信息）
+positions.jpg
+positions.png
+position_*.*
+
+# 持仓截图（含个人数据）
+positions.jpg
+positions.png
+
 # Python 缓存
 __pycache__/
 *.pyc
@@ -12,3 +27,4 @@ Thumbs.db
 
 # Codegraph 运行时文件
 .codegraph/daemon.pid
+venv/
