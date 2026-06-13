@@ -1,20 +1,8 @@
 # 环境变量配置（含敏感凭证）
 .env
 
-# 持仓截图（含个人数据）— 限制为仓库根目录，避免误伤 lib/positions.py
-/positions.jpg
-/positions.jpeg
-/positions.png
-/positions.webp
-*.jpg
-*.jpeg
-*.png
-
-# 持仓数据（含个人数据）
+# 持仓数据（本地文件，含个人财务信息，不提交）
 /positions.json
-
-# 持仓截图（其他名称）
-/position_*.*
 
 # Python 缓存
 __pycache__/
