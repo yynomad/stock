@@ -21,40 +21,12 @@ import logging
 from lib.config import WATCHLIST, YF_REQUEST_DELAY, LIMIT_ENTRY_PCT
 from lib.format_utils import fmt_price
 from lib.yahoo_data import fetch_yahoo_bars, fetch_premarket_price
-from lib.positions import fetch_positions
 from lib.pa_strategy import analyze_pa
 from lib.output import build_console_table, build_telegram_message, send_telegram
 
 
 logging.info("=" * 60)
 logging.info("脚本启动 (v3.0 Yahoo Finance, modular)")
-
-
-def _enrich_with_position(pa_result: dict, live_positions: dict, symbol: str, cfg: dict) -> None:
-    """根据持仓信息补充浮动盈亏 / 摊薄均价，原地修改 pa_result。"""
-    pos = live_positions.get(symbol, {})
-    avg_cost = pos.get("avg_cost") or cfg.get("avg_cost")
-    shares = pos.get("shares") or cfg.get("shares")
-    last_close = pa_result.get("last_close")
-
-    if not (avg_cost and last_close):
-        return
-
-    pnl_pct = round((last_close - avg_cost) / avg_cost * 100, 2)
-    pa_result["avg_cost"] = avg_cost
-    pa_result["shares"] = shares
-    pa_result["unrealized_pnl_pct"] = pnl_pct
-
-    # 加仓信号 → 计算摊薄均价
-    if pa_result.get("signal") == "加仓" and pa_result.get("limit_entry"):
-        if shares and shares > 0:
-            new_shares = shares + 1
-            blended = round(
-                (avg_cost * shares + pa_result["limit_entry"]) / new_shares, 2
-            )
-            pa_result["blended_avg"] = blended
-        else:
-            pa_result["blended_avg"] = pa_result["limit_entry"]
 
 
 def _adjust_with_premarket(pa_result: dict, premarket: dict, currency_sign: str) -> None:
@@ -116,11 +88,6 @@ def run_calculator():
         print("❌ 缺少依赖库 yfinance，请执行：pip install yfinance")
         sys.exit(1)
 
-    # 持仓数据（Flex Query → Vision 读图 → 静态配置）
-    live_positions = fetch_positions()
-    if live_positions:
-        print(f"  📋 已获取 {len(live_positions)} 个持仓数据\n")
-
     results = []
 
     for idx, (symbol, cfg) in enumerate(WATCHLIST.items()):
@@ -155,7 +122,6 @@ def run_calculator():
         pa_result = analyze_pa(bars, currency_sign)
         row["pa"] = pa_result
 
-        _enrich_with_position(pa_result, live_positions, symbol, cfg)
         _adjust_with_premarket(pa_result, premarket, currency_sign)
         _format_display_fields(pa_result, currency_sign)
 

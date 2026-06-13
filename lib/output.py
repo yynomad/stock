@@ -171,21 +171,6 @@ def build_telegram_message(results: list) -> str:
             for reason in reasons:
                 diag_lines.append(f"     · {_esc(reason)}")
 
-        # 持仓盈亏
-        avg_cost = pa.get("avg_cost")
-        shares = pa.get("shares")
-        unrealized_pnl = pa.get("unrealized_pnl_pct")
-        blended_avg = pa.get("blended_avg")
-        if avg_cost is not None:
-            cs = r.get('currency_sign', '$')
-            shares_str = f"{shares}股" if shares else "—"
-            pnl_emoji = "📉" if unrealized_pnl and unrealized_pnl < 0 else "📈"
-            diag_lines.append(f"   💼 持仓 {shares_str} | 均价 {fmt_price(avg_cost, cs)}")
-            if unrealized_pnl is not None:
-                diag_lines.append(f"     {pnl_emoji} 浮动 {unrealized_pnl:+.2f}%")
-            if blended_avg is not None:
-                diag_lines.append(f"     🔄 加1股后均价 {fmt_price(blended_avg, cs)}")
-
         # 限价单 + 追踪止损
         trailing_stop = pa.get("trailing_stop")
         limit_entry = pa.get("limit_entry")
