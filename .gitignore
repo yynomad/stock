@@ -2,7 +2,6 @@
 .env
 
 # 持仓数据（本地文件，含个人财务信息，不提交）
-/positions.json
 
 # Python 缓存
 __pycache__/

@@ -22,6 +22,7 @@ from lib.config import WATCHLIST, YF_REQUEST_DELAY, LIMIT_ENTRY_PCT
 from lib.format_utils import fmt_price
 from lib.yahoo_data import fetch_yahoo_bars, fetch_premarket_price
 from lib.pa_strategy import analyze_pa
+from lib.positions import fetch_positions
 from lib.output import build_console_table, build_telegram_message, send_telegram
 
 
@@ -79,22 +80,41 @@ def _format_display_fields(pa_result: dict, currency_sign: str) -> None:
         pa_result[f"{key}_fmt"] = fmt_price(val, currency_sign) if val is not None else "N/A"
 
 
-def run_calculator():
-    """主流程：拉数据 → PA 分析 → 控制台 + Telegram 输出。"""
-    # 检查依赖
-    try:
-        import yfinance  # noqa: F401
-    except ImportError:
-        print("❌ 缺少依赖库 yfinance，请执行：pip install yfinance")
-        sys.exit(1)
+def _build_symbols(image_path: str = None) -> dict:
+    """确定分析标的列表。返回 {symbol: cfg} 字典。"""
+    if image_path:
+        positions = fetch_positions(image_path)
+        if not positions:
+            print("⚠️  未从截图识别到持仓，使用默认 WATCHLIST")
+            return {sym: dict(cfg) for sym, cfg in WATCHLIST.items()}
+        symbols = {}
+        for sym, pos in positions.items():
+            if sym in WATCHLIST:
+                cfg = dict(WATCHLIST[sym])
+            else:
+                if sym.endswith(".T"):
+                    currency_sign = "¥"
+                elif sym.endswith(".SW"):
+                    currency_sign = "€"
+                else:
+                    currency_sign = "$"
+                cfg = {"currency_sign": currency_sign, "display_name": sym}
+            cfg["shares"] = pos.get("shares")
+            cfg["avg_cost"] = pos.get("avg_cost")
+            symbols[sym] = cfg
+        print(f"\n📊 将分析 {len(symbols)} 个持仓标的：{', '.join(symbols.keys())}")
+        return symbols
+    return {sym: dict(cfg) for sym, cfg in WATCHLIST.items()}
 
+
+def _analyze_symbols(symbols: dict) -> list:
+    """核心分析循环：拉 K 线 → PA 分析 → 返回 results 列表。"""
     results = []
 
-    for idx, (symbol, cfg) in enumerate(WATCHLIST.items()):
-        display_name = cfg["display_name"]
-        currency_sign = cfg["currency_sign"]
+    for idx, (symbol, cfg) in enumerate(symbols.items()):
+        display_name = cfg.get("display_name", symbol)
+        currency_sign = cfg.get("currency_sign", "$")
 
-        # 限流：第一个不延迟，之后每个延迟一段
         if idx > 0 and YF_REQUEST_DELAY > 0:
             print(f"  ⏳ 等待 {YF_REQUEST_DELAY}s 避免限流...")
             time.sleep(YF_REQUEST_DELAY)
@@ -107,6 +127,8 @@ def run_calculator():
             "currency_sign": currency_sign,
             "pa":            {},
             "error":         None,
+            "shares":        cfg.get("shares"),
+            "avg_cost":      cfg.get("avg_cost"),
         }
 
         bars = fetch_yahoo_bars(symbol)
@@ -139,6 +161,29 @@ def run_calculator():
                 f"支撑={pa_result.get('support_fmt','')}"
             )
 
+    return results
+
+
+def run_calculator(image_path: str = None, symbols: dict = None) -> tuple:
+    """主流程：确定标的 → 分析 → 输出 → 返回 (results, report)。
+
+    参数：
+      image_path: 持仓截图路径（与 symbols 二选一）
+      symbols:    预构建的 {symbol: cfg} 字典（优先级高于 image_path）
+    返回：
+      (results, report_text)
+    """
+    try:
+        import yfinance  # noqa: F401
+    except ImportError:
+        print("❌ 缺少依赖库 yfinance，请执行：pip install yfinance")
+        sys.exit(1)
+
+    if symbols is None:
+        symbols = _build_symbols(image_path)
+
+    results = _analyze_symbols(symbols)
+
     if not results:
         print("⚠️  没有获取到任何标的数据。")
         sys.exit(1)
@@ -148,12 +193,19 @@ def run_calculator():
     print(build_console_table(results))
     print()
 
-    # Telegram 推送
-    send_telegram(build_telegram_message(results))
+    # 构建报告
+    report = build_telegram_message(results)
 
     logging.info("脚本正常结束")
     print("✅ 完成。")
 
+    return results, report
+
 
 if __name__ == "__main__":
-    run_calculator()
+    import argparse
+    parser = argparse.ArgumentParser(description="盘前 Price Action 策略计算器")
+    parser.add_argument("--image", type=str, help="持仓截图路径（Gemini Vision 识别）")
+    args = parser.parse_args()
+    results, report = run_calculator(image_path=args.image)
+    send_telegram(report)

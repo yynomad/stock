@@ -23,6 +23,11 @@ TG_CHAT_ID   = os.getenv("TG_CHAT_ID", "")
 # ── Yahoo Finance 代理配置（国内网络可能需要）───────────────────────────
 YF_PROXY = os.getenv("YF_PROXY", "")  # 如 http://127.0.0.1:7890
 
+# ── Gemini API 配置 ──────────────────────────────────────────────────
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
+GEMINI_MODEL   = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
+POSITION_IMAGE_PATH = os.getenv("POSITION_IMAGE_PATH", "")  # 持仓截图路径
+
 # ── 请求间隔（秒），避免触发 Yahoo 限流 ──────────────────────────────
 YF_REQUEST_DELAY = float(os.getenv("YF_REQUEST_DELAY", "5"))
 
