@@ -157,19 +157,29 @@ def count_consecutive(bars: list[dict]) -> tuple:
 #  ATR 追踪止损
 # ══════════════════════════════════════════════════════════════════════
 
-def compute_trailing_stop(bars: list[dict], currency_sign: str) -> dict:
+def compute_trailing_stop(
+    bars: list[dict],
+    currency_sign: str,
+    trend: str = "up",
+    support: float = None,
+) -> dict:
     """
-    计算 ATR 追踪止损和限价单价格。
+    Trend-aware 止损 / 限价计算。
 
-    追踪止损逻辑：
-      - 取近N日最高价作为追踪基准
-      - 止损 = 最高价 - ATR_MULTIPLIER × ATR
-      - 价格涨，止损跟着上移；价格跌，止损不动
+    根据趋势方向输出不同性质的止损线：
+      · trend == "up"   ─ Chandelier Exit（保护利润）
+          stop = recent_high - ATR_STOP_MULTIPLIER × ATR
+          适用：顺势做多 + 持仓有浮盈，价格创新高时止损跟随上抬。
+      · trend == "down" ─ 破位止损（割肉线）
+          stop = support × (1 - LIMIT_ENTRY_PCT)
+          适用：逆势套牢，跌破最近一档支撑确认下行延续。
+      · trend == "side" ─ 横盘震荡不输出 trailing_stop（语义不成立）。
 
-    限价单逻辑：
-      - 加仓信号：限价 = 支撑位 × (1 + LIMIT_ENTRY_PCT)，略高于支撑避免滑点
-      - 观望信号：限价 = 支撑位（保守等待）
-      - 减仓信号：不设限价买入
+    返回字段：
+      · trailing_stop      止损价（None 表示未输出）
+      · trailing_stop_pct  相对现价百分比（向下为负，向上为正）
+      · stop_kind          "chandelier" | "break_support" | None
+      · stop_note          人类可读说明
     """
     result = {
         "atr": None,
@@ -178,6 +188,8 @@ def compute_trailing_stop(bars: list[dict], currency_sign: str) -> dict:
         "limit_entry": None,
         "target_price": None,
         "trailing_stop_pct": None,
+        "stop_kind": None,
+        "stop_note": None,
     }
 
     if not bars or len(bars) < ATR_PERIOD + 1:
@@ -189,18 +201,44 @@ def compute_trailing_stop(bars: list[dict], currency_sign: str) -> dict:
 
     result["atr"] = round(atr, 2)
 
-    # 近20日最高价作为追踪基准
     lookback = min(20, len(bars))
     recent_high = max(b["high"] for b in bars[-lookback:])
     result["recent_high"] = recent_high
 
-    # 追踪止损 = 最高价 - N倍ATR
-    trailing_stop = recent_high - ATR_STOP_MULTIPLIER * atr
-    result["trailing_stop"] = round(trailing_stop, 2)
-
     last_close = bars[-1]["close"]
+
+    trailing_stop = None
+    if trend == "up":
+        # 上升趋势：Chandelier Exit 保护利润
+        trailing_stop = recent_high - ATR_STOP_MULTIPLIER * atr
+        result["stop_kind"] = "chandelier"
+        result["stop_note"] = (
+            f"Chandelier 止损 = 近{lookback}日高 {recent_high:.2f} "
+            f"- {ATR_STOP_MULTIPLIER}×ATR({atr:.2f})"
+        )
+    elif trend == "down" and support and support > 0:
+        # 下降趋势：跌破支撑止损
+        trailing_stop = support * (1 - LIMIT_ENTRY_PCT)
+        result["stop_kind"] = "break_support"
+        result["stop_note"] = (
+            f"破位止损 = 支撑 {support:.2f} × (1 - {LIMIT_ENTRY_PCT*100:.1f}%)"
+        )
+    else:
+        # 横盘 / 信息不足：不输出 trailing_stop
+        result["stop_note"] = "横盘或信息不足，未输出止损建议"
+        return result
+
+    result["trailing_stop"] = round(trailing_stop, 2)
     if last_close > 0:
-        result["trailing_stop_pct"] = round((trailing_stop - last_close) / last_close * 100, 2)
+        result["trailing_stop_pct"] = round(
+            (trailing_stop - last_close) / last_close * 100, 2
+        )
+
+    # Sanity check：止损方向异常（应该在现价同侧但跑反了）警告但不丢弃
+    if trend == "up" and trailing_stop > last_close:
+        result["stop_note"] += " ⚠️ 上升趋势止损反高于现价，可能 ATR 过小或刚启动"
+    elif trend == "down" and trailing_stop > last_close:
+        result["stop_note"] += " ⚠️ 现价已破支撑下方"
 
     return result
 
@@ -465,11 +503,17 @@ def analyze_pa(bars: list[dict], currency_sign: str) -> dict:
     })
 
     # ── 5. ATR 追踪止损 + 限价单 ─────────────────────────────────────
-    ts = compute_trailing_stop(bars, currency_sign)
+    ts = compute_trailing_stop(
+        bars, currency_sign,
+        trend=result["trend"],
+        support=support,
+    )
     result["atr"] = ts["atr"]
     result["trailing_stop"] = ts["trailing_stop"]
     result["trailing_stop_pct"] = ts["trailing_stop_pct"]
     result["recent_high"] = ts["recent_high"]
+    result["stop_kind"] = ts.get("stop_kind")
+    result["stop_note"] = ts.get("stop_note")
 
     # 限价买入（只在加仓/观望时设置）
     if signal in ("加仓", "观望"):

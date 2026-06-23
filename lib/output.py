@@ -125,6 +125,13 @@ def build_telegram_message(results: list) -> str:
             t = trend_map.get(pa.get("trend", ""), "→")
             sig_emoji = {"加仓": "🟢", "减仓": "🔴", "观望": "🟡"}
             sig = sig_emoji.get(pa.get("signal", ""), "⚪") + pa.get("signal", "")
+
+            # 持仓标注
+            shares = r.get("shares")
+            pos_mark = ""
+            if shares is not None and shares > 0:
+                pos_mark = f"×{shares}"
+
             table_lines.append(
                 f"{r['symbol']:<7}"
                 f"{pa.get('last_close_fmt',''):>10} "
@@ -132,6 +139,7 @@ def build_telegram_message(results: list) -> str:
                 f"{sig:>6} "
                 f"{pa.get('resistance_fmt','N/A'):>10} "
                 f"{pa.get('support_fmt','N/A'):>10}"
+                f"  {pos_mark}"
             )
 
     table_lines.append("─" * 52)
@@ -155,6 +163,22 @@ def build_telegram_message(results: list) -> str:
             diag_lines.append(f"🟢 <b>{display}</b>")
         else:
             diag_lines.append(f"🟡 <b>{display}</b>")
+
+        # 持仓信息
+        shares = r.get("shares")
+        avg_cost = r.get("avg_cost")
+        if shares is not None and shares > 0 and avg_cost is not None:
+            cs = r.get('currency_sign', '$')
+            last_close = pa.get('last_close')
+            if last_close:
+                pnl_pct = (last_close - avg_cost) / avg_cost * 100
+                pnl_emoji = "📈" if pnl_pct > 0 else "📉"
+                diag_lines.append(f"   📦 持仓 {shares}股 @ {fmt_price(avg_cost, cs)} {pnl_emoji}{pnl_pct:+.2f}%")
+            else:
+                diag_lines.append(f"   📦 持仓 {shares}股 @ {fmt_price(avg_cost, cs)}")
+        elif avg_cost is not None:
+            cs = r.get('currency_sign', '$')
+            diag_lines.append(f"   📎 成本 {fmt_price(avg_cost, cs)}")
 
         # 诊断文字
         diag = _esc(pa.get("diagnosis", "数据不足"))
