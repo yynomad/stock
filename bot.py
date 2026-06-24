@@ -12,7 +12,6 @@ StockMan Telegram Bot
 
 import os
 import sys
-import json
 import time
 import logging
 import threading
@@ -23,6 +22,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from lib.config import TG_BOT_TOKEN, TG_CHAT_ID, YF_PROXY
 from lib.positions import fetch_positions_from_image
+from lib.output import build_brief_telegram_message
 from premarket_grid_calculator import run_calculator, _build_symbols
 
 
@@ -175,10 +175,38 @@ def handle_screenshot(chat_id: int, file_id: str, message_id: int) -> None:
     ).start()
 
 
-def _run_analysis(chat_id: int, symbols: dict = None) -> None:
+def _parse_single_symbol_command(text: str) -> dict | None:
+    """解析 /test 或 /stock：/test AAPL [shares] [avg_cost]。"""
+    parts = text.split()
+    if not parts or parts[0] not in ("/test", "/stock"):
+        return None
+    if len(parts) < 2:
+        return {}
+
+    symbol = parts[1].upper()
+    cfg = {"currency_sign": "$", "display_name": symbol}
+    if symbol.endswith(".T"):
+        cfg["currency_sign"] = "¥"
+    elif symbol.endswith(".SW"):
+        cfg["currency_sign"] = "€"
+
+    try:
+        if len(parts) >= 3:
+            cfg["shares"] = float(parts[2])
+        if len(parts) >= 4:
+            cfg["avg_cost"] = float(parts[3])
+    except ValueError:
+        return {}
+
+    return {symbol: cfg}
+
+
+def _run_analysis(chat_id: int, symbols: dict = None, brief: bool = False) -> None:
     """在后台线程中执行 PA 分析并发送报告。"""
     try:
         results, report = run_calculator(symbols=symbols)
+        if brief:
+            report = build_brief_telegram_message(results)
 
         # Telegram 消息长度限制 4096，超长则分段
         if len(report) > 4000:
@@ -290,6 +318,7 @@ def main():
                         "功能：\n"
                         "📷 发送持仓截图 → 自动识别 + PA分析\n"
                         "/analyze — 分析默认 WATCHLIST 标的\n"
+                        "/test AAPL 10 150 — 单标的测试（股数/成本可选）\n"
                         "/help — 显示帮助\n",
                         reply_to=message_id,
                     )
@@ -299,6 +328,23 @@ def main():
                     threading.Thread(
                         target=_run_analysis,
                         args=(chat_id, None),
+                        daemon=True,
+                    ).start()
+
+                elif text.startswith(("/test", "/stock")):
+                    symbols = _parse_single_symbol_command(text)
+                    if not symbols:
+                        tg_send_message(
+                            chat_id,
+                            "用法：/test AAPL [股数] [成本]\n例：/test NVDA 10 120",
+                            reply_to=message_id,
+                        )
+                        continue
+                    symbol = next(iter(symbols.keys()))
+                    tg_send_message(chat_id, f"⏳ 正在测试 {symbol}...", reply_to=message_id)
+                    threading.Thread(
+                        target=_run_analysis,
+                        args=(chat_id, symbols, True),
                         daemon=True,
                     ).start()
 

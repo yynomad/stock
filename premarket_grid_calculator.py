@@ -1,5 +1,5 @@
 """
-盘前 Price Action 策略计算器 v3.0
+盘前 Price Action 策略计算器
 ─────────────────────────────────────────────────────────────
 入口文件：仅负责串联流程，业务逻辑都在 lib/ 模块下。
 
@@ -23,11 +23,12 @@ from lib.format_utils import fmt_price
 from lib.yahoo_data import fetch_yahoo_bars, fetch_premarket_price
 from lib.pa_strategy import analyze_pa
 from lib.positions import fetch_positions
+from lib.position_decision import build_position_decision
 from lib.output import build_console_table, build_telegram_message, send_telegram
 
 
 logging.info("=" * 60)
-logging.info("脚本启动 (v3.0 Yahoo Finance, modular)")
+logging.info("脚本启动 (Yahoo Finance, modular)")
 
 
 def _adjust_with_premarket(pa_result: dict, premarket: dict, currency_sign: str) -> None:
@@ -146,6 +147,7 @@ def _analyze_symbols(symbols: dict) -> list:
 
         _adjust_with_premarket(pa_result, premarket, currency_sign)
         _format_display_fields(pa_result, currency_sign)
+        row["decision"] = build_position_decision(row)
 
         results.append(row)
         print(f"  {pa_result.get('diagnosis', '')}\n")

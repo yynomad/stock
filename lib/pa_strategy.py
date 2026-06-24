@@ -1,5 +1,5 @@
 """
-Price Action 分析引擎（v3.0 纯K线版）
+Price Action 分析引擎（纯K线版）
 ─────────────────────────────────────────────────────────────
 基础指标：
   · compute_ma           简单移动平均
@@ -249,7 +249,7 @@ def compute_trailing_stop(
 
 def analyze_pa(bars: list[dict], currency_sign: str) -> dict:
     """
-    纯K线 Price Action 分析引擎（v3.0）。
+    纯K线 Price Action 分析引擎。
 
     综合判断 → 加仓 / 减仓 / 观望
     """
