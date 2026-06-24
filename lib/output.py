@@ -26,7 +26,7 @@ def build_console_table(results: list) -> str:
 
     lines = []
     lines.append(hline("╔", "═", "╗"))
-    lines.append(f"║{'📊  盘前 Price Action 策略报告 v3.0':^{W-2}}║")
+    lines.append(f"║{'📊  盘前 Price Action 策略报告':^{W-2}}║")
     lines.append(f"║{'数据源：Yahoo Finance | 运行时间：' + now_str:^{W-5}}║")
     lines.append(hline("╠", "═", "╣"))
 
@@ -103,12 +103,59 @@ def _esc(s: str) -> str:
     return s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
 
 
+def _decision_summary(decision: dict) -> str:
+    if not decision:
+        return ""
+    label = decision.get("label", "")
+    headline = decision.get("headline", "")
+    return f"{label}：{headline}" if label and headline else label or headline
+
+
+def build_brief_telegram_message(results: list) -> str:
+    """构建适合单标的 Telegram 测试的简洁结论。"""
+    now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    lines = [f"📌 <b>单标的测试</b>  {now_str}", ""]
+
+    for r in results:
+        if r.get("error"):
+            lines.append(f"⚠️ <b>{_esc(r['display_name'])}</b>：{_esc(r['error'])}")
+            continue
+
+        pa = r.get("pa", {})
+        decision = r.get("decision", {})
+        cs = r.get("currency_sign", "$")
+        display = _esc(r["display_name"])
+        signal = pa.get("signal", "观望")
+        strength = pa.get("signal_strength", 0)
+        price = pa.get("live_price") or pa.get("last_close")
+        price_text = fmt_price(price, cs) if price is not None else "N/A"
+
+        lines.append(f"<b>{display}</b>")
+        lines.append(f"结论：<b>{_esc(decision.get('headline', '观望'))}</b>")
+        lines.append(f"PA：{signal} 强度{strength}｜趋势 {pa.get('trend', 'sideways')}")
+        lines.append(f"价格：{price_text}")
+
+        pnl_pct = decision.get("pnl_pct")
+        if pnl_pct is not None:
+            lines.append(f"浮盈亏：{pnl_pct:+.1f}%")
+
+        plan = decision.get("plan") or []
+        if plan:
+            lines.append("计划：" + "；".join(_esc(p) for p in plan))
+
+        notes = decision.get("notes") or pa.get("reasons", [])
+        if notes:
+            lines.append("原因：" + "、".join(_esc(str(n)) for n in notes[:4]))
+
+    return "\n".join(lines)
+
+
 def build_telegram_message(results: list) -> str:
     now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
     # 段一：数据表格
     table_lines = [
-        "📊 <b>盘前 PA 策略报告 v3.0</b>",
+        "📊 <b>盘前 PA 策略报告</b>",
         f"🕐 {now_str}  |  数据源：Yahoo Finance",
         "",
         "<pre>",
@@ -194,6 +241,10 @@ def build_telegram_message(results: list) -> str:
             diag_lines.append("   📎 原因：")
             for reason in reasons:
                 diag_lines.append(f"     · {_esc(reason)}")
+
+        decision_text = _decision_summary(r.get("decision", {}))
+        if decision_text:
+            diag_lines.append(f"   ✅ 结论：{_esc(decision_text)}")
 
         # 限价单 + 追踪止损
         trailing_stop = pa.get("trailing_stop")

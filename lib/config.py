@@ -58,6 +58,15 @@ ATR_PERIOD             = 14    # ATR 计算周期
 ATR_STOP_MULTIPLIER    = 2.0   # 追踪止损 = 最高价 - N倍ATR
 LIMIT_ENTRY_PCT        = 0.005 # 限价单距支撑的偏移（0.5%）
 
+# ── 仓位决策参数 ────────────────────────────────────────────────────
+# 这些参数把 PA 技术信号转成更明确的「试探加仓 / 分批止盈 / 风控减仓」。
+POSITION_PROBE_ADD_PCT       = float(os.getenv("POSITION_PROBE_ADD_PCT", "0.05"))
+POSITION_NORMAL_ADD_PCT      = float(os.getenv("POSITION_NORMAL_ADD_PCT", "0.10"))
+POSITION_STRONG_ADD_PCT      = float(os.getenv("POSITION_STRONG_ADD_PCT", "0.20"))
+POSITION_TAKE_PROFIT_PCT     = float(os.getenv("POSITION_TAKE_PROFIT_PCT", "0.20"))
+POSITION_STRONG_TAKE_PROFIT_PCT = float(os.getenv("POSITION_STRONG_TAKE_PROFIT_PCT", "0.35"))
+POSITION_RISK_REDUCE_PCT     = float(os.getenv("POSITION_RISK_REDUCE_PCT", "0.25"))
+
 # ══════════════════════════════════════════════════════════════════════
 #  监控标的配置表
 #  1321.T 是 Yahoo Finance 上东京证券交易所的日经225 ETF 代码
@@ -112,5 +121,4 @@ WATCHLIST = {
         "display_name":  "XFAB",
     },
 }
-
 
