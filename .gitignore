@@ -3,6 +3,12 @@
 
 # 持仓数据（本地文件，含个人财务信息，不提交）
 
+# 用户持仓截图（含个人财务信息）
+screenshots/
+
+# Telegram 轮询偏移量（运行时状态）
+.bot_offset
+
 # Python 缓存
 __pycache__/
 *.pyc

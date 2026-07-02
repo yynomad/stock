@@ -31,6 +31,11 @@ POSITION_IMAGE_PATH = os.getenv("POSITION_IMAGE_PATH", "")  # 持仓截图路径
 # ── 请求间隔（秒），避免触发 Yahoo 限流 ──────────────────────────────
 YF_REQUEST_DELAY = float(os.getenv("YF_REQUEST_DELAY", "5"))
 
+# ── 实时价格监控参数 ───────────────────────────────────────────────────
+MONITOR_INTERVAL        = int(os.getenv("MONITOR_INTERVAL", "5"))         # 轮询间隔（分钟）
+MONITOR_BUFFER_PCT      = float(os.getenv("MONITOR_BUFFER_PCT", "0.02"))  # 突破确认缓冲比例
+MONITOR_MAX_DAILY_ALERTS = int(os.getenv("MONITOR_MAX_DAILY_ALERTS", "5")) # 每标的每日最大提醒数
+
 # ── 日志初始化 ────────────────────────────────────────────────────────
 LOG_FILE = "premarket_calculator.log"
 logging.basicConfig(

@@ -1,11 +1,9 @@
 """
 StockMan Telegram Bot
 ─────────────────────────────────────────────────────────────
-长驻 Telegram Bot，接收用户消息和图片，执行 PA 分析并返回结果。
-
-功能：
-  · 接收持仓截图 → Gemini Vision 识别 → Yahoo Finance K线 → PA分析 → 返回报告
-  · 接收文本命令 → 执行对应操作
+长驻 Telegram Bot，两种功能：
+  1. 持仓截图 → Gemini 识图 → PA 分析 → 返回报告 → 自动启动价格监控
+  2. 普通消息 → Gemini 聊天回复
 
 运行：python bot.py
 """
@@ -20,10 +18,42 @@ import requests
 # 确保项目根目录在 path 中
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from lib.config import TG_BOT_TOKEN, TG_CHAT_ID, YF_PROXY
+from lib.config import TG_BOT_TOKEN, TG_CHAT_ID, YF_PROXY, GEMINI_API_KEY, GEMINI_MODEL
 from lib.positions import fetch_positions_from_image
-from lib.output import build_brief_telegram_message
+from lib.monitor import PriceMonitor
 from premarket_grid_calculator import run_calculator, _build_symbols
+
+# ── Gemini 聊天 ──────────────────────────────────────────────────────
+
+_has_gemini = bool(GEMINI_API_KEY)
+if _has_gemini:
+    from google import genai as gemini_client
+    from google.genai import types as gemini_types
+
+
+def _chat_with_gemini(text: str, context: str = "") -> str:
+    """用 Gemini 回复普通消息，附带持仓上下文。"""
+    if not _has_gemini:
+        return "⚠️ 未配置 GEMINI_API_KEY，无法聊天"
+    try:
+        client = gemini_client.Client(api_key=GEMINI_API_KEY)
+        system_prompt = (
+            "你是一个专业的股票投资助手，名叫 StockMan。"
+            "你需要用中文回答用户的问题。"
+        )
+        if context:
+            system_prompt += f"\n\n{context}"
+        resp = client.models.generate_content(
+            model=GEMINI_MODEL,
+            contents=text,
+            config=gemini_types.GenerateContentConfig(
+                system_instruction=system_prompt,
+            ),
+        )
+        return resp.text
+    except Exception as e:
+        logger.error(f"Gemini 聊天失败: {e}")
+        return f"❌ Gemini 回复出错：{e}"
 
 
 # ── 日志配置 ──────────────────────────────────────────────────────────
@@ -131,7 +161,8 @@ def tg_download_file(file_id: str) -> bytes | None:
 SCREENSHOTS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "screenshots")
 
 
-def handle_screenshot(chat_id: int, file_id: str, message_id: int) -> None:
+def handle_screenshot(chat_id: int, file_id: str, message_id: int,
+                      monitor: PriceMonitor = None) -> None:
     """处理持仓截图：下载 → Gemini 识别 → PA 分析 → 返回报告。"""
     # 发送处理中提示
     tg_send_message(chat_id, "🖼️ 收到持仓截图，正在识别分析...", reply_to=message_id)
@@ -170,43 +201,19 @@ def handle_screenshot(chat_id: int, file_id: str, message_id: int) -> None:
     # 在后台线程执行分析，不阻塞主循环
     threading.Thread(
         target=_run_analysis,
-        args=(chat_id, symbols),
+        args=(chat_id, symbols, monitor),
         daemon=True,
     ).start()
 
 
-def _parse_single_symbol_command(text: str) -> dict | None:
-    """解析 /test 或 /stock：/test AAPL [shares] [avg_cost]。"""
-    parts = text.split()
-    if not parts or parts[0] not in ("/test", "/stock"):
-        return None
-    if len(parts) < 2:
-        return {}
-
-    symbol = parts[1].upper()
-    cfg = {"currency_sign": "$", "display_name": symbol}
-    if symbol.endswith(".T"):
-        cfg["currency_sign"] = "¥"
-    elif symbol.endswith(".SW"):
-        cfg["currency_sign"] = "€"
-
-    try:
-        if len(parts) >= 3:
-            cfg["shares"] = float(parts[2])
-        if len(parts) >= 4:
-            cfg["avg_cost"] = float(parts[3])
-    except ValueError:
-        return {}
-
-    return {symbol: cfg}
 
 
-def _run_analysis(chat_id: int, symbols: dict = None, brief: bool = False) -> None:
+
+def _run_analysis(chat_id: int, symbols: dict = None,
+                   monitor: PriceMonitor = None) -> None:
     """在后台线程中执行 PA 分析并发送报告。"""
     try:
         results, report = run_calculator(symbols=symbols)
-        if brief:
-            report = build_brief_telegram_message(results)
 
         # Telegram 消息长度限制 4096，超长则分段
         if len(report) > 4000:
@@ -224,6 +231,11 @@ def _run_analysis(chat_id: int, symbols: dict = None, brief: bool = False) -> No
                 tg_send_message(chat_id, chunk)
         else:
             tg_send_message(chat_id, report)
+
+        # 分析成功后自动启动实时监控
+        if monitor and results:
+            monitor.update_from_results(results)
+            monitor.start()
 
         logger.info("PA 分析报告已发送")
     except Exception as e:
@@ -273,6 +285,10 @@ def main():
     logger.info(f"从文件加载 offset={offset}")
     print(f"📡 开始轮询消息 (offset={offset})...")
 
+    # 初始化实时价格监控器
+    chat_id_owner = int(TG_CHAT_ID) if TG_CHAT_ID else 0
+    monitor = PriceMonitor(chat_id_owner)
+
     while True:
         try:
             updates = tg_get_updates(offset=offset, timeout=30)
@@ -301,7 +317,7 @@ def main():
                     largest_photo = photos[-1]
                     file_id = largest_photo["file_id"]
                     logger.info(f"收到图片 from {user_id}, file_id={file_id}")
-                    handle_screenshot(chat_id, file_id, message_id)
+                    handle_screenshot(chat_id, file_id, message_id, monitor=monitor)
                     continue
 
                 # 处理文本命令
@@ -311,45 +327,11 @@ def main():
 
                 logger.info(f"收到消息 from {user_id}: {text}")
 
-                if text in ("/start", "/help"):
-                    tg_send_message(
-                        chat_id,
-                        "📊 <b>StockMan Bot</b>\n\n"
-                        "功能：\n"
-                        "📷 发送持仓截图 → 自动识别 + PA分析\n"
-                        "/analyze — 分析默认 WATCHLIST 标的\n"
-                        "/test AAPL 10 150 — 单标的测试（股数/成本可选）\n"
-                        "/help — 显示帮助\n",
-                        reply_to=message_id,
-                    )
-
-                elif text == "/analyze":
-                    tg_send_message(chat_id, "⏳ 正在分析默认 WATCHLIST 标的...", reply_to=message_id)
-                    threading.Thread(
-                        target=_run_analysis,
-                        args=(chat_id, None),
-                        daemon=True,
-                    ).start()
-
-                elif text.startswith(("/test", "/stock")):
-                    symbols = _parse_single_symbol_command(text)
-                    if not symbols:
-                        tg_send_message(
-                            chat_id,
-                            "用法：/test AAPL [股数] [成本]\n例：/test NVDA 10 120",
-                            reply_to=message_id,
-                        )
-                        continue
-                    symbol = next(iter(symbols.keys()))
-                    tg_send_message(chat_id, f"⏳ 正在测试 {symbol}...", reply_to=message_id)
-                    threading.Thread(
-                        target=_run_analysis,
-                        args=(chat_id, symbols, True),
-                        daemon=True,
-                    ).start()
-
-                else:
-                    tg_send_message(chat_id, "📷 请发送持仓截图进行分析，或使用 /help 查看帮助")
+                # 所有文本消息 → Gemini 聊天（带持仓上下文）
+                context = monitor.context_summary()
+                tg_send_message(chat_id, "💬 正在思考...", reply_to=message_id)
+                reply = _chat_with_gemini(text, context=context)
+                tg_send_message(chat_id, reply, reply_to=message_id)
 
         except KeyboardInterrupt:
             print("\n🛑 Bot 已停止")
