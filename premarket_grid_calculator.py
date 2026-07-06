@@ -18,13 +18,14 @@ import sys
 import time
 import logging
 
-from lib.config import WATCHLIST, YF_REQUEST_DELAY, LIMIT_ENTRY_PCT
+from lib.config import YF_REQUEST_DELAY, LIMIT_ENTRY_PCT
 from lib.format_utils import fmt_price
 from lib.yahoo_data import fetch_yahoo_bars, fetch_premarket_price
 from lib.pa_strategy import analyze_pa
 from lib.positions import fetch_positions
 from lib.position_decision import build_position_decision
 from lib.output import build_console_table, build_telegram_message, send_telegram
+from lib.watchlist import WatchlistManager
 
 
 logging.info("=" * 60)
@@ -83,20 +84,24 @@ def _format_display_fields(pa_result: dict, currency_sign: str) -> None:
 
 def _build_symbols(image_path: str = None) -> dict:
     """确定分析标的列表。返回 {symbol: cfg} 字典。"""
+    wm = WatchlistManager()
     if image_path:
         positions = fetch_positions(image_path)
         if not positions:
-            print("⚠️  未从截图识别到持仓，使用默认 WATCHLIST")
-            return {sym: dict(cfg) for sym, cfg in WATCHLIST.items()}
+            print("⚠️  未从截图识别到持仓，使用监控列表")
+            return {sym: dict(cfg) for sym, cfg in wm.get_all().items()}
         symbols = {}
         for sym, pos in positions.items():
-            if sym in WATCHLIST:
-                cfg = dict(WATCHLIST[sym])
+            info = wm.get(sym)
+            if info:
+                cfg = dict(info)
             else:
                 if sym.endswith(".T"):
                     currency_sign = "¥"
                 elif sym.endswith(".SW"):
                     currency_sign = "€"
+                elif sym.endswith(".SS") or sym.endswith(".SZ"):
+                    currency_sign = "CN¥"
                 else:
                     currency_sign = "$"
                 cfg = {"currency_sign": currency_sign, "display_name": sym}
@@ -105,7 +110,7 @@ def _build_symbols(image_path: str = None) -> dict:
             symbols[sym] = cfg
         print(f"\n📊 将分析 {len(symbols)} 个持仓标的：{', '.join(symbols.keys())}")
         return symbols
-    return {sym: dict(cfg) for sym, cfg in WATCHLIST.items()}
+    return {sym: dict(cfg) for sym, cfg in wm.get_all().items()}
 
 
 def _analyze_symbols(symbols: dict) -> list:
