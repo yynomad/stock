@@ -125,5 +125,44 @@ WATCHLIST = {
         "currency_sign": "€",
         "display_name":  "XFAB",
     },
+
+    # ── A 股（沪深交易所）─────────────────────────────────────────
+    # 上海 .SS，深圳 .SZ；人民币 CN¥
+    "600519.SS": {
+        "currency_sign": "CN¥",
+        "display_name":  "贵州茅台",
+    },
+    "000858.SZ": {
+        "currency_sign": "CN¥",
+        "display_name":  "五粮液",
+    },
+    "300750.SZ": {
+        "currency_sign": "CN¥",
+        "display_name":  "宁德时代",
+    },
+    "601318.SS": {
+        "currency_sign": "CN¥",
+        "display_name":  "中国平安",
+    },
+    "000333.SZ": {
+        "currency_sign": "CN¥",
+        "display_name":  "美的集团",
+    },
+    "600036.SS": {
+        "currency_sign": "CN¥",
+        "display_name":  "招商银行",
+    },
+    "002415.SZ": {
+        "currency_sign": "CN¥",
+        "display_name":  "海康威视",
+    },
+    "601012.SS": {
+        "currency_sign": "CN¥",
+        "display_name":  "隆基绿能",
+    },
+    "000001.SZ": {
+        "currency_sign": "CN¥",
+        "display_name":  "平安银行",
+    },
 }
 

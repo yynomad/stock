@@ -4,9 +4,13 @@
 
 
 def fmt_price(price: float, sign: str, decimals: int = 2) -> str:
-    """格式化价格，根据货币符号决定小数位数（日元无小数）。"""
+    """格式化价格，根据货币符号决定小数位数。"""
     if sign == "¥":
+        # 日元 → 0 位小数（如 ¥142）
         return f"¥{price:,.0f}"
+    if sign == "CN¥":
+        # 人民币 → 2 位小数（如 CN¥1,262.98）
+        return f"CN¥{price:,.{decimals}f}"
     return f"{sign}{price:,.{decimals}f}"
 
 
