@@ -1,7 +1,7 @@
 # StockMan 会话交接
 
 更新：2026-10-22，Asia/Shanghai。
-当前状态：用户已回复“是的”，批准新增 Stock 日报 Product.md／Plan.md，按 N1—N5 连续实施。N1 共用证据／历史／投递和离线入口已完成，68 项测试及 pipeline 演示通过；N2 已完成，下一步 N3。
+当前状态：用户已回复“是的”，批准新增 Stock 日报 Product.md／Plan.md，按 N1—N5 连续实施。N1 共用证据／历史／投递和离线入口已完成，68 项测试及 pipeline 演示通过；N2／N3 已完成，下一步 N4。
 
 ## 位置、工作区与授权
 
@@ -36,7 +36,7 @@ Product.md 已把可配置参数集中列为本次待评审建议默认：BRIEFI
 ## 下一步
 
 1. N1 完成于包含本记录的提交：共用 Evidence／SourcePolicy、SQLite 历史和发送前认领、unknown 恢复，预览不消耗正式去重状态。
-2. N2 已接入 SEC 申报元数据、经官方条款核对的美联储 RSS、严格句式的直接关系提取和来源证据；N3 继续研究 Agent／预算，随后 N4—N5。保持现有物理目录，不改用户 .env，不真实发送。
+2. N2 已接入 SEC 申报元数据、经官方条款核对的美联储 RSS、严格句式的直接关系提取和来源证据；N3 已完成研究角色、原文引用校验／预算／降级；继续 N4 调度及 N5 全体验收。保持现有物理目录，不改用户 .env，不真实发送。
 3. 新入口 `scripts/briefing.py --offline --scenario pipeline` 已创建并通过；sources 演示及 75 项全量测试已通过；其余场景按阶段实现。
 
 ## 原有实现与提交
@@ -78,3 +78,7 @@ venv/bin/python scripts/tasks.py --data-dir runtime/offline
 ```
 
 真实入口及配置见 [README.md](README.md)，学习说明见 [Learning.md](Learning.md)。原应用同一数据目录只运行一个进程；新增日报保持此约束。每个经验证独立改动提交，Stop-and-Fix 保持有效。
+
+## 本轮 N3 验证记录
+
+N1 `585012c`；N2 `7a78d7c`；N3 为包含本记录的提交。统一检查 84 项测试通过，pipeline／sources／research／budget 离线演示通过。SDK 隐式重试禁用（attempts=1），最多一次应用重试且重新预留；未知成本不清零。标准输出 token 已含 reasoning，避免再次累加。日报账本不约束原聊天／图片模型费用。真实研究质量、来源连通性及账单未验收。

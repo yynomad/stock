@@ -25,3 +25,30 @@ def sources_demo(directory):
         assert not relations.verify({**proposal,'quote':'unsupported claim'},items,policies,issuers,now)
         return {'synthetic':True,'scenario':'sources','health':health,'direct_relations':relations.direct(['AAA'],now),'unsupported_relation':'rejected'}
     finally:store.close()
+
+def research_demo(directory,budget_zero=False):
+    from langchain_core.language_models.chat_models import BaseChatModel
+    from langchain_core.messages import AIMessage
+    from langchain_core.outputs import ChatGeneration,ChatResult
+    import json
+    from ..briefing.config import BriefingConfig
+    from .service import StockBriefing
+    class SyntheticResearch(BaseChatModel):
+        @property
+        def _llm_type(self):return 'synthetic-stock-briefing'
+        def _generate(self,messages,**kwargs):
+            item=json.loads(messages[-1].content)['evidence'][0]
+            output={'events':[{'id':item['id'],'quote':item['body'],'impact':'供应关系可能影响订单，需核实。','unknown':'未取得财务影响证据。','watch':'关注后续公告。'}]}
+            return ChatResult(generations=[ChatGeneration(message=AIMessage(content=json.dumps(output),usage_metadata={'input_tokens':100,'output_tokens':100,'total_tokens':200}))])
+    store=Store(Path(directory)/'stockman.sqlite')
+    try:
+        service=StockBriefing(store,BriefingConfig(budget=0 if budget_zero else 0.20),model=SyntheticResearch(),registry={'issuers':{'AAA':{'name':'Alpha Corp'},'BBB':{'name':'Beta Corp'}},'rss':[]})
+        snapshot={'source':'image','asof':2000000000,'positions':{'AAA':{'shares':2}}}
+        first=service.generate('local',snapshot,2000000000,sources=[StockSource(),BrokenSource()])
+        assert ('model_disabled' in first['text']) if budget_zero else ('事实原文摘录' in first['text'])
+        assert first['meta']['budget']['calls']==(0 if budget_zero else 1)
+        service.history.deliver(first['report_id'],first,lambda _: 'sent')
+        second=service.generate('local',snapshot,2000000001,sources=[StockSource()])
+        assert second['meta']['selected']==0
+        return {'synthetic':True,'scenario':'budget' if budget_zero else 'research','text':first['text'],'budget':first['meta']['budget'],'sent_news_dedup':'passed'}
+    finally:store.close()

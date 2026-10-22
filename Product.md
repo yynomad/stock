@@ -151,7 +151,7 @@
 
 ## 已有验证与外部待办
 
-原 M1—M6 离线实现及 62 个测试、D1—D6、依赖和语法检查已通过。新日报没有应用代码，B1—B8 仍待实施。Gemini 搜索真实探测超时，IBKR 新用户名仍等待或未登录 Gateway；IBKR_ACCOUNT 和 SEC_USER_AGENT 之前未配置。未修改用户 `.env`、未启动真实 Bot、未自动发消息或创建 Codex 自动化。
+原 M1—M6 离线实现及 62 个测试、D1—D6、依赖和语法检查已通过。新日报 N1—N3 已实现并通过离线检查；B6 调度与 B7 完整闭环仍在实施，B8 真实服务仍未验收。Gemini 搜索真实探测超时，IBKR 新用户名仍等待或未登录 Gateway；IBKR_ACCOUNT 和 SEC_USER_AGENT 之前未配置。未修改用户 `.env`、未启动真实 Bot、未自动发消息或创建 Codex 自动化。
 
 原版验收、准确运行命令和提交见 [Plan.md](Plan.md)、[Session_Handoff.md](Session_Handoff.md)；运行说明见 [README.md](README.md)。新增文档确认后，按计划连续实现及验证，重大选型变化才重新提问。
 

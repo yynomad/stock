@@ -24,7 +24,7 @@ class History:
         identity=uuid.uuid4().hex
         can_store=all(policies[i.source].store_analysis for i in items)
         with self.store.lock,self.store.conn:
-            self.store.conn.execute('INSERT INTO brief_reports VALUES(?,?,?,?,?,?,?)',(identity,owner,day,'preview',text if can_store else '[analysis display-only: source policy]',json.dumps(meta,ensure_ascii=False),time.time()))
+            self.store.conn.execute('INSERT INTO brief_reports VALUES(?,?,?,?,?,?,?)',(identity,owner,day,'preview',text if can_store else '[analysis display-only: source policy]',json.dumps(meta,ensure_ascii=False),meta.get('asof',time.time())))
             for item in items:
                 policy=policies[item.source];policy.validate()
                 self.store.conn.execute('INSERT OR REPLACE INTO brief_evidence VALUES(?,?,?,?,?)',(item.identity,item.fingerprint,item.event_key,json.dumps(item.metadata(policy),ensure_ascii=False),time.time()))

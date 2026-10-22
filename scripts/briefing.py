@@ -11,7 +11,7 @@ sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
 def main():
     parser=argparse.ArgumentParser()
     parser.add_argument('--offline',action='store_true')
-    parser.add_argument('--scenario',default='pipeline',choices=['pipeline','sources'])
+    parser.add_argument('--scenario',default='pipeline',choices=['pipeline','sources','research','budget'])
     args=parser.parse_args()
     if not args.offline:parser.error('live preview will be added after source implementation; use --offline')
     os.environ['STOCKMAN_OFFLINE']='1';os.environ['LANGSMITH_TRACING']='false'
@@ -20,6 +20,9 @@ def main():
         if args.scenario=='sources':
             from lib.stock_briefing.demo import sources_demo
             result=sources_demo(directory)
+        elif args.scenario in ('research','budget'):
+            from lib.stock_briefing.demo import research_demo
+            result=research_demo(directory,args.scenario=='budget')
         else:result=run(args.scenario,directory)
         print(json.dumps(result,ensure_ascii=False))
 if __name__=='__main__':main()

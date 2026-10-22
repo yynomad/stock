@@ -67,6 +67,10 @@ class OfflineModel(BaseChatModel):
         return ChatResult(generations=[ChatGeneration(message=response)])
 
 
+def create_research_agent(model,tools=(),system_prompt='',middleware=()):
+    """Shared research-role factory for on-demand and scheduled evidence analysis."""
+    return create_agent(model,tools=list(tools),system_prompt=system_prompt,middleware=list(middleware),name='research')
+
 class AgentRuntime:
     def __init__(self, data_dir=None, model=None, services=None):
         directory=Path(data_dir or os.getenv('STOCKMAN_DATA_DIR','runtime'))
@@ -90,7 +94,8 @@ class AgentRuntime:
             return json.dumps({'error':'对应业务工具尚未配置','request':request},ensure_ascii=False)
         for role,prompt in roles.items():
             tool=StructuredTool.from_function(self.services.get(role,unavailable),name=role+'_tool',description=prompt)
-            self.children[role]=create_agent(models[role],tools=[tool],system_prompt=common+prompt,middleware=self._middleware(role),name=role)
+            if role=='research':self.children[role]=create_research_agent(models[role],[tool],common+prompt,self._middleware(role))
+            else:self.children[role]=create_agent(models[role],tools=[tool],system_prompt=common+prompt,middleware=self._middleware(role),name=role)
         delegates=[]
         for role in roles:
             # Hide captured default from the tool schema.
