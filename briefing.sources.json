@@ -1,0 +1,20 @@
+{
+  "_notes": "SEC metadata only. RSS summaries from Federal Reserve, public domain except credited third-party works. Custom sources need explicit review. No full third-party SEC filing bodies fetched. Extend issuer registry for your holdings; unmapped ETFs remain explicitly uncovered.",
+  "issuers": {
+    "AAPL": {"name":"Apple Inc.","cik":"320193"},
+    "MSFT": {"name":"Microsoft Corporation","cik":"789019"},
+    "NVDA": {"name":"NVIDIA Corporation","cik":"1045810"},
+    "AMD": {"name":"Advanced Micro Devices, Inc.","cik":"2488"},
+    "TSM": {"name":"Taiwan Semiconductor Manufacturing Company Limited","cik":"1046179"},
+    "AMZN": {"name":"Amazon.com, Inc.","cik":"1018724"},
+    "META": {"name":"Meta Platforms, Inc.","cik":"1326801"},
+    "GOOGL": {"name":"Alphabet Inc.","cik":"1652044"},
+    "TSLA": {"name":"Tesla, Inc.","cik":"1318605"}
+  },
+  "rss": [{
+    "url":"https://www.federalreserve.gov/feeds/press_monetary.xml",
+    "macro":true,
+    "policy":{"source":"fed:monetary","review_url":"https://www.federalreserve.gov/disclaimer.htm","reviewed":true,"analyze":true,"store_metadata":true,"store_body":false,"store_analysis":true}
+  }],
+  "relationship_proposals": []
+}

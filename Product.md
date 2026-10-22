@@ -167,3 +167,11 @@
 - [Google 接地条款](https://ai.google.dev/gemini-api/terms#grounding-with-google-search)
 - [Gemini 价格](https://ai.google.dev/gemini-api/docs/pricing#gemini-3.5-flash-lite)
 - [Alpha Vantage 新闻接口（未选）](https://www.alphavantage.co/documentation/#news-sentiment)
+
+## N2 来源覆盖与关系识别的实际边界
+
+默认 registry 为 `briefing.sources.json`：9 个常见发行人的 SEC 申报元数据（不是文件正文），美联储货币政策 RSS。SEC 仅确认申报类型和时间，不从标题推断业绩；未知发行人和 ETF 公司财务明确缺失。用户可配置已核对权限的官方 RSS 及发行人名称／CIK，不从 Google 接地发现采集目标。
+
+关系只识别材料中明确的供应／购买／竞争句式，保存原句、链接和核对时间，180 天后标旧并停止扩展关注范围；不靠实体共现或模型记忆补关系。保守识别可能漏掉复杂表述，缺少关系不表示不存在关系。
+
+权限依据：[SEC 开发资料](https://www.sec.gov/about/developer-resources)、[SEC APIs](https://www.sec.gov/search-filings/edgar-application-programming-interfaces)、[美联储 RSS](https://www.federalreserve.gov/feeds/feeds.htm)、[美联储版权说明](https://www.federalreserve.gov/disclaimer.htm)。SEC 限速全进程低于 10 次／秒；美联储说明除标明第三方作品外内容为公共领域，简报保留来源。自定义源必须明确审核分析及保存能力。
