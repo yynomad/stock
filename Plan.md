@@ -1,144 +1,49 @@
 # StockMan 实施计划
 
-状态：用户已确认文档并授权连续实施；M1 已通过，M1、M2 已通过；M3 离线验收通过，真实 IBKR 待账号配置；M4 离线通过，继续 M5。本文描述计划，不代表代码或脚本已经存在。
-范围依据：[Product.md](Product.md)。恢复工作时先读 [AGENTS.md](AGENTS.md) 与 [Session_Handoff.md](Session_Handoff.md)。
+状态：用户已确认文档及默认值并授权连续执行。M1—M6 的离线实现与验收完成；真实 IBKR、完整 Gemini／搜索、SEC 及 Telegram 用户端验收尚未完成，产品不标为全部通过。
 
-## 已执行基线检查
+物理目录 `/Users/yao/personal/stock/`，现有项目扩展，未搬移。需求依据 [Product.md](Product.md)，工作规则见 [AGENTS.md](AGENTS.md)，当前状态见 [Session_Handoff.md](Session_Handoff.md)。
 
-2026-10-22，物理目录 `/Users/yao/personal/stock/`，基线 HEAD `84009ce82f2bae6fe98d10a5fe5b5fefa30c962a`，开始规划前 Git 工作区干净。
+## 里程碑与验收
 
-为不触碰项目日志与凭据，检查在 `/private/tmp` 执行：
-
-```sh
-PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=/Users/yao/personal/stock python3 -B -m unittest discover -s /Users/yao/personal/stock/tests -v
-```
-
-实际结果：5 个仓位决策测试通过；`test_telegram_workflow` 加载失败，当前报 `NameError: name 'gemini_types' is not defined`。该测试还引用已移除的 `_parse_single_symbol_command`。这是已有基线失败，不是本轮已修复的问题。测试 stub 还会污染全局导入，修复必须隔离测试依赖，不能靠本机 `.env` 使其偶然通过。
-
-仓库当前无依赖锁文件、统一验证脚本、下列演示脚本或真实服务 smoke 脚本。README 中的安装命令只是现有说明，不能当成已锁定、已验证的新架构依赖。
-
-## 里程碑与依赖
-
-| 阶段 | 用户可观察结果 | 前置依赖 | 状态 |
+| 阶段 | 依赖 | 已实现的可观察行为与测试 | 状态／提交 |
 | --- | --- | --- | --- |
-| M0 | 需求、选型、验证与运行约束可评审 | 本次讨论 | 已确认 |
-| M1 | 无凭据也能运行测试和离线示例，导入模块没有外部副作用 | M0 确认 | 已完成 |
-| M2 | 请求能由主控分派给独立业务 Agent，状态和调用记录能持久保存 | M1 | 已完成 |
-| M3 | IBKR 与截图分别形成有来源的持仓并完成复盘 | M2 | 离线完成，真实 IBKR 未验证 |
-| M4 | 单股及 ETF 研究具有可核对证据和缺失提示 | M2；组合研究依赖 M3 | 离线完成，真实搜索未验证 |
-| M5 | Telegram 价格事件触发分析并去重提醒，可停止且可恢复 | M3、M4 | 离线完成，用户真实 Telegram 验收待办 |
-| M6 | 完整离线闭环、学习示例、运行文档及逐项真实验收 | M1—M5 | 未开始 |
+| M0 | 需求讨论 | 四份具体文档、选型、验收和默认值已获确认 | `a8902af` |
+| M1 | M0 | 无凭据导入无网络／线程／日志副作用；修复原有失败；锁定依赖；统一语法、文档与测试入口 | `4ab3060`、`3de6de0` |
+| M2 | M1 | 实际 LangChain 主控＋三子 Agent 工具循环；调用记录、预算、错误和 SQLite 重启；会话隔离 | `ecfd5d1` |
+| M3 | M2 | IBKR 指定账户、完整快照、分数股、超时／断线；图片只读一次且来源隔离；未知／空头／不适用资产 | `4a8f57b`，真实 L1 待办 |
+| M4 | M2；组合依赖 M3 | 报价按事件时间选择；SEC 报告期、单位与修订；ETF 适用性；引用校验、新闻展示与缓存隔离 | `068081d`，真实研究待办 |
+| M5 | M3、M4 | 本人 Telegram 文字／图片分派；价格事件、交易时段、乱序／过期过滤、重启去重、每日限额与投递状态 | `85e9140`，真实 Telegram 待办 |
+| M6 | M1—M5 | 完整双来源到研究及提醒闭环；本地 CLI、学习与部署说明；补齐部分失败、图片恢复、有限重试和真实验收记录 | 包含本记录的提交；离线通过 |
 
-## 验证命令约定
+每个独立行为改动配测试并验证后提交；Stop-and-Fix：失败先修复重跑，不削弱断言、不推进依赖失败的工作。旧规划基线为 `84009ce`，当时 5 个仓位测试通过、Telegram 导入失败；已在 M1 修复，不再是当前问题。
 
-以下命令均从项目根目录执行；`venv/bin/python` 指项目虚拟环境解释器。
+## 准确验证命令
 
-- C1：`venv/bin/python -m pip check`：依赖一致性，无冲突。
-- C2：`venv/bin/python -m unittest discover -s tests -v`：所有离线测试通过，无真实请求或消息发送。
-- C3：`venv/bin/python scripts/validate.py`：**M1 待创建**，执行隔离配置／临时日志下的全量离线测试、Python AST 语法检查、文档与配置一致性检查；失败非零退出。
-- D1：`venv/bin/python scripts/demo.py --offline --scenario routing`：**M2 待创建**，展示不同任务选择不同 Agent。
-- D2：`venv/bin/python scripts/demo.py --offline --scenario persistence`：**M2 待创建**，展示保存与恢复。
-- D3：`venv/bin/python scripts/demo.py --offline --scenario portfolio`：**M3 待创建**，分别演示 IBKR／截图持仓、来源隔离与失败路径。
-- D4：`venv/bin/python scripts/demo.py --offline --scenario research`：**M4 待创建**，展示股票／ETF 研究及来源缺失处理。
-- D5：`venv/bin/python scripts/demo.py --offline --scenario monitor`：**M5 待创建**，演示有效事件、过期行情、去重及重启。
-- D6：`venv/bin/python scripts/demo.py --offline --scenario end-to-end`：**M6 待创建**，双来源持仓到研究与提醒，投递使用假发送器。
-- L1：`venv/bin/python scripts/smoke.py --service ibkr --read-only`：**M3 待创建**，真实查询指定账户；无交易请求，缺少登录／账户配置时标记未验证并非零退出。
-- L2：`venv/bin/python scripts/smoke.py --service gemini --symbol AAPL`：**M4 待创建**，显式运行才调用真实 Gemini 及搜索，记录模型、引用及用量；会消耗供应商额度。
-- L3：`venv/bin/python scripts/smoke.py --service telegram --dry-run`：**M5 待创建**，检查格式和分段，不发送真实消息。真实发送由用户在自己 Bot 中完成验收。
+以下从项目根目录执行，均已创建。统一入口 C3 在临时目录禁用 dotenv、清空凭据和禁止 socket 连接。
 
-不宣称当前已经存在上述计划脚本。M1 创建准确的依赖文件与安装命令，之后每阶段将“待创建”更新为实际状态。
+| 编号 | 命令 | 预期结果及实际状态 |
+| --- | --- | --- |
+| C1 | `venv/bin/python -m pip check` | 无依赖冲突；已通过 |
+| C2 | `venv/bin/python -m unittest discover -s tests -v` | 全部离线测试通过；最终结果见交接 |
+| C3 | `venv/bin/python scripts/validate.py` | 全量离线测试、Python AST、文档链接／代码围栏、模型配置及依赖检查通过；已通过 |
+| D1 | `venv/bin/python scripts/demo.py --offline --scenario routing` | 持仓／研究／监控按需委派，无关请求不调用业务工具；通过 |
+| D2 | `venv/bin/python scripts/demo.py --offline --scenario persistence` | 业务任务和 LangChain 会话在重启后保留；通过 |
+| D3 | `venv/bin/python scripts/demo.py --offline --scenario portfolio` | 截图持仓独立分析，双来源和失败边界另由测试覆盖；通过 |
+| D4 | `venv/bin/python scripts/demo.py --offline --scenario research` | ETF 不套公司财务，缺少新闻明确说明；股票、引用和口径由测试覆盖；通过 |
+| D5 | `venv/bin/python scripts/demo.py --offline --scenario monitor` | 有效事件、过期报价与持久化去重；通过 |
+| D6 | `venv/bin/python scripts/demo.py --offline --scenario end-to-end` | 模拟 IBKR／截图→股票／ETF 研究→监控→一次假投递→重启去重→停止；通过 |
+| L1 | `venv/bin/python scripts/smoke.py --service ibkr --read-only` | 目标联名账户真实读取后人工核对；未运行，用户仍等待或未登录 Gateway |
+| L2 | `venv/bin/python scripts/smoke.py --service gemini --symbol AAPL` | 实际模型、接地来源和用量；已运行，75 秒总超时，退出 2，未验证成功 |
+| L3 | `venv/bin/python scripts/smoke.py --service telegram --dry-run` | HTML 转义和分段检查，不发送消息；通过 |
 
-## M1：恢复可靠基线
+另外实测 `scripts/chat.py --offline` 和 `scripts/tasks.py` 的写入、读取闭环。真实 Bot 未自动启动，未修改用户 `.env`，未发真实 Telegram 消息。
 
-目标：没有 Gemini、Telegram 或 IBKR 凭据时也能导入模块、运行离线测试并得到明确配置状态。
+## 仍需执行的真实验收
 
-- 修复 Gemini 条件导入与工具定义异常，为无 Key、缺依赖和无效配置添加回归测试。
-- 替换过时命令解析断言，测试当前自然语言消息分派、报告格式和授权边界；保留用户关心的行为覆盖，不通过删测试伪造成功。
-- 移除导入时日志文件写入、网络请求或线程启动；隔离当前全局依赖 stubs。
-- 创建经过兼容性验证的依赖清单与可重复安装方式；延续 Python，核实已有 Python 3.10.14 与所需版本兼容。若必须升级解释器，先说明原因并确认。
-- 创建 C3 与文档检查，扩展配置模板并忽略未来数据库、检查点和运行记录；不触碰用户 `.env` 值。
+1. **IBKR**：新用户名获批、登录 Gateway、启用只读 Socket API、配置联名账户 ID；L1 成功后人工对比持仓、权限和手机并发。模拟器不证明服务兼容，特别是当前固定的 PyPI `ibapi` SDK。
+2. **Gemini／研究**：检查已选模型权限、网络代理及搜索额度，重跑 L2；再从本地 CLI 检查实际 Agent 委派、新闻引用和报告。基础 HTTP 可达不代表生成或搜索成功，不自动换供应商或型号。
+3. **SEC／Yahoo**：用户填写真实可联系的 `SEC_USER_AGENT`；公开 AAPL 与 QQQ 分别确认公司财务／基金资料、报告期、价格事件时间和缺失项。基础 Yahoo 地址出现 429，实际数据尚待验收。
+4. **Telegram**：用户启动本人 Bot，依次验证文字复盘、单股／ETF 研究、图片、状态、开始及停止；打开新闻 HTML 附件核对原文、来源、关联搜索建议。检查非授权用户被拒绝、长消息可读。发生未知投递先人工核实，避免重复发送。
 
-验收：C1、C2、C3 全通过，清空凭据和临时工作目录下结果一致；没有真实消息。验收后提交独立修复，再更新计划和交接并提交。
-
-## M2：可观察的主控与子 Agent
-
-目标：用户能看到任务如何被主控分派，重启后能继续会话并查到任务状态。
-
-- 建立 LangChain 主控与三个独立业务 Agent；统一使用 `gemini-3.5-flash-lite` 配置，不手写 LangGraph 编排。
-- 定义任务、工具结果、证据、错误和状态的数据契约；按作用域传递信息，使用假模型验证真实工具调用循环。
-- SQLite 保存任务、会话检查点、持仓／研究引用、监控配置及提醒状态；区分检查点与业务事实。
-- 增加模型／工具调用上限、可重试错误策略和中止状态；日志包含 task/agent/tool/status/duration，不记录凭据或隐藏推理。
-- 创建 D1、D2；测试任务分派、无关对话、未知工具、子任务失败、调用限额、进程重启、并发写入与会话隔离。
-
-验收：C1、C2、C3、D1、D2 全通过；路由测试必须验证实际工具调用与返回传播，不只检查 Agent 名称。
-
-## M3：双来源持仓与复盘
-
-目标：IBKR 和截图均可产生明确来源的持仓及复盘报告。
-
-- 使用独立 IBKR 查询适配器连接用户已登录的 Gateway；核对账户 ID，读取完整快照后再原子保存；处理分数股、币种和可空成本。
-- 保留本地图片与 Telegram 图片入口；一次识图后复用解析结果，校验结构、类型、缺失字段和标的范围；不把 OCR 内容当指令。
-- 不将两来源股数相加；截图不覆盖 IBKR。用户显式选择截图时用该截图分析，断线使用缓存需标明时间。
-- 保留现有 PA 与仓位规则；补足行情不足、未知持仓、缺失成本、空组合、空头及不适用资产的边界行为。
-- 创建 D3、L1。IBKR 模拟器覆盖未登录、超时、断线、错误账户、部分回调和重连；图片用合成数据，避免把真实账户截图提交仓库。
-
-验收：C1—C3、D1—D3 通过。L1 仅在用户账号获批并配置后执行，人工对比联名账户持仓；检查 Read-Only API 和手机并发登录。缺少条件则真实验收保持“未验证”，可继续不依赖它的离线开发。
-
-## M4：有证据的研究
-
-目标：用户指定股票或 ETF，可得到适用、可追溯且说明缺失数据的研究报告。
-
-- 实现 Yahoo 数据适配器的时间戳、来源和数据质量校验；修复按“盘前价优先”固定取值导致选中旧报价的问题，增加回归测试。
-- SEC 工具获取公司标识、申报记录和基础财务；代码处理报告期、单位、累计／单季、年度及修订数据，缺失时不由模型编数字。
-- ETF 使用 Yahoo 可取得的基金资料，区分不适用指标与缺失指标。
-- 将 Google 搜索接地封装为研究工具；校验 LangChain／Google SDK 的兼容性、付费层和引用返回格式。验证搜索结果展示及保存要求，不绕过来源限制；若 Telegram 无法满足要求则记录具体阻塞并讨论替代，不擅自换供应商。
-- 创建 D4、L2。测试限流、缺失、错误报告期、来源矛盾、无新闻、伪造引用及工具结果中的恶意指令。
-
-验收：C1—C3、D4 通过。L2 记录真实模型、日期、来源、Token／搜索调用；无 Key、无搜索权限或网络不可达时不得宣称真实研究通过。
-
-## M5：Telegram 与事件监控
-
-目标：用户通过 Telegram 发起复盘和研究，开始／停止监控，价格事件触发后收到一次有依据的解释。
-
-- 接入文字与图片路由，保留授权用户检查、HTML 转义、长消息分段和引用格式；导入不启动 Bot 或修改 webhook。
-- 普通代码检查交易时段、行情时间、越界状态及缓冲，只有有效事件才委派主控／监控 Agent；缺少数据或休眠期间不补发伪实时事件。
-- 持久保存规则、事件 ID、每日限额和投递状态；重试不得把未知投递结果当成功，无法保证网络故障下绝对一次投递时如实记录。
-- 重启加载监控配置；开始／停止、无标的、缓存过期、周末节假日和夏令时有可观察反馈。
-- 创建 D5、L3；测试假时钟、乱序／过期／缺失时间报价、重复事件、重启、限额与发送失败。不得把旧 `/test`、`/analyze` 文档作为当前行为的唯一依据。
-
-验收：C1—C3、D5、L3 通过；用户在自己的 Telegram 会话中确认图片、研究、复盘、状态及停止流程。其他聊天不发送测试消息。
-
-## M6：完整交付
-
-- 创建 D6，提供从输入到工具、Agent、SQLite 与输出的学习说明，解释状态及失败恢复示例。
-- 更新 README、配置模板和四份项目文档；标注实际安装、运行、验证命令与外部前置条件。
-- 运行 C1—C3、D1—D6、L3；真实 L1、L2 和用户 Telegram 验收单独记录。未完成项保持未验证，不因离线通过而标记全部验收通过。
-- 确认 Git 无敏感数据和无关用户改动；每个独立验证改动已提交，交接包含运行入口、真实限制与下一步。
-
-最终状态仅在 AC1—AC8 逐项满足后为完成。如果 IBKR 或模型权限仍不可用，交付可运行离线版本及准确恢复步骤，但真实接入保留待办。
-
-## Stop-and-Fix 与提交
-
-阶段内出现失败，先定位、修复并重跑相关检查；不得推进依赖失败结果的任务。M1 之前已有基线失败被明确隔离为规划证据，本轮只提交文档，不提前写修复代码。实施后按上述依赖连续执行，重大范围／技术变化才重新提问。
-
-每个独立改动和对应测试验证后创建语义化 Git 提交，只暂存相关文件。每阶段更新本文及交接；本轮文档提交号由完成提交后查询，不能预填。
-
-## M1 实际结果（2026-10-22）
-
-已修复无 Key／缺 SDK 导入路径、去除导入日志文件副作用、替换过时测试并移除全局 stubs。已创建 requirements.txt、scripts/validate.py 和配置模板扩展；Python 3.10.14 兼容。C1、C2、C3 通过，12 个离线测试通过，无真实连接或消息。相关提交：包含本记录的提交。下一步 M2。
-
-## M2 实际结果（2026-10-22）
-
-AgentRuntime 通过 LangChain create_agent 和 Agent-as-tool 实现四个 Agent，SQLite 业务状态与 SqliteSaver 检查点可重启恢复。已加入跨子 Agent 调用预算、结构化工具记录及中断状态。C1—C3 与 D1、D2 通过，17 个离线测试通过。模型为显式假模型，只验证协议／业务行为，未宣称真实 Gemini 验收。相关提交：包含本记录的提交。下一步 M3。
-
-## M3 实际结果（2026-10-22）
-
-C1—C3、D1—D3 通过，29 个离线测试通过。IBKR 适配器使用 reqPositionsMulti 限定账户，完整结束回调后才保存；握手超时、错误账户和部分返回有协议测试。截图只识别一次、来源隔离、未知数量／成本和空头规则适用性均有回归测试。新增只读 L1 入口但未连接真实账户，需用户确认用户名获批、配置 IBKR_ACCOUNT 并登录 Gateway 后人工核对。相关提交：包含本记录的提交。下一步 M4。
-
-## M4 实际结果（2026-10-22）
-
-C1—C3、D4 通过，37 个离线测试通过。新增 lib/market.py 与 lib/research.py，报价按实际时间选择、无时间或过期不触发；SEC 财报过滤不可比累计口径并保留报告期与链接；ETF 不请求发行公司财务。新闻原文及关联建议只放在当前请求的临时输出，不进入持久化检查点，已有回归测试。L2 尚未执行，真实模型可用性、付费层与新闻附件展示仍未验证。下一步 M5。相关提交：包含本记录的提交。
-
-## M5 实际结果（2026-10-22）
-
-C1—C3、D5、L3 通过，48 个离线测试通过。bot.py 主入口已接到 Application：主控／三个子 Agent、双来源持仓、研究、监控及所有者授权。规则、事件、限额、Telegram update 去重与 offset 存 SQLite；发送超时记录 unknown，不伪造成功或自动重发。只有本次用户明确监控意图才允许改变规则；正常轮询不调模型。真实 Bot 未启动，真实投递与用户端新闻附件尚待验收。下一步 M6。相关提交：包含本记录的提交。
+这些是外部条件和用户端验收待办，不再添加文档批准关卡。全部 AC1—AC8 满足后才能标为产品整体完成；当前交付为离线已验证的实现及明确的恢复步骤。

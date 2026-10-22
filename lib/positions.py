@@ -47,7 +47,7 @@ def fetch_positions_from_image(image_path: str) -> dict:
 
         print(f"  🖼️  正在通过 Gemini Vision 读取持仓截图...")
 
-        client = genai.Client(api_key=GEMINI_API_KEY)
+        client = genai.Client(api_key=GEMINI_API_KEY,http_options=types.HttpOptions(timeout=45000, retry_options=types.HttpRetryOptions(attempts=3)))
 
         prompt = (
             "请读取这张投资组合截图中的持仓信息，输出严格的 JSON 格式。\n"
@@ -63,20 +63,21 @@ def fetch_positions_from_image(image_path: str) -> dict:
             "7. 瑞士标的（如 XFAB.SW）保留 .SW 后缀\n"
         )
 
-        response = client.models.generate_content(
-            model=GEMINI_MODEL,
-            contents=[
-                types.Part.from_bytes(data=img_data, mime_type=mime_type),
-                types.Part.from_text(text=prompt),
-            ],
-        )
+        with client:
+            response = client.models.generate_content(
+                model=GEMINI_MODEL,
+                contents=[
+                    types.Part.from_bytes(data=img_data, mime_type=mime_type),
+                    types.Part.from_text(text=prompt),
+                ],
+            )
 
         content = response.text.strip()
 
         # 提取 JSON（可能被 markdown 代码块包裹）
         json_match = re.search(r'\{[\s\S]*\}', content)
         if not json_match:
-            print(f"  ⚠️  Gemini 返回内容无法解析为 JSON: {content[:200]}")
+            print("  ⚠️  Gemini 返回内容无法解析为 JSON")
             return None
 
         parsed = json.loads(json_match.group())
@@ -103,8 +104,8 @@ def fetch_positions_from_image(image_path: str) -> dict:
             return None
 
     except Exception as e:
-        print(f"  ❌ Gemini 读图异常: {e}")
-        logging.error(f"Gemini 读图异常: {e}")
+        print(f"  ❌ Gemini 读图异常: {type(e).__name__}")
+        logging.error("Gemini 读图异常: %s",type(e).__name__)
         return None
 
 

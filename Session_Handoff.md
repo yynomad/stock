@@ -1,106 +1,61 @@
 # StockMan 会话交接
 
-更新：2026-10-22，Asia/Shanghai。
-当前阶段：M1—M5 离线完成，真实服务未验证；继续 M6。
+更新：2026-10-22，Asia/Shanghai。用户已经确认需求、选型及文档，并要求“确认 开始实现”“继续”；持续执行授权有效，不重新请求开始确认。
 
-## 位置、仓库与授权
+## 当前状态与位置
 
-- 物理项目目录：`/Users/yao/personal/stock/`，已通过 `pwd -P` 核对。
-- 依据：这是现有项目的功能扩展，保留原位置；聊天附带的 `/Users/yao/Documents/ChatGPT/stock 2/` 不作为物理项目目录。
-- 没有执行目录移动或创建兼容 symlink。当前工具工作区不含该实际目录的默认写权限；文档写入和提交须通过权限机制。
-- remote：`https://github.com/yynomad/stock.git`。
-- 规划基线：`84009ce82f2bae6fe98d10a5fe5b5fefa30c962a`，此前检查工作区干净。
-- 授权：可以讨论需求、调查代码及官方资料、编写／验证／提交规划文档；用户已明确回复“确认 开始实现”并在中断后要求继续；应用实现已授权，默认值随文档确认。
-- 相关文档提交：包含本记录的提交。应用代码仍保持基线。
+M1—M6 的离线实现与验收已完成。真实 IBKR、完整 Gemini／搜索、SEC、Yahoo 数据及 Telegram 用户会话验收仍有待办，产品整体尚未全部真实验收。
 
-## 已确认范围与决定
+物理目录 `/Users/yao/personal/stock/`：既有项目扩展，按用户规则保留原目录。聊天 cwd `/Users/yao/Documents/ChatGPT/stock 2/` 不是物理项目位置。已核对 pwd、Git HEAD、remote 和工作区；没有移动目录或创建 symlink。remote 为 `https://github.com/yynomad/stock.git`。原目录写入通过工具权限机制，未更换位置。
 
-| 项目 | 已确认内容 |
+## 已确认决定
+
+个人使用并练习多 Agent。Python；LangChain `create_agent` 主控＋持仓、研究、监控三个子 Agent；不手写 LangGraph 图，底层 SQLite checkpoint 保留。Gemini 默认 `gemini-3.5-flash-lite`，各 Agent 有独立可选配置；不擅自换型号。SQLite、Mac 本机、Telegram＋本地记录、美股／美股 ETF。IBKR 只读与截图共存；Yahoo 行情、SEC 财务、Gemini Google 搜索新闻。详细选项与理由见 [Product.md](Product.md)。
+
+默认值已随文档获批准：5 分钟检查、2% 缓冲、每标的纽约日最多 5 次、常规时段提醒、报价最大 15 分钟、持仓缓存 24 小时标过期、8 次逻辑模型／12 次工具预算、暂时失败最多重试 2 次。SDK 重试不计为新的逻辑模型调用，也不承诺账单硬上限。
+
+## 实现与提交
+
+| 提交 | 完成内容 |
 | --- | --- |
-| 用途 | 自用并学习多 Agent 开发 |
-| MVP | 持仓复盘、单标的研究、价格事件监控的最小闭环 |
-| 架构 | 一个主控＋持仓、研究、监控三个业务 Agent |
-| 框架 | LangChain 主控／子 Agent，高层接口优先，不手写 LangGraph 编排 |
-| 模型 | Gemini，具体选 `gemini-3.5-flash-lite`；用户明确选 B，不能改回此前推荐的 3.8 Flash |
-| 入口 | Telegram＋本地执行记录，保留本地图片入口 |
-| 标的 | 第一版仅美股及美股 ETF |
-| 持仓 | IBKR API 同步，并保留现有图片识别；用户明确要求不删除图片方式 |
-| IBKR | 股票在用户和妻子的联名账户；为用户本人添加程序专用第二用户名，主用户名继续日常使用 |
-| 行情 | Yahoo/yfinance，检查数据时间，过期不触发提醒 |
-| 财务 | SEC 官方披露＋Yahoo 补充资料，ETF 单独解释适用资料 |
-| 新闻 | Gemini＋Google 搜索接地 |
-| 存储 | SQLite |
-| 运行 | Mac 本机；沿用现有 Python 项目 |
+| `a8902af` | 具体需求、计划、规则和交接文档 |
+| `4ab3060`、`3de6de0` | 修复旧基线导入／测试，锁依赖，隔离统一检查 |
+| `ecfd5d1` | LangChain 主控＋三子 Agent、SQLite、预算、结构化调用记录 |
+| `4a8f57b` | 限定账户 IBKR 完整快照、截图独立来源、持仓校验与复盘 |
+| `068081d` | 带事件时间行情、SEC 报告期、ETF、接地引用与临时新闻输出 |
+| `85e9140` | 本人 Telegram 入口、图片、持久监控、交易时段、去重与投递状态 |
+| 包含本记录的提交 | 完整 D6、CLI、学习文档、有限重试、部分失败与投递状态、图片恢复与更多回归测试 |
 
-详细选项、推荐、用户选择和原因见 `Product.md`，不得重复提问已确认事项。具体轮询参数、时段、来源优先级及执行上限为文档中明确标注的提议默认值，尚不冒充会话确认。
+入口在 lib/application.py；bot.py 的 main 已接入新应用。lib/agents.py 是实际框架工具循环；lib/storage.py 与 checkpoints.sqlite 分别保存业务及框架状态。lib/offline.py 所有数据／模型均为合成，禁止冒充真实验证。
 
-## IBKR 当前真实状态
+## 验证结果
 
-- 用户已提交程序专用用户名申请。此前截图显示该用户名关联用户本人“第一持有人”，有分配的 `SecondHolder` 角色；角色名不证明只读。
-- 截图先显示待定且无待办，随后新用户登录页明确“用户申请已提交待处理”。尚未收到用户确认获批。
-- 页面表示正常情况下美东工作日上午 11 点前的申请会在下一工作日结束前处理；这是页面通常时限，不应转换成保证完成时间。
-- 尚未验证新用户名能读联名账户、实际权限、手机与 Gateway 并发、Read-Only API 或 API 查询。
-- 实施时先用模拟 Gateway；账号就绪后检查账户白名单、持仓一致性和只读配置。不要读取空个人账户并据此报告联名持仓为空，不把不同账户或截图仓位相加。
+- C1 pip check、C2 直接 unittest 和 C3 `venv/bin/python scripts/validate.py`：当前 60 个离线测试通过，AST／文档／配置与 pip check 通过；禁止 socket 连接、隔离凭据及数据目录。
+- D1—D6 六个演示通过；D6 完成双来源持仓、股票与 ETF 研究、规则创建、事件假发送、重启去重和停止。`scripts/chat.py --offline`＋`scripts/tasks.py` 读写通过。
+- L3 Telegram dry-run 通过，6 段合成文本，没有发送真实消息。
+- L2 真实 Gemini 搜索：首次长时间无输出已停止；加总时限后再次返回 `unverified: Gemini probe exceeded 75-second total deadline`，退出码 2。没有来源／用量可验证，不能报接入成功。
+- 基础网络诊断：Google API 根地址 HTTP 404（连接可达，不证明模型可用）；Yahoo 根地址 HTTP 429（实际行情未验证）。模型元数据只读探测出现 ConnectTimeout。网络表现不稳定，无法据此判断模型是否有权限或不存在。
+- L1 未运行。用户最新明确回复“仍在等待或尚未登录 Gateway”，因此真实持仓与手机并发保持待办。
+- 配置存在性检查只记录是否配置：Gemini Key、Telegram Token 和 Chat ID 存在；IBKR_ACCOUNT、SEC_USER_AGENT 未配置。未打印密钥或修改 `.env`。
+- 未自动启动真实 Bot、未删 webhook、未发真实 Telegram 消息、未推送 Git 或发布。
 
-## 代码现状与已知问题
+## 已知限制和恢复步骤
 
-- 主要模块：`bot.py`、`premarket_grid_calculator.py`、`analyze_image.py`、`lib/{config,positions,yahoo_data,pa_strategy,position_decision,monitor,watchlist,output}.py`。
-- 现有持仓获取仅 Gemini 截图；没有 IBKR、LangChain 或 SQLite 的新实现。
-- `lib/config.py` 的当前默认模型仍为 `gemini-2.5-flash`，这只是旧实现，尚未改为已选的 3.5 Flash-Lite。
-- Gemini 条件导入而无条件定义工具，导致无凭据时导入失败；Telegram 测试还引用已移除函数且使用全局依赖 stubs。
-- 固定优先盘前价可能选到旧数据；图片处理存在重复识图路径；持仓未知值、快照来源和运行状态持久化需要补齐。
-- README 与当前命令、关注列表行为不一致。仓库无统一依赖清单或验证脚本。修复及新增均列入计划，当前未改。
+1. **IBKR 外部前置条件**：等新用户名获批并登录 Gateway，核对联名账户访问权限、Socket API 和 Read-Only API，填 IBKR_ACCOUNT 后运行 L1；人工对比持仓。角色名不能证明只读，SDK 与实际 Gateway 版本兼容性仍未知。
+2. **Gemini／搜索**：保留已选模型，检查网络代理、项目权限、额度；重跑 L2 和真实本地 Agent 请求。根地址可达不能解释生成超时的全部原因，没有用未经验证的猜测代替结论。
+3. **SEC／Yahoo**：填写 SEC_USER_AGENT 的应用名及联系邮箱，再验收 AAPL／QQQ 的财务、基金资料、行情和来源。Yahoo 限流时缺失提示或跳过事件，不能造数。
+4. **Telegram 人工验收**：用户自己启动 bot.py，在本人会话检查复盘、研究、截图、监控状态和停止；打开新闻 HTML 附件验证原文／来源／搜索建议。临时新闻不写入库或检查点，重启不会重发旧附件。
+5. **运行边界**：同一数据目录只运行一个进程。监控关键位在创建／重新开始时更新，不自动每日刷新；展示创建和 K 线日期。仅常规时段有效报价触发，无后台持续新闻扫描。
+6. **恢复边界**：工具异常任务标 partial；任务、消息投递分开。未知或部分投递不自动重发。中断任务仅有待执行检查点且无后续会话任务时允许手动 resume；截图恢复保留来源 ID。无检查点不能宣称恢复成功。
 
-## 实际验证证据
-
-在 `/private/tmp` 执行：
+## 运行与下一步
 
 ```sh
-PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=/Users/yao/personal/stock python3 -B -m unittest discover -s /Users/yao/personal/stock/tests -v
+cd /Users/yao/personal/stock
+venv/bin/python scripts/validate.py
+venv/bin/python scripts/demo.py --offline --scenario end-to-end
+venv/bin/python scripts/chat.py --offline "研究 QQQ"
+venv/bin/python scripts/tasks.py --data-dir runtime/offline
 ```
 
-结果：5 个仓位决策测试通过，Telegram 测试模块导入失败，退出码 1。当前错误为 `NameError: name 'gemini_types' is not defined`。不能声明所有测试通过；M1 是首个修复阶段。
-
-`git status --short`：规划前无改动。`git rev-parse HEAD` 和 `git remote -v` 已核对。未安装依赖，未启动 Bot，未连接 IBKR，未进行真实 Gemini／搜索／Telegram 验收。
-
-本轮四份文档已在临时目录完成 70 项文档一致性／现有 Python AST 语法检查，退出码 0；涵盖文档结构、交叉链接、明确选定的模型、验收条目、阶段及授权状态。原项目写入时需再次核对文件内容和 Git 差异。实际代码测试的已有失败不因文档校验通过而消失。
-
-## 运行入口与恢复步骤
-
-现有入口仍为：
-
-```sh
-venv/bin/python premarket_grid_calculator.py
-venv/bin/python premarket_grid_calculator.py --image <图片路径>
-venv/bin/python analyze_image.py <图片路径>
-venv/bin/python bot.py
-```
-
-这些入口会使用实际服务，不能作为无副作用测试。新架构的统一验证、演示和 smoke 脚本尚未创建，准确的计划命令在 `Plan.md`。
-
-## 下一步
-
-1. 本轮落盘及提交以“包含本记录的提交”为凭据；交付前核对四份文档与草稿一致，确认提交仅含四份规划文档。若写入或提交受权限阻塞，明确记录失败，不能宣称已落盘或提交。
-2. 用户评审四份文档及 `Product.md` 的提议默认值。向用户提供文档链接、M1—M6 摘要与真实基线失败说明，明确请求文档确认。不再重复请求实现确认。
-3. 用户确认后，重新检查物理目录和 Git 状态，先完成 M1，再按计划持续推进；每阶段验证、提交、更新交接。
-4. 外部服务不可用时继续已授权且独立的离线工作，保留真实验收的精确阻塞和恢复条件。
-
-## 实施更新：M1 已完成
-
-用户已明确确认文档并授权持续实施；原始规划状态和基线错误段落仅为历史记录。当前首个完成阶段为 M1：12 个离线测试、AST／文档校验与 pip check 通过。依赖锁定在 requirements.txt；现有 Python 3.10.14 可用。未启动真实 Bot 或连接外部金融／模型服务。相关提交：包含本记录的提交。下一步 M2：LangChain Agent-as-tool 和 SQLite 状态、任务及调用记录。
-
-## 实施更新：M2 已完成
-
-M1 提交 4ab3060，空白修正另有独立提交。M2 的 17 个测试与 D1、D2、依赖及语法检查通过；新增 lib/agents.py、lib/storage.py。实际 LangChain 路由、工具错误、预算中止和 SQLite 重启行为已离线验证。应用尚未接入业务数据工具；下一步 M3。相关提交：包含本记录的提交。
-
-## 实施更新：M3 离线完成
-
-29 个离线测试与 D1—D3、C1—C3 通过。新增 lib/ibkr.py、lib/portfolio.py 与 L1 入口；图片入口保留且不重复识图、不回退其他组合。真实 IBKR 未运行，账户申请／权限状态仍未知。下一步 M4：带时间戳行情、SEC、Google 搜索引用与研究工具。相关提交：包含本记录的提交。
-
-## 实施更新：M4 离线完成
-
-37 个测试与 D4、C1—C3 通过。Google 新闻原文通过临时输出单独展示，不喂入持久化对话或新闻库；真实服务／Telegram HTML附件仍待联调。下一步 M5 连接应用入口、消息传输与持久化监控。相关提交：包含本记录的提交。
-
-## 实施更新：M5 离线完成
-
-48 个测试、监控演示及 Telegram dry-run 通过。lib/application.py 是应用组合入口，bot.py main 转入该入口。未启动真实 Bot，未删 webhook。配置存在性检查发现 GEMINI_API_KEY／TG_BOT_TOKEN／TG_CHAT_ID 已配置，IBKR_ACCOUNT／SEC_USER_AGENT 尚未配置；没有输出密钥或修改用户 .env。下一步 M6：完整离线演示、运行／学习文档及可行的只读真实联调。相关提交：包含本记录的提交。
+真实入口和配置步骤见 [README.md](README.md)，代码学习见 [Learning.md](Learning.md)，逐项验收命令见 [Plan.md](Plan.md)。下一步是用户配置／登录后按外部验收步骤逐项核实，继续修复真实联调暴露的问题。当前无需再做需求确认，不把外部待办写成完成。

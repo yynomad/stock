@@ -27,14 +27,17 @@ class Telegram:
         if len(response.content)>10*1024*1024:raise ValueError('截图过大，请使用小于10MB的图片')
         return response.content
     def deliver(self,result):
+        delivered=False
         try:
             for chunk in message_chunks(result['text']+'\n任务编号：'+result.get('task_id','')):
                 response=requests.post(self.base+'/sendMessage',json={'chat_id':self.chat,'text':chunk,'parse_mode':'HTML'},timeout=20,proxies=self.proxies)
-                if response.status_code!=200:return 'failed'
+                if response.status_code!=200 or not response.json().get('ok',False):return 'unknown' if delivered else 'failed'
+                delivered=True
             for bundle in result.get('news',[]):
                 document=io.BytesIO(news_html(bundle).encode())
                 response=requests.post(self.base+'/sendDocument',data={'chat_id':self.chat,'caption':'本次新闻检索原文、来源与关联搜索建议'},
                                        files={'document':('news-report.html',document,'text/html')},timeout=20,proxies=self.proxies)
-                if response.status_code!=200:return 'failed'
+                if response.status_code!=200 or not response.json().get('ok',False):return 'unknown' if delivered else 'failed'
+                delivered=True
             return 'sent'
-        except requests.RequestException:return 'unknown'
+        except (requests.RequestException,ValueError):return 'unknown'

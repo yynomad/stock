@@ -2,6 +2,7 @@
 """Opt-in real read-only probes; failures never count as verified."""
 import argparse
 import json
+import subprocess
 from pathlib import Path
 import sys
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
@@ -12,7 +13,14 @@ def main():
     parser.add_argument('--read-only',action='store_true')
     parser.add_argument('--dry-run',action='store_true')
     parser.add_argument('--symbol',default='AAPL')
+    parser.add_argument('--worker',action='store_true',help=argparse.SUPPRESS)
     args=parser.parse_args()
+    if args.service=='gemini' and not args.worker:
+        try:
+            result=subprocess.run([sys.executable,str(Path(__file__).resolve()),'--service','gemini','--symbol',args.symbol,'--worker'],capture_output=True,text=True,timeout=75)
+            print(result.stdout.strip());return result.returncode
+        except subprocess.TimeoutExpired:
+            print(json.dumps({'status':'unverified','reason':'Gemini probe exceeded 75-second total deadline'}));return 2
     try:
         if args.service=='ibkr':
             if not args.read_only:raise ValueError('IBKR probe requires --read-only')
@@ -33,6 +41,6 @@ def main():
             print(json.dumps({'status':'dry_run_passed','chunks':len(chunks),'sent':False}))
         return 0
     except Exception as exc:
-        print(json.dumps({'status':'unverified','reason':str(exc)},ensure_ascii=False))
+        print(json.dumps({'status':'unverified','error_type':type(exc).__name__,'reason':'检查所需配置、服务权限及网络；不打印可能包含凭据的原始异常'},ensure_ascii=False))
         return 2
 if __name__=='__main__':raise SystemExit(main())

@@ -24,7 +24,7 @@ class MonitoringService:
         self.store=store;self.portfolio=portfolio;self.market=market or YahooMarket();self.in_session=in_session
     def command(self,request: str):
         context=CURRENT.get();action=monitor_intent(context.request) if context else None
-        symbols=[valid_symbol(s) for s in re.findall(r'(?<![A-Za-z0-9])([A-Z][A-Z0-9.-]{0,14})(?![A-Za-z0-9])',request) if s not in ('ETF','PA','IBKR','USD')]
+        symbols=[valid_symbol(s) for s in re.findall(r'(?<![A-Za-z0-9])([A-Z][A-Z0-9.-]{0,14})(?![A-Za-z0-9])',context.request if action else request) if s not in ('ETF','PA','IBKR','USD')]
         if action=='stop':
             if symbols:
                 for symbol in symbols:self.store.execute('UPDATE rules SET enabled=0 WHERE symbol=?',(symbol,))
@@ -37,12 +37,13 @@ class MonitoringService:
                 symbols=list(source['positions'])
             rules=[];errors=[]
             for symbol in dict.fromkeys(symbols):
-                pa=analyze_pa(self.market.bars(symbol),'$')
+                bars=self.market.bars(symbol)
+                pa=analyze_pa(bars,'$')
                 if pa.get('pa_error') or not pa.get('support') or not pa.get('resistance'):
                     errors.append({'symbol':symbol,'error':'历史K线不足，未创建监控规则'});continue
                 spec={'symbol':symbol,'support':pa['support'],'resistance':pa['resistance'],
                       'buffer':float(os.getenv('MONITOR_BUFFER_PCT','0.02')),
-                      'created_at':time.time(),'source':source['source'] if source else 'explicit-symbol',
+                      'created_at':time.time(),'bars_asof':bars[-1].get('date') if bars else None,'source':source['source'] if source else 'explicit-symbol',
                       'source_asof':source['asof'] if source else None}
                 self.store.execute("INSERT INTO rules(symbol,spec,enabled) VALUES(?,?,1) ON CONFLICT(symbol) DO UPDATE SET spec=excluded.spec,enabled=1",(symbol,json.dumps(spec)))
                 rules.append(spec)
@@ -56,7 +57,7 @@ class MonitoringService:
         now=time.time() if now is None else now
         if not self.in_session(now) or quote.get('kind')!='regular':return None
         stamp=quote.get('asof');price=quote.get('price')
-        if not quote.get('valid') or not isinstance(stamp,(float,int)) or not isinstance(price,(float,int)):return None
+        if not quote.get('valid') or isinstance(stamp,bool) or isinstance(price,bool) or not isinstance(stamp,(float,int)) or not isinstance(price,(float,int)):return None
         if not math.isfinite(price) or price<=0 or not math.isfinite(stamp) or not 0<=now-stamp<=float(os.getenv('STOCKMAN_QUOTE_MAX_AGE','900')):return None
         with self.store.lock,self.store.conn:
             rule=self.store.conn.execute('SELECT * FROM rules WHERE symbol=? AND enabled=1',(symbol,)).fetchone()

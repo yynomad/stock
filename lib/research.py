@@ -59,8 +59,17 @@ class SECClient:
         if '@' not in identity:raise ValueError('请配置 SEC_USER_AGENT：应用名及可联系邮箱')
         with self.lock:
             time.sleep(max(0,0.15-(time.monotonic()-self.last)))
-            response=requests.get(url,headers={'User-Agent':identity,'Accept-Encoding':'gzip, deflate'},timeout=15)
-            self.last=time.monotonic();response.raise_for_status();return response.json()
+            for attempt in range(3):
+                try:
+                    response=requests.get(url,headers={'User-Agent':identity,'Accept-Encoding':'gzip, deflate'},timeout=15)
+                    self.last=time.monotonic()
+                    if response.status_code in (429,500,502,503,504) and attempt<2:
+                        time.sleep(0.5*(2**attempt));continue
+                    response.raise_for_status();return response.json()
+                except (requests.Timeout,requests.ConnectionError):
+                    self.last=time.monotonic()
+                    if attempt==2:raise
+                    time.sleep(0.5*(2**attempt))
     def facts(self,symbol):
         if self.tickers is None:self.tickers=self.get('https://www.sec.gov/files/company_tickers.json')
         company=next((row for row in self.tickers.values() if row['ticker']==symbol),None)
@@ -103,7 +112,7 @@ class GoogleNews:
             with context.lock:
                 context.models+=1
                 if context.models>int(os.getenv('STOCKMAN_MAX_MODEL_CALLS','8')):raise CallLimit('搜索模型调用次数达到上限')
-        with genai.Client(api_key=GEMINI_API_KEY,http_options=types.HttpOptions(timeout=45000)) as client:
+        with genai.Client(api_key=GEMINI_API_KEY,http_options=types.HttpOptions(timeout=45000,retry_options=types.HttpRetryOptions(attempts=3))) as client:
             response=client.models.generate_content(model=GEMINI_MODEL,
                 contents=f'研究美股或ETF {symbol} 最近7天的重要公开事件。今天为 {date.today().isoformat()}。用中文说明事实、事件日期与发布日期，并给出来源。无法证实时明确说明，不做下单建议。',
                 config=types.GenerateContentConfig(tools=[types.Tool(google_search=types.GoogleSearch())],max_output_tokens=2048))
@@ -127,7 +136,11 @@ class ResearchService:
         evidence['kind']='ETF' if info.get('quoteType')=='ETF' else 'stock'
         from .market import choose_quote
         evidence['quote']=choose_quote(info)
-        try:evidence['technical']=analyze_pa(self.market.bars(symbol),'$')
+        try:
+            bars=self.market.bars(symbol)
+            evidence['technical']=analyze_pa(bars,'$')
+            evidence['technical_asof']=bars[-1].get('date') if bars else None
+            evidence['technical_source']='Yahoo adjusted daily bars'
         except Exception as exc:evidence['missing'].append('技术数据：'+type(exc).__name__)
         if evidence['kind']=='ETF':
             evidence['fund']={k:info.get(k) for k in ['longName','category','fundFamily','annualReportExpenseRatio','totalAssets']}

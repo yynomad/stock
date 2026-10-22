@@ -13,7 +13,7 @@ ROOT=Path(__file__).resolve().parents[1]
 def main():
     for path in list(ROOT.glob("*.py"))+list((ROOT/"lib").rglob("*.py"))+list((ROOT/"tests").rglob("*.py"))+list((ROOT/"scripts").glob("*.py")):
         ast.parse(path.read_text(),filename=str(path))
-    for name in ["Product.md","Plan.md","AGENTS.md","Session_Handoff.md"]:
+    for name in ["Product.md","Plan.md","AGENTS.md","Session_Handoff.md","README.md","Learning.md"]:
         text=(ROOT/name).read_text()
         assert text.startswith("# ") and text.count("```")%2==0,name
         for target in re.findall(r"\]\(([^)]+)\)",text):
@@ -24,7 +24,7 @@ def main():
              GEMINI_API_KEY="",GOOGLE_API_KEY="",TG_BOT_TOKEN="",TG_CHAT_ID="",LANGSMITH_TRACING="false")
     with tempfile.TemporaryDirectory() as directory:
         env['STOCKMAN_DATA_DIR']=directory
-        result=subprocess.run([sys.executable,"-B","-m","unittest","discover","-s",str(ROOT/'tests'),"-v"],cwd=directory,env=env)
+        result=subprocess.run([sys.executable,"-B","-c", "import socket,sys,unittest; socket.socket.connect=lambda *a,**k: (_ for _ in ()).throw(AssertionError('offline network attempt')); suite=unittest.defaultTestLoader.discover(sys.argv[1]); result=unittest.TextTestRunner(verbosity=2).run(suite); sys.exit(not result.wasSuccessful())",str(ROOT/'tests')],cwd=directory,env=env)
     if result.returncode:
         return result.returncode
     return subprocess.run([sys.executable,"-m","pip","check"],env=env).returncode

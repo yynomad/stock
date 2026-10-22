@@ -1,211 +1,147 @@
-# 盘前 Price Action 策略计算器
+# StockMan 个人持仓助手
 
-每日美股开盘前一次性运行的 PA 策略分析工具。基于 Yahoo Finance 日K线数据，输出加仓 / 减仓 / 观望信号、关键支撑阻力位、ATR 追踪止损与限价单建议，可选推送至 Telegram。
+用 Python 和 LangChain 实现的自用多 Agent 项目。一个主控按请求委派持仓、研究、监控三个 Agent；复用原有 PA 与仓位计算。支持 **IBKR 只读持仓同步和持仓截图**，以 Telegram 交互，在本地 SQLite 保存执行记录。首版支持美股与美股 ETF。
 
-> **风控声明：** 本程序仅提供静态分析与建议，不包含任何下单指令。
+当前离线闭环已实现（60 个测试通过）；真实 IBKR 尚待新用户名获批与 Gateway 登录。Gemini 搜索真实探测超过 75 秒总时限，未验证成功；Telegram 真实会话也尚待验收。不要把合成演示数据当成实际持仓或真实研究。
 
-## 核心功能
+物理项目目录：`/Users/yao/personal/stock/`。完整需求见 [Product.md](Product.md)，实施与逐项验收见 [Plan.md](Plan.md)，学习示例见 [Learning.md](Learning.md)。
 
-- 📈 **趋势判断** — 短/长期均线 + 高低点结构
-- 🎯 **关键价位** — 近 30 日 swing high/low 修正后的支撑 / 阻力
-- 🕯 **K线形态** — Pin Bar、Engulfing（吞没）、连续同向K线检测
-- 🟢 **综合信号** — 趋势 / 位置 / 形态评分 → 加仓 / 减仓 / 观望（含强度）
-- 🧭 **仓位决策** — 结合持仓 / 成本，把 PA 信号转成试探加仓、分批止盈、风控减仓等明确动作
-- 🛑 **ATR 追踪止损** — 20 日最高价 − N×ATR
-- 💸 **限价单建议** — 支撑位 +0.5% 偏移；盘前价偏低时自动修正
-- 📤 **双通道输出** — 控制台美化表格 + Telegram HTML 富文本推送
+## 安装和离线体验
 
-## 项目结构
+已在 Python 3.10.14 验证；使用项目虚拟环境。
 
-```
-stock/
-├── premarket_grid_calculator.py    # 主入口（串流程，~160 行）
-├── lib/
-│   ├── config.py                   # 环境变量 + PA 参数 + WATCHLIST
-│   ├── format_utils.py             # 价格 / 百分比格式化
-│   ├── yahoo_data.py               # Yahoo Finance K线 + 盘前价
-│   ├── pa_strategy.py              # PA 算法核心（趋势 / 形态 / ATR）
-│   ├── position_decision.py        # 仓位动作决策（加仓 / 止盈 / 风控）
-│   └── output.py                   # 控制台表格 + Telegram 消息构建 + 推送
-├── env.template                    # 环境变量模板，复制为 .env 填值
-└── premarket_calculator.log        # 运行日志（gitignored）
-```
-
-## 快速开始
-
-### 1. 安装依赖
-
-```bash
+```sh
+cd /Users/yao/personal/stock
+# 已有 venv 时沿用；首次安装才执行下一行
 python3 -m venv venv
-source venv/bin/activate
-pip install yfinance python-dotenv requests google-genai
+venv/bin/python -m pip install -r requirements.txt
+venv/bin/python scripts/validate.py
+venv/bin/python scripts/demo.py --offline --scenario end-to-end
+venv/bin/python scripts/chat.py --offline "研究 QQQ"
+venv/bin/python scripts/tasks.py --data-dir runtime/offline
 ```
 
-### 2. 配置（可选）
+`demo.py` 使用临时目录，退出后清理；`chat.py --offline` 使用 `runtime/offline`，适合查看检查点和跨次对话。离线模式替换模型、行情、券商、SEC、新闻与识图，输出明确标为合成数据；使用真实 LangChain 工具调用循环和 SQLite，并非真实模型效果验收。统一检查禁止 socket 连接，清空凭据、不读取 `.env`。
 
-复制模板：
+## 配置真实服务
 
-```bash
-cp env.template .env
+首次可复制 `env.template` 为 `.env`；已有 `.env` 请只补所需字段，不覆盖现有值。运行依赖网络和相应服务权限。
+
+| 配置 | 作用 |
+| --- | --- |
+| `GEMINI_API_KEY` | 主控、业务 Agent、截图识别、Google 搜索接地 |
+| `GEMINI_MODEL` | 默认 `gemini-3.5-flash-lite`，按已选方案保持一致 |
+| `IBKR_ACCOUNT` | 填持仓所在的联名账户 ID，不能用空个人账户代替 |
+| `IBKR_HOST` / `IBKR_PORT` | 本机 Gateway 地址及实际 API 端口；模板为 `127.0.0.1:4001`，需核对自己的 Gateway 设置 |
+| `IBKR_CLIENT_ID` | 默认 17，避免与其他 API 客户端冲突 |
+| `SEC_USER_AGENT` | SEC 要求的应用名与可联系邮箱，例如 `StockMan your-email@example.com` |
+| `TG_BOT_TOKEN` / `TG_CHAT_ID` | 本人 Bot 与目标会话 |
+| `TG_ALLOWED_USERS` | 允许的数字用户 ID，逗号分隔；本人私聊可默认使用正数 `TG_CHAT_ID` |
+| `YF_PROXY` | Yahoo／Telegram 使用的代理；Gemini SDK 使用标准网络代理环境变量 |
+| `STOCKMAN_DATA_DIR` | 默认 `runtime`；数据库、检查点、截图仅保存在本机并被 Git 忽略 |
+
+四个 Agent 可分别用 `GEMINI_SUPERVISOR_MODEL`、`GEMINI_PORTFOLIO_MODEL`、`GEMINI_RESEARCH_MODEL`、`GEMINI_MONITOR_MODEL` 覆盖默认值；当前均沿用同一个已选型号。不要在排障时自动更换供应商或开通付费。
+
+模型会收到完成任务所需的持仓与公开资料；截图会发送给 Gemini 识别。IBKR 密码只在用户自己的 Gateway 登录流程输入，不填入项目。运行时禁用 LangSmith 云端追踪，执行记录留在本地。
+
+### IBKR 准备及核对
+
+1. 等程序专用用户名获批，确认它能访问联名账户；核对实际读取权限，`SecondHolder` 这样的角色名本身不代表只读。
+2. 用该用户名在本机 IB Gateway 登录并完成认证。启用 Socket API、勾选 **Read-Only API**，核对端口和受信任的本地地址。
+3. 在 `.env` 填联名账户的 `IBKR_ACCOUNT`，运行只读探测。
+
+```sh
+venv/bin/python scripts/smoke.py --service ibkr --read-only
 ```
 
-按需填写 `.env`：
+程序先完成连接握手并核对可访问账户，再用 `reqPositionsMulti` 查询指定账户；没有注册下单、撤单或资金工具。成功后仍需人工对比联名持仓、分数股及成本，并确认手机主用户名与 Gateway 专用用户名能同时使用。API 无法代替你核验界面上的只读开关。
 
-| 变量 | 说明 | 必需？ |
-|---|---|:---:|
-| `TG_BOT_TOKEN` | Telegram Bot Token（@BotFather 获取） | 否 |
-| `TG_CHAT_ID` | 接收消息的 Chat ID | 否 |
-| `YF_PROXY` | HTTP 代理（如 `http://127.0.0.1:7890`） | 否 |
-| `YF_REQUEST_DELAY` | 标的间请求间隔，秒。默认 5 | 否 |
-| `GEMINI_API_KEY` | Gemini Vision 持仓截图识别 | 否 |
-| `POSITION_*_PCT` | 仓位动作比例，如试探加仓、强止盈等 | 否 |
+未登录、账户错误、超时或快照未完整返回时，不保存伪完整结果；可用同一账户的旧快照时明确标为缓存，超过 24 小时标为过期。没有缓存时可以继续使用截图入口。当前固定 SDK 是 PyPI `ibapi`，与实际 Gateway 版本的兼容性仍需真实联调。
 
-> 全部留空也能跑 — 只输出到控制台、直连 Yahoo。
+## 运行入口
 
-### 3. 编辑监控标的
+本地单次任务不发送 Telegram 消息：
 
-打开 `lib/config.py`，修改 `WATCHLIST`：
-
-```python
-WATCHLIST = {
-    "QQQ": {"currency_sign": "$", "display_name": "QQQ  纳指100 ETF"},
-    "NVDA": {"currency_sign": "$", "display_name": "NVDA 英伟达"},
-    "1321.T": {"currency_sign": "¥", "display_name": "1321 野村日经225"},
-    # ...
-}
+```sh
+venv/bin/python scripts/chat.py "检查持仓"
+venv/bin/python scripts/chat.py "研究 AAPL"
+venv/bin/python scripts/chat.py "检查截图持仓" --image /absolute/path/positions.png
+venv/bin/python scripts/tasks.py
+venv/bin/python scripts/tasks.py --task <任务编号>
 ```
 
-> Yahoo Finance 的代码：东京证交所标的加 `.T`、瑞士加 `.SW`、港股加 `.HK` 等。
+真实研究结果中的 `news` 是原文、来源和关联搜索建议的临时展示包；本地 CLI 输出其原始结构，Telegram 则发送 HTML 附件。新闻不进入持久化对话或新闻缓存库；来源中的发布日期不可取得时保持未知。请在 Telegram 客户端下载／打开附件确认内容和建议显示正常。
 
-### 4. 运行
+启动 Telegram Bot（会连接外部服务；请自己执行）：
 
-```bash
-python premarket_grid_calculator.py
+```sh
+venv/bin/python bot.py
 ```
 
-Telegram Bot 支持单标的测试：
+在本人会话发送以下自然语言，或直接发送持仓截图：
 
 ```text
-/test AAPL
-/test AAPL 10 150
+检查持仓
+研究 AAPL
+研究 QQQ
+开始监控 AAPL
+监控状态
+停止监控 AAPL
+停止监控
 ```
 
-第二种格式表示：测试 AAPL，当前持仓 10 股，成本 150。Bot 会返回简洁结论、PA 强度、关键价位和仓位动作。
+代码对监控变更有额外授权检查：本次用户原文明确要求开始／停止才写规则，工具结果中的指令不能替代授权。一次只研究一个明确股票代码。截图只识别一次并作为本次任务的独立来源，不与 IBKR 数量相加；下次普通复盘默认仍使用 IBKR。
 
-## Telegram 消息规格
+同一数据目录只运行一个应用进程。先停止 Bot，再用本地 CLI 操作其数据目录，避免多个进程同时轮询或恢复任务。`Ctrl+C` 停止 Bot。不会自动删除已有 webhook；若 Bot 的 getUpdates 与 webhook 冲突，先检查自己的 Telegram 配置。
 
-### 单标的测试命令
+原本的单次计算与图片入口继续保留：
 
-用于先拿一只股票验证策略输出，推荐从这个命令开始：
-
-```text
-/test <股票代码> [持仓股数] [平均成本]
+```sh
+venv/bin/python analyze_image.py /absolute/path/positions.png
+venv/bin/python premarket_grid_calculator.py --image /absolute/path/positions.png
+venv/bin/python premarket_grid_calculator.py
 ```
 
-示例：
+这些是旧版直接计算入口，不经过新主控；部分旧入口按既有配置可能推送 Telegram，不能用作离线测试。旧 `/test`、`/analyze`、`watchlist.json` 已不作为新 Agent 入口的指令协议或监控配置来源。新规则在 SQLite 中。
 
-```text
-/test NVDA 10 120
+## 监控、成本及恢复
+
+普通 Python 每 5 分钟检查一次，仅在美股常规交易时段接受有时间戳、未过期的常规报价。按 XNYS 交易日历处理节假日、夏令时和提早收盘；价格超出支撑／阻力 2% 缓冲才产生事件。每标的纽约自然日最多 5 条提醒，状态与事件 ID 持久去重。参数见模板。
+
+关键位取自创建规则时的 Yahoo 日 K 线，保存 `created_at` 和 `bars_asof`，持续沿用直至再次发送“开始监控 AAPL”重算；本版没有自动每日刷新规则。PA 使用调整后日线收盘价，报告注明 K 线日期，与报价事件时间分开。Yahoo 可能延迟、限流或缺数据；默认超过 15 分钟不提醒，休眠后不补发伪实时事件。
+
+正常轮询不用模型；有效事件才进入主控分析。每任务默认最多 8 次逻辑模型调用、12 次 LangChain 工具调用；Google 搜索另计入模型次数，SDK 内部重试不当作新的逻辑调用。暂时性失败最多重试 2 次，发送超时／部分发送标记 `unknown`，不盲目重发。这些预算不构成供应商费用硬上限。
+
+任务状态是 `running`、`completed`、`partial`、`failed`、`interrupted`；任务执行和消息投递分开记录。`completed` 不代表外部数据均已取得，须阅读报告缺失项。进程重启会标出中断任务；仅当确有待执行检查点且没有后续会话任务时可手动恢复：
+
+```sh
+venv/bin/python scripts/chat.py --resume-task <任务编号>
 ```
 
-Bot 返回格式示例：
+没有可恢复检查点时明确失败，不能保证任意网络中断下的绝对一次投递；未知结果先查看 Telegram 与本地记录，再决定是否重新发起请求。原始新闻不保存，因此恢复后的输出不保证包含中断前的新闻附件。
 
-```text
-📌 单标的测试  2026-06-24 09:00:00
+## 验收及尚待完成
 
-NVDA
-结论：止盈 20.0% 当前仓位
-PA：减仓 强度2｜趋势 up
-价格：$145.20
-浮盈亏：+21.0%
-计划：压力/目标 $148.00；风控线 $132.50
-原因：浮盈亏 +21.0%、接近阻力、趋势向上
+```sh
+venv/bin/python -m pip check
+venv/bin/python -m unittest discover -s tests -v
+venv/bin/python scripts/validate.py
+venv/bin/python scripts/demo.py --offline --scenario routing
+venv/bin/python scripts/demo.py --offline --scenario persistence
+venv/bin/python scripts/demo.py --offline --scenario portfolio
+venv/bin/python scripts/demo.py --offline --scenario research
+venv/bin/python scripts/demo.py --offline --scenario monitor
+venv/bin/python scripts/demo.py --offline --scenario end-to-end
+venv/bin/python scripts/smoke.py --service telegram --dry-run
 ```
 
-### 默认 WATCHLIST 分析命令
+真实服务显式探测：
 
-```text
-/analyze
+```sh
+venv/bin/python scripts/smoke.py --service gemini --symbol AAPL
+venv/bin/python scripts/smoke.py --service ibkr --read-only
 ```
 
-Bot 会返回两段内容：
+Gemini 探测可能消耗额度，总时限 75 秒；未通过返回非零。当前真实 IBKR 取决于用户登录；SEC 尚缺 `SEC_USER_AGENT`；真实 Telegram、图片识别及完整研究仍待验收。真实 Gemini 搜索已出现超时，Google 根地址可达，Yahoo 根地址返回 429，这只能帮助排障，不能证明具体数据请求成功。
 
-1. 简表：标的、收盘价、趋势、PA 信号、阻力、支撑、持仓数量。
-2. 逐标的诊断：PA 原因、仓位结论、限价买入 / 目标价 / 风控线。
-
-简表规格示例：
-
-```text
-📊 盘前 PA 策略报告
-🕐 2026-06-24 09:00:00 | 数据源：Yahoo Finance
-
-标的          收盘   趋势     信号       阻力       支撑
-────────────────────────────────────────────────────
-NVDA      $145.20    ↑   🔴减仓    $148.00    $132.50  ×10
-AAPL      $210.10    →   🟡观望    $215.00    $201.00
-────────────────────────────────────────────────────
-🟢加仓 🟡观望 🔴减仓
-```
-
-### 图片持仓识别
-
-直接向 Bot 发送持仓截图时，流程是：
-
-```text
-图片 → Gemini 识别股票/股数/成本 → Yahoo Finance 拉K线 → PA分析 → 仓位结论
-```
-
-如果识别失败，Bot 会提示重新发送截图；如果识别成功，会按识别出的持仓生成分析报告。
-
-每日美股开盘前手动跑一次，或用 cron 定时（例如盘前 1 小时）：
-
-```bash
-# 21:00 美东盘前 (Asia/Shanghai 09:00 美东 21:30 → 此时段已停 PRE，按需调整)
-0 21 * * 1-5 cd /Users/yao/stock && /usr/bin/env python premarket_grid_calculator.py
-```
-
-## 调参
-
-`lib/config.py` 顶部集中维护：
-
-| 参数 | 默认 | 说明 |
-|---|:---:|---|
-| `PA_TREND_MA_SHORT` | 10 | 短期均线周期 |
-| `PA_TREND_MA_LONG` | 30 | 长期均线周期 |
-| `PA_SWING_LOOKBACK` | 10 | swing 高低点回望窗口 |
-| `PA_NEAR_LEVEL_PCT` | 0.02 | 距关键位 ≤ 2% 视为"接近" |
-| `PA_PIN_UPPER_RATIO` | 2.0 | 看跌 Pin Bar：上影线/实体倍数阈值 |
-| `PA_PIN_LOWER_RATIO` | 2.0 | 看涨 Pin Bar：下影线/实体倍数阈值 |
-| `PA_ENGULFING_MIN_BODY` | 0.3 | 吞没形态实体占振幅最小比例 |
-| `PA_CONSECUTIVE_DAYS` | 3 | 连续同向K线触发阈值 |
-| `ATR_PERIOD` | 14 | ATR 计算周期 |
-| `ATR_STOP_MULTIPLIER` | 2.0 | 追踪止损 = 最高价 − N×ATR |
-| `LIMIT_ENTRY_PCT` | 0.005 | 限价距支撑的偏移（0.5%） |
-
-## 信号评分逻辑
-
-正分倾向加仓，负分倾向减仓：
-
-| 因素 | 加分 | 减分 |
-|---|:---:|:---:|
-| 趋势 | 上升 +2 | 下降 −2 |
-| 位置 | 接近支撑 +2 | 接近阻力 −2 |
-| Pin Bar | 看涨 +2 | 看跌 −2 |
-| Engulfing | 看涨 +2 | 看跌 −2 |
-| 连续K线 ≥3 | 连跌 +1（超卖） | 连涨 −1（过热） |
-
-最终分级：
-- `score ≥ 3` → 加仓（强度 3）
-- `score ≥ 1` → 加仓（强度 1~2）
-- `score ≤ −3` → 减仓（强度 3）
-- `score ≤ −1` → 减仓（强度 1~2）
-- 其他 → 观望
-
-## 历史版本
-
-- **当前版** — 改用 Yahoo Finance + 纯 K线 PA 策略；模块化拆分；移除持仓追踪
-- **v2.0** — IBKR API + 持仓 / 均价分析（见 git 历史）
-
-## License
-
-私人项目。
+私人项目；只提供规则分析与研究参考，没有自动交易功能。

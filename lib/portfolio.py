@@ -76,6 +76,8 @@ class PortfolioService:
         for symbol,position in snapshot['positions'].items():
             row={'symbol':symbol,'currency_sign':'$','shares':position.get('shares'),'avg_cost':position.get('avg_cost')}
             bars=self.bars(symbol)
+            row['bars_asof']=bars[-1].get('date') if bars else None
+            row['price_basis']='Yahoo adjusted daily close; not a live quote'
             pa=analyze_pa(bars,'$');row['pa']=pa
             if pa.get('pa_error'):row['error']=pa['pa_error']
             shares=position.get('shares')

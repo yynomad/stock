@@ -53,7 +53,9 @@ class Application:
                 result=self.handle('请检查这张截图中的持仓',str(chat),str(path))
             elif message.get('text'):
                 result=self.handle(message['text'].strip(),str(chat))
-            else:return 'ignored'
+            else:
+                self.runtime.store.execute("UPDATE updates SET status='ignored' WHERE id=?",(identity,))
+                return 'ignored'
             status=self.transport.deliver(result)
             self.runtime.store.execute('UPDATE updates SET status=? WHERE id=?',(status,identity))
             return status

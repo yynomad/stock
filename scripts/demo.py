@@ -11,13 +11,18 @@ sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
 def main():
     parser=argparse.ArgumentParser()
     parser.add_argument('--offline',action='store_true',required=True)
-    parser.add_argument('--scenario',choices=['routing','persistence','portfolio','research','monitor'],required=True)
+    parser.add_argument('--scenario',choices=['routing','persistence','portfolio','research','monitor','end-to-end'],required=True)
     args=parser.parse_args()
     os.environ['STOCKMAN_OFFLINE']='1'
     os.environ['LANGSMITH_TRACING']='false'
     from lib.agents import AgentRuntime,OfflineModel
     with tempfile.TemporaryDirectory() as directory:
         runtime=AgentRuntime(directory,OfflineModel())
+        if args.scenario=='end-to-end':
+            runtime.close()
+            from lib.offline import end_to_end
+            print(json.dumps(end_to_end(directory),ensure_ascii=False))
+            return
         if args.scenario=='monitor':
             from lib.monitoring import MonitoringService
             service=MonitoringService(runtime.store,None,in_session=lambda now:True)

@@ -43,6 +43,18 @@ class MonitorTest(unittest.TestCase):
             self.assertEqual(result['status'],'read_only_status')
             self.assertEqual(self.store.execute('SELECT enabled FROM rules')[0]['enabled'],1)
         finally:CURRENT.reset(token)
+    def test_delegate_cannot_change_user_authorized_target(self):
+        self.store.execute('INSERT INTO rules(symbol,spec) VALUES(?,?)',('NVDA',json.dumps({'support':100,'resistance':120,'buffer':0.02})))
+        token=CURRENT.set(Invocation('task','owner',request='停止监控 AAPL'))
+        try:self.service.command('停止监控 NVDA')
+        finally:CURRENT.reset(token)
+        enabled={r['symbol']:r['enabled'] for r in self.store.execute('SELECT symbol,enabled FROM rules')}
+        self.assertEqual(enabled,{'AAPL':0,'NVDA':1})
+
+    def test_boolean_quote_does_not_trigger(self):
+        self.assertIsNone(self.service.check('AAPL',self.quote(125,True),2))
+        self.assertIsNone(self.service.check('AAPL',self.quote(True),1001))
+
     def test_explicit_stop_works(self):
         token=CURRENT.set(Invocation('task','owner',request='停止监控 AAPL'))
         try:self.assertEqual(json.loads(self.service.command('停止监控 AAPL'))['status'],'stopped')

@@ -90,6 +90,10 @@ class IBKRProtocolTest(unittest.TestCase):
                 called.append(account)
                 contract=SimpleNamespace(symbol='AAPL',currency='USD',secType='STK',conId=123)
                 self.positionMulti(req,account,model,contract,0.5,100)
+                if mode=='duplicate-contract':
+                    contract.conId=999
+                    self.positionMulti(req,account,model,contract,1,100)
+                if mode=='request-error':self.error(req,200,'synthetic request error')
                 if mode!='partial':self.positionMultiEnd(req)
             def cancelPositionsMulti(self, req):pass
             def disconnect(self):called.append('disconnected')
@@ -102,6 +106,8 @@ class IBKRProtocolTest(unittest.TestCase):
                 with self.assertRaises(IBKRUnavailable):fetch_ibkr_positions('U1234567',timeout=0.01)
                 self.assertEqual(called[-1],'disconnected')
                 if mode=='wrong-account':self.assertNotIn('U1234567',called)
+    def test_distinct_contracts_cannot_overwrite_each_other(self):self.reader('duplicate-contract')
+    def test_request_error_cannot_be_mistaken_for_empty_snapshot(self):self.reader('request-error')
     def test_complete_scoped_snapshot(self):self.reader('ok')
     def test_partial_snapshot_rejected(self):self.reader('partial')
     def test_wrong_account_never_requested(self):self.reader('wrong-account')
