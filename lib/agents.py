@@ -73,6 +73,15 @@ def create_research_agent(model,tools=(),system_prompt='',middleware=()):
 
 class AgentRuntime:
     def __init__(self, data_dir=None, model=None, services=None):
+        from .briefing.locking import DirectoryLock
+        self.process_lock=DirectoryLock(data_dir or os.getenv('STOCKMAN_DATA_DIR','runtime'))
+        try:self._initialize(data_dir,model,services)
+        except BaseException:
+            if hasattr(self,'conn'):self.conn.close()
+            if hasattr(self,'store'):self.store.close()
+            self.process_lock.close();raise
+
+    def _initialize(self, data_dir=None, model=None, services=None):
         directory=Path(data_dir or os.getenv('STOCKMAN_DATA_DIR','runtime'))
         directory.mkdir(parents=True,exist_ok=True)
         self.store=Store(directory/'stockman.sqlite')
@@ -188,4 +197,4 @@ class AgentRuntime:
         return self._invoke(task,row['session'],None)
 
     def close(self):
-        self.conn.close();self.store.close()
+        self.conn.close();self.store.close();self.process_lock.close()

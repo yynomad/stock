@@ -52,3 +52,22 @@ def research_demo(directory,budget_zero=False):
         assert second['meta']['selected']==0
         return {'synthetic':True,'scenario':'budget' if budget_zero else 'research','text':first['text'],'budget':first['meta']['budget'],'sent_news_dedup':'passed'}
     finally:store.close()
+
+def schedule_demo(directory):
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+    from ..briefing.config import BriefingConfig
+    from ..briefing.schedule import Scheduler
+    from ..briefing.pipeline import preview
+    store=Store(Path(directory)/'stockman.sqlite');sent=[]
+    def at(value):return datetime.fromisoformat(value).replace(tzinfo=ZoneInfo('Asia/Shanghai')).timestamp()
+    try:
+        scheduler=Scheduler(store,BriefingConfig(enabled=True),'123',{'123'},lambda owner,now,day:preview(store,[StockSource()],owner,day,now),lambda r:sent.append(r) or 'sent')
+        assert scheduler.tick(at('2026-10-22T07:59:00'))['status']=='not_due'
+        assert scheduler.tick(at('2026-10-22T08:00:00'))['status']=='sent'
+        scheduler.recover();assert scheduler.tick(at('2026-10-22T09:00:00'))['status']=='sent'
+        delayed=scheduler.tick(at('2026-10-25T12:00:00'))
+        assert delayed['status']=='sent' and delayed['delayed'] and len(sent)==2
+        assert len(store.execute('SELECT * FROM brief_daily'))==2
+        return {'synthetic':True,'scenario':'schedule','deliveries':len(sent),'today_only_catchup':delayed,'restart_dedup':'passed'}
+    finally:store.close()

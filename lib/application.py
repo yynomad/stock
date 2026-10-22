@@ -15,6 +15,8 @@ from .telegram import Telegram
 
 class Application:
     def __init__(self,directory=None,model=None,portfolio_factory=PortfolioService,research=None,market=None,transport=None):
+        from .briefing.config import BriefingConfig
+        self.briefing_config=BriefingConfig.load()
         self.directory=Path(directory or os.getenv('STOCKMAN_DATA_DIR','runtime'))
         self.runtime=AgentRuntime(self.directory,model,services={
             'portfolio':lambda request:self.portfolio.report(request),
@@ -31,6 +33,15 @@ class Application:
         configured=os.getenv('TG_ALLOWED_USERS','')
         self.allowed={int(x.strip()) for x in configured.split(',') if x.strip().isdigit()}
         if not self.allowed and str(TG_CHAT_ID).isdigit() and int(TG_CHAT_ID)>0:self.allowed={int(TG_CHAT_ID)}
+        self.daily=None
+        if self.briefing_config.enabled and self.transport:
+            try:
+                from .briefing.schedule import Scheduler
+                from .stock_briefing.service import StockBriefing
+                self.briefing=StockBriefing(self.runtime.store,self.briefing_config)
+                self.daily=Scheduler(self.runtime.store,self.briefing_config,str(self.transport.chat),self.allowed,self.build_daily,self.transport.deliver)
+                self.daily.recover()
+            except BaseException:self.runtime.close();raise
 
     def handle(self,text,session='local',image_path=None):
         prepare=(lambda:self.portfolio.import_image(image_path,session)) if image_path else None
@@ -64,6 +75,20 @@ class Application:
             self.transport.deliver({'text':'本次任务未完成：'+type(exc).__name__+'。请检查本机配置与任务记录。'})
             return 'failed'
 
+    def build_daily(self,owner,now,day):
+        if self.briefing_config.portfolio_source=='image':
+            snapshot=self.runtime.store.latest('image',owner)
+            if not snapshot:raise ValueError('no image snapshot for daily owner; upload a screenshot first')
+            snapshot['cached']=True
+        else:snapshot=self.portfolio.load(owner)
+        return self.briefing.generate(owner,snapshot,now,day)
+
+    def poll_daily(self):
+        while not self.stop_event.is_set():
+            try:self.daily.tick(time.time())
+            except Exception as exc:self.runtime.store.trace('daily','scheduler','tick','failed',{'error_type':type(exc).__name__})
+            self.stop_event.wait(30)
+
     def poll_prices(self):
         while not self.stop_event.is_set():
             self.monitor.tick(self.runtime,self.transport.deliver,session=str(self.transport.chat))
@@ -71,7 +96,9 @@ class Application:
 
     def run(self):
         if not self.transport or not self.allowed:raise ValueError('需要明确配置 TG_ALLOWED_USERS；私聊可使用正数 TG_CHAT_ID')
-        worker=threading.Thread(target=self.poll_prices,name='price-events',daemon=True);worker.start()
+        workers=[threading.Thread(target=self.poll_prices,name='price-events',daemon=True)]
+        if self.daily:workers.append(threading.Thread(target=self.poll_daily,name='daily-briefing',daemon=True))
+        for worker in workers:worker.start()
         row=self.runtime.store.execute("SELECT value FROM settings WHERE key='telegram_offset'")
         offset=int(row[0]['value']) if row else 0
         try:
@@ -86,9 +113,10 @@ class Application:
                     self.stop_event.wait(5)
         except KeyboardInterrupt:pass
         finally:
-            self.stop_event.set();worker.join(timeout=60)
+            self.stop_event.set()
+            for worker in workers:worker.join(timeout=30)
             # Do not close SQLite underneath a still-running network/tool call.
-            if not worker.is_alive():self.runtime.close()
+            if not any(worker.is_alive() for worker in workers):self.runtime.close()
 
 
 def main():
