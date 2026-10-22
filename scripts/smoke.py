@@ -25,7 +25,12 @@ def main():
             from lib.research import GoogleNews,valid_symbol
             bundle=GoogleNews().fetch(valid_symbol(args.symbol))
             print(json.dumps({'status':'grounding_verified','sources':bundle['sources'],'usage':bundle['usage'],'queries':len(bundle['queries'])},ensure_ascii=False))
-        else:raise ValueError('Telegram smoke 尚未实现')
+        else:
+            if not args.dry_run:raise ValueError('Telegram probe requires --dry-run; actual delivery is user-tested')
+            from lib.telegram import message_chunks
+            chunks=message_chunks('<Synthetic report> & evidence '*300)
+            assert chunks and all(len(c)>0 for c in chunks)
+            print(json.dumps({'status':'dry_run_passed','chunks':len(chunks),'sent':False}))
         return 0
     except Exception as exc:
         print(json.dumps({'status':'unverified','reason':str(exc)},ensure_ascii=False))

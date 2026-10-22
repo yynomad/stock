@@ -28,6 +28,7 @@ class Invocation:
     task: str
     session: str
     snapshot: str | None = None
+    request: str = ""
     news: list = field(default_factory=list)
     models: int = 0
     tools: int = 0
@@ -132,7 +133,8 @@ class AgentRuntime:
             return self._invoke(task,session,{'messages':[HumanMessage(content=text)]},snapshot)
 
     def _invoke(self, task, session, payload, snapshot=None):
-        token=CURRENT.set(Invocation(task,session,snapshot))
+        original = payload["messages"][0].content if payload else json.loads(self.store.task(task)["input"])
+        token=CURRENT.set(Invocation(task,session,snapshot,request=str(original)))
         try:
             state=self.agent.invoke(payload,config={'configurable':{'thread_id':session},'recursion_limit':32})
             content=state['messages'][-1].content

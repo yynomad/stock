@@ -11,14 +11,23 @@ sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
 def main():
     parser=argparse.ArgumentParser()
     parser.add_argument('--offline',action='store_true',required=True)
-    parser.add_argument('--scenario',choices=['routing','persistence','portfolio','research'],required=True)
+    parser.add_argument('--scenario',choices=['routing','persistence','portfolio','research','monitor'],required=True)
     args=parser.parse_args()
     os.environ['STOCKMAN_OFFLINE']='1'
     os.environ['LANGSMITH_TRACING']='false'
     from lib.agents import AgentRuntime,OfflineModel
     with tempfile.TemporaryDirectory() as directory:
         runtime=AgentRuntime(directory,OfflineModel())
-        if args.scenario=='research':
+        if args.scenario=='monitor':
+            from lib.monitoring import MonitoringService
+            service=MonitoringService(runtime.store,None,in_session=lambda now:True)
+            runtime.store.execute('INSERT INTO rules(symbol,spec) VALUES(?,?)',('AAPL',json.dumps({'support':100,'resistance':120,'buffer':0.02})))
+            quote={'price':125,'asof':1000,'kind':'regular','valid':True}
+            event=service.check('AAPL',quote,1001)
+            assert event and service.check('AAPL',quote,1002) is None
+            assert service.check('AAPL',dict(quote,asof=1),1002) is None
+            print('PASS: synthetic crossing event, stale filtering and persistent deduplication')
+        elif args.scenario=='research':
             from lib.research import ResearchService
             from tests_data import demo_bars
             class Market:

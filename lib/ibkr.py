@@ -8,7 +8,7 @@ class IBKRUnavailable(RuntimeError):pass
 
 
 def fetch_ibkr_positions(account=None, timeout=12):
-    account=account or os.getenv('IBKR_ACCOUNT','')
+    account=os.getenv('IBKR_ACCOUNT','') if account is None else account
     if not re.fullmatch(r'U[0-9]{5,}',account):
         raise IBKRUnavailable('请配置目标联名账户 IBKR_ACCOUNT')
     from ibapi.client import EClient
@@ -26,13 +26,16 @@ def fetch_ibkr_positions(account=None, timeout=12):
         def positionMulti(self, reqId, accountName, modelCode, contract, pos, avgCost):
             if reqId!=7101 or accountName!=account:return
             symbol=contract.symbol
+            if symbol in self.positions and self.positions[symbol]['conid']!=contract.conId:
+                self.failure='Multiple distinct contracts share one symbol; incomplete snapshot rejected'
+                return
             self.positions[symbol]={'shares':float(pos),'avg_cost':float(avgCost) if avgCost>0 else None,
                                     'currency':contract.currency,'asset_type':contract.secType,
                                     'conid':contract.conId}
         def positionMultiEnd(self, reqId):
             if reqId==7101:self.done.set()
         def error(self, reqId, errorCode, errorString, *extra):
-            if errorCode in (502,503,504,1100,1300,321,322):
+            if reqId==7101 or errorCode in (502,503,504,1100,1300,321,322):
                 self.failure=f'IBKR connection/request error {errorCode}'
                 self.ready.set();self.done.set()
 
