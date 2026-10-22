@@ -4,7 +4,7 @@
 
 ## 当前状态与位置
 
-M1—M6 的离线实现与验收已完成。真实 IBKR、完整 Gemini／搜索、SEC、Yahoo 数据及 Telegram 用户会话验收仍有待办，产品整体尚未全部真实验收。
+M1—M6 的离线实现与验收已完成，真实外部服务验收仍有待办。当前会话进入每日持仓信息简报的需求澄清：用户明确希望工具每天代为跟踪并解释持仓及上下游消息，已选择北京时间 08:00。日报尚未实现或部署。
 
 物理目录 `/Users/yao/personal/stock/`：既有项目扩展，按用户规则保留原目录。聊天 cwd `/Users/yao/Documents/ChatGPT/stock 2/` 不是物理项目位置。已核对 pwd、Git HEAD、remote 和工作区；没有移动目录或创建 symlink。remote 为 `https://github.com/yynomad/stock.git`。原目录写入通过工具权限机制，未更换位置。
 
@@ -25,7 +25,8 @@ M1—M6 的离线实现与验收已完成。真实 IBKR、完整 Gemini／搜索
 | `068081d` | 带事件时间行情、SEC 报告期、ETF、接地引用与临时新闻输出 |
 | `85e9140` | 本人 Telegram 入口、图片、持久监控、交易时段、去重与投递状态 |
 | `542b370` | 完整 D6、CLI、学习文档、有限重试、部分失败与投递状态、图片恢复与更多回归测试 |
-| 包含本记录的提交 | 将截图准备纳入任务生命周期；失败有任务／调用记录，识图计入共享模型预算 |
+| `5942907` | 将截图准备纳入任务生命周期；失败有任务／调用记录，识图计入共享模型预算 |
+| 包含本记录的提交 | 记录用户最新痛点、每日简报优先级及已选发送时间；仅文档变更 |
 
 入口在 lib/application.py；bot.py 的 main 已接入新应用。lib/agents.py 是实际框架工具循环；lib/storage.py 与 checkpoints.sqlite 分别保存业务及框架状态。lib/offline.py 所有数据／模型均为合成，禁止冒充真实验证。
 
@@ -59,4 +60,12 @@ venv/bin/python scripts/chat.py --offline "研究 QQQ"
 venv/bin/python scripts/tasks.py --data-dir runtime/offline
 ```
 
-真实入口和配置步骤见 [README.md](README.md)，代码学习见 [Learning.md](Learning.md)，逐项验收命令见 [Plan.md](Plan.md)。下一步是用户配置／登录后按外部验收步骤逐项核实，继续修复真实联调暴露的问题。当前无需再做需求确认，不把外部待办写成完成。
+真实入口和配置步骤见 [README.md](README.md)，代码学习见 [Learning.md](Learning.md)，逐项验收命令见 [Plan.md](Plan.md)。原版下一步仍是外部服务验收。新增范围按 Product.md 的每日简报要求继续逐项澄清，先准备样例，再选择数据来源／保存、成本及本机运行可靠性方案；不重复已选技术，不将新增范围当成旧授权自动覆盖的实现。
+
+## 本次需求记录与验证
+
+- 用户原意：上班无暇关注几只持仓股票的消息，看到孤立新闻也缺少上下游背景；不要求绝对结论，希望每天推送自己需要知道的事情。
+- 用户已明确选择北京时间早上 08:00（Asia/Shanghai）。这是产品发送时间需求，不等于已创建定时任务。
+- 现有代码仅支持按需研究及价格事件监控；没有每日新闻采集、上下游关系维护、跨日事件去重与日报调度。
+- Product.md 区分明确需求、提出的方案和未决技术；Plan.md 新增 N0—N3 需求依赖记录。尚未改变模型、供应商、数据库或部署。
+- 本次仅修改四份项目文档；已运行 venv/bin/python scripts/validate.py：62 个原有离线测试、AST、文档链接／围栏及 pip check 全部通过；git diff --check 通过。原有测试不构成日报验收证据。
