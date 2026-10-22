@@ -345,7 +345,7 @@ def handle_screenshot(chat_id: int, file_id: str, message_id: int,
     _add_positions_to_watchlist(positions)
 
     # 构建 symbols 字典传给 run_calculator
-    symbols = _build_symbols(image_path=img_path)
+    symbols = _build_symbols(positions=positions)
 
     # 在后台线程执行分析，不阻塞主循环
     threading.Thread(

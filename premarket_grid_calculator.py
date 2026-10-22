@@ -80,14 +80,15 @@ def _format_display_fields(pa_result: dict, currency_sign: str) -> None:
         pa_result[f"{key}_fmt"] = fmt_price(val, currency_sign) if val is not None else "N/A"
 
 
-def _build_symbols(image_path: str = None) -> dict:
+def _build_symbols(image_path: str = None, positions: dict = None) -> dict:
     """确定分析标的列表。返回 {symbol: cfg} 字典。"""
     wm = WatchlistManager()
-    if image_path:
-        positions = fetch_positions(image_path)
+    if image_path or positions is not None:
+        if positions is None:
+            positions = fetch_positions(image_path)
         if not positions:
-            print("⚠️  未从截图识别到持仓，使用监控列表")
-            return {sym: dict(cfg) for sym, cfg in wm.get_all().items()}
+            print("⚠️  未从截图识别到持仓，停止分析")
+            return {}
         symbols = {}
         for sym, pos in positions.items():
             info = wm.get(sym)

@@ -81,9 +81,14 @@ def fetch_positions_from_image(image_path: str) -> dict:
 
         parsed = json.loads(json_match.group())
         positions = {}
-        for item in parsed.get("positions", []):
+        items = parsed.get("positions")
+        if not isinstance(items, list):
+            raise ValueError("Missing positions list")
+        for item in items:
             sym = item.get("symbol", "")
             if sym:
+                if sym in positions:
+                    raise ValueError("Duplicate symbol")
                 positions[sym] = {
                     "shares": item.get("shares"),
                     "avg_cost": item.get("avg_cost"),

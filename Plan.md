@@ -1,6 +1,6 @@
 # StockMan 实施计划
 
-状态：用户已确认文档并授权连续实施；M1 已通过，M1、M2 已通过；继续 M3，M4—M6 未开始。本文描述计划，不代表代码或脚本已经存在。
+状态：用户已确认文档并授权连续实施；M1 已通过，M1、M2 已通过；M3 离线验收通过，真实 IBKR 待账号配置；继续 M4。本文描述计划，不代表代码或脚本已经存在。
 范围依据：[Product.md](Product.md)。恢复工作时先读 [AGENTS.md](AGENTS.md) 与 [Session_Handoff.md](Session_Handoff.md)。
 
 ## 已执行基线检查
@@ -24,7 +24,7 @@ PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=/Users/yao/personal/stock python3 -B -m uni
 | M0 | 需求、选型、验证与运行约束可评审 | 本次讨论 | 已确认 |
 | M1 | 无凭据也能运行测试和离线示例，导入模块没有外部副作用 | M0 确认 | 已完成 |
 | M2 | 请求能由主控分派给独立业务 Agent，状态和调用记录能持久保存 | M1 | 已完成 |
-| M3 | IBKR 与截图分别形成有来源的持仓并完成复盘 | M2 | 未开始 |
+| M3 | IBKR 与截图分别形成有来源的持仓并完成复盘 | M2 | 离线完成，真实 IBKR 未验证 |
 | M4 | 单股及 ETF 研究具有可核对证据和缺失提示 | M2；组合研究依赖 M3 | 未开始 |
 | M5 | Telegram 价格事件触发分析并去重提醒，可停止且可恢复 | M3、M4 | 未开始 |
 | M6 | 完整离线闭环、学习示例、运行文档及逐项真实验收 | M1—M5 | 未开始 |
@@ -130,3 +130,7 @@ PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=/Users/yao/personal/stock python3 -B -m uni
 ## M2 实际结果（2026-10-22）
 
 AgentRuntime 通过 LangChain create_agent 和 Agent-as-tool 实现四个 Agent，SQLite 业务状态与 SqliteSaver 检查点可重启恢复。已加入跨子 Agent 调用预算、结构化工具记录及中断状态。C1—C3 与 D1、D2 通过，17 个离线测试通过。模型为显式假模型，只验证协议／业务行为，未宣称真实 Gemini 验收。相关提交：包含本记录的提交。下一步 M3。
+
+## M3 实际结果（2026-10-22）
+
+C1—C3、D1—D3 通过，29 个离线测试通过。IBKR 适配器使用 reqPositionsMulti 限定账户，完整结束回调后才保存；握手超时、错误账户和部分返回有协议测试。截图只识别一次、来源隔离、未知数量／成本和空头规则适用性均有回归测试。新增只读 L1 入口但未连接真实账户，需用户确认用户名获批、配置 IBKR_ACCOUNT 并登录 Gateway 后人工核对。相关提交：包含本记录的提交。下一步 M4。
