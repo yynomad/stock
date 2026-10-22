@@ -74,9 +74,14 @@ venv/bin/python scripts/tasks.py --data-dir runtime/offline
 
 用户将 AI News 与 Stock 识别为相近简报需求，询问是否应抽共用开源工具供 Agent 使用。已检查实际代码：lib/telegram.py 引用 lib/research.py 的 news_html；GoogleNews.fetch 绑定股票代码及股票研究提示；当前尚无通用简报引擎。
 
-已在 Product.md 记录 A 股票单体、B 同仓库模块化复用、C 立即独立库双仓库；用户已明确回复 B。当前物理目录继续为 /Users/yao/personal/stock，既有项目内整理模块，不移动或建立新仓库。下一步只确认首版两领域交付深度：推荐股票完整日报＋可运行 AI News 最小 Agent 示例，另一个选项为两条完整日报同步交付；用户尚未选择此项。维持 Python、LangChain、Gemini、SQLite 等已有选择；没有创建新目录／仓库、服务、依赖或应用代码。若将来明确新项目，仍须按位置规则在 /Users/yao/personal 下创建并预检。
+已在 Product.md 记录 A 股票单体、B 同仓库模块化复用、C 立即独立库双仓库；用户已明确回复 B。当前物理目录继续为 /Users/yao/personal/stock，既有项目内整理模块，不移动或建立新仓库。用户最新明确“先做 stock 这个项目”，首版仅 Stock，AI News 实现及示例后置。下一步只选择新增日报的数据采集路线，既有 Gemini 型号及按需搜索不重选。维持 Python、LangChain、Gemini、SQLite 等已有选择；没有创建新目录／仓库、服务、依赖或应用代码。若将来明确新项目，仍须按位置规则在 /Users/yao/personal 下创建并预检。
 
 本轮只修改三份文档；venv/bin/python scripts/validate.py 通过：62 个原有离线测试、AST、文档链接／围栏和 pip check 均通过；git diff --check 通过。保留每天北京时间 08:00 的已确认需求，日报来源／保存、成本及运行可靠性仍需澄清。
 
 
 本轮架构确认记录：只变更 Product.md、Plan.md、AGENTS.md、Session_Handoff.md。用户 B 确认的是同仓库共用模块及分领域 Agent，不自动确认新数据服务、部署、预算或两条完整产品线的首版范围。已运行 venv/bin/python scripts/validate.py：62 个原有离线测试、AST、文档与 pip check 通过；git diff --check 通过。日报功能尚未实现。
+
+
+## 最新范围确认：先做 Stock
+
+用户明确先做 Stock。继续在现有物理目录 /Users/yao/personal/stock 内工作，保留已选 B 的模块边界，AI News 应用及示例均不纳入第一版。下一项推荐预配置官方公告／SEC／可用 RSS 素材＋Gemini 分析，备选为新增付费新闻 API；尚未选择。本轮只更新文档并核对公开官方资料，未写应用代码、安装依赖或新增外部定时发送。已运行 venv/bin/python scripts/validate.py：62 个原有离线测试、AST、文档及 pip check 通过；git diff --check 通过。这不是新增日报功能的验收。
