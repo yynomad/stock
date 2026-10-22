@@ -79,7 +79,7 @@ def _watchlist_tools():
             ],
         ),
     ]
-    
+
 
 def _execute_function(fc: gemini_types.FunctionCall) -> str:
     """执行 Gemini 请求的函数调用，返回结果文本。"""
