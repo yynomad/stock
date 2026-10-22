@@ -74,7 +74,7 @@ venv/bin/python scripts/tasks.py --data-dir runtime/offline
 
 用户将 AI News 与 Stock 识别为相近简报需求，询问是否应抽共用开源工具供 Agent 使用。已检查实际代码：lib/telegram.py 引用 lib/research.py 的 news_html；GoogleNews.fetch 绑定股票代码及股票研究提示；当前尚无通用简报引擎。
 
-已在 Product.md 记录 A 股票单体、B 同仓库模块化复用、C 立即独立库双仓库；用户已明确回复 B。当前物理目录继续为 /Users/yao/personal/stock，既有项目内整理模块，不移动或建立新仓库。用户最新明确“先做 stock 这个项目”，首版仅 Stock，AI News 实现及示例后置。下一步只选择新增日报的数据采集路线，既有 Gemini 型号及按需搜索不重选。维持 Python、LangChain、Gemini、SQLite 等已有选择；没有创建新目录／仓库、服务、依赖或应用代码。若将来明确新项目，仍须按位置规则在 /Users/yao/personal 下创建并预检。
+已在 Product.md 记录 A 股票单体、B 同仓库模块化复用、C 立即独立库双仓库；用户已明确回复 B。当前物理目录继续为 /Users/yao/personal/stock，既有项目内整理模块，不移动或建立新仓库。用户最新明确“先做 stock 这个项目”，首版仅 Stock，AI News 实现及示例后置。用户已选择新增日报采集路线 A（公司公告／SEC／可用 RSS＋Gemini 分析），既有 Gemini 型号及按需搜索不重选。下一项只确认有证据的关联公司覆盖深度。维持 Python、LangChain、Gemini、SQLite 等已有选择；没有创建新目录／仓库、服务、依赖或应用代码。若将来明确新项目，仍须按位置规则在 /Users/yao/personal 下创建并预检。
 
 本轮只修改三份文档；venv/bin/python scripts/validate.py 通过：62 个原有离线测试、AST、文档链接／围栏和 pip check 均通过；git diff --check 通过。保留每天北京时间 08:00 的已确认需求，日报来源／保存、成本及运行可靠性仍需澄清。
 
@@ -84,4 +84,11 @@ venv/bin/python scripts/tasks.py --data-dir runtime/offline
 
 ## 最新范围确认：先做 Stock
 
-用户明确先做 Stock。继续在现有物理目录 /Users/yao/personal/stock 内工作，保留已选 B 的模块边界，AI News 应用及示例均不纳入第一版。下一项推荐预配置官方公告／SEC／可用 RSS 素材＋Gemini 分析，备选为新增付费新闻 API；尚未选择。本轮只更新文档并核对公开官方资料，未写应用代码、安装依赖或新增外部定时发送。已运行 venv/bin/python scripts/validate.py：62 个原有离线测试、AST、文档及 pip check 通过；git diff --check 通过。这不是新增日报功能的验收。
+用户明确先做 Stock。继续在现有物理目录 /Users/yao/personal/stock 内工作，保留已选 B 的模块边界，AI News 应用及示例均不纳入第一版。用户已明确选择预配置官方公告／SEC／可用 RSS 素材＋Gemini 分析的 A 路线，暂不新增付费新闻订阅。本轮只更新文档并核对公开官方资料，未写应用代码、安装依赖或新增外部定时发送。已运行 venv/bin/python scripts/validate.py：62 个原有离线测试、AST、文档及 pip check 通过；git diff --check 通过。这不是新增日报功能的验收。
+
+
+## 最新数据路线确认：A
+
+用户回复 A，确认日报直接采集公告／SEC／核对后可用 RSS，Gemini 筛选解释；按需 Google 接地功能保留，不把返回内容存成日报新闻库或用于发现爬取目标。具体来源及逐源保存方式后续细化，不暗中选择新付费 API。物理目录仍为 /Users/yao/personal/stock，未移动。
+
+下一项待选择是关联覆盖深度：推荐直接上下游、主要竞争对手与明确相关的行业／宏观主题；另一个选项为首版多层递归扩展。用户尚未选择此项。每日报价与新闻成本、运行可靠性仍待明确。本轮只有四份文档变更；已运行 venv/bin/python scripts/validate.py，62 个原有离线测试、AST、文档校验及 pip check 通过，git diff --check 通过；未开始依赖未决选择的应用实现。
