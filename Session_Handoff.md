@@ -69,3 +69,11 @@ venv/bin/python scripts/tasks.py --data-dir runtime/offline
 - 现有代码仅支持按需研究及价格事件监控；没有每日新闻采集、上下游关系维护、跨日事件去重与日报调度。
 - Product.md 区分明确需求、提出的方案和未决技术；Plan.md 新增 N0—N3 需求依赖记录。尚未改变模型、供应商、数据库或部署。
 - 本次仅修改四份项目文档；已运行 venv/bin/python scripts/validate.py：62 个原有离线测试、AST、文档链接／围栏及 pip check 全部通过；git diff --check 通过。原有测试不构成日报验收证据。
+
+## 最新架构讨论：通用简报工具（待选择）
+
+用户将 AI News 与 Stock 识别为相近简报需求，询问是否应抽共用开源工具供 Agent 使用。已检查实际代码：lib/telegram.py 引用 lib/research.py 的 news_html；GoogleNews.fetch 绑定股票代码及股票研究提示；当前尚无通用简报引擎。
+
+已在 Product.md 记录 A 股票单体、B 同仓库模块化复用（推荐）、C 立即独立库双仓库；用户未选择。下一步只问这个架构决定，不自动把探索问题当作实施批准。维持 Python、LangChain、Gemini、SQLite 等已有选择；没有创建新目录／仓库、服务、依赖或应用代码。若将来明确新项目，仍须按位置规则在 /Users/yao/personal 下创建并预检。
+
+本轮只修改三份文档；venv/bin/python scripts/validate.py 通过：62 个原有离线测试、AST、文档链接／围栏和 pip check 均通过；git diff --check 通过。保留每天北京时间 08:00 的已确认需求，日报来源／保存、成本及运行可靠性仍需澄清。
