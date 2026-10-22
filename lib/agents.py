@@ -28,6 +28,7 @@ class Invocation:
     task: str
     session: str
     snapshot: str | None = None
+    news: list = field(default_factory=list)
     models: int = 0
     tools: int = 0
     lock: Any = field(default_factory=threading.Lock)
@@ -138,6 +139,7 @@ class AgentRuntime:
             text=content if isinstance(content,str) else '\n'.join(str(part.get('text','')) for part in content if isinstance(part,dict))
             result={'task_id':task,'text':redact(text),'model_calls':CURRENT.get().models,'tool_calls':CURRENT.get().tools}
             self.store.finish(task,'completed',result)
+            result['news']=CURRENT.get().news
             return result
         except Exception as exc:
             self.store.finish(task,'failed',error=type(exc).__name__)

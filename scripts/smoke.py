@@ -21,7 +21,11 @@ def main():
             positions=fetch_ibkr_positions()
             print(json.dumps({'status':'read_verified','position_count':len(positions),
                               'limitations':'用户仍需核对持仓、Gateway只读开关和手机并发登录；程序不验证此UI设置'},ensure_ascii=False))
-        else:raise ValueError('该服务 smoke 尚未实现')
+        elif args.service=='gemini':
+            from lib.research import GoogleNews,valid_symbol
+            bundle=GoogleNews().fetch(valid_symbol(args.symbol))
+            print(json.dumps({'status':'grounding_verified','sources':bundle['sources'],'usage':bundle['usage'],'queries':len(bundle['queries'])},ensure_ascii=False))
+        else:raise ValueError('Telegram smoke 尚未实现')
         return 0
     except Exception as exc:
         print(json.dumps({'status':'unverified','reason':str(exc)},ensure_ascii=False))

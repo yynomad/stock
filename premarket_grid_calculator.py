@@ -35,11 +35,8 @@ def _adjust_with_premarket(pa_result: dict, premarket: dict, currency_sign: str)
     if not premarket:
         return
 
-    live_price = (
-        premarket.get("pre_market_price")
-        or premarket.get("post_market_price")
-        or premarket.get("regular_market_price")
-    )
+    quote = premarket.get("quote", {})
+    live_price = premarket.get("selected_price") if quote.get("valid") else None
     prev_close = premarket.get("previous_close")
 
     if live_price and live_price != pa_result.get("last_close"):

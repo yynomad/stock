@@ -88,12 +88,20 @@ def fetch_premarket_price(symbol: str, retries: int = 2) -> dict:
 
             result = {
                 "regular_market_price": info.get("regularMarketPrice"),
+                "regular_market_time": info.get("regularMarketTime"),
+                "pre_market_time": info.get("preMarketTime"),
+                "post_market_time": info.get("postMarketTime"),
                 "pre_market_price": info.get("preMarketPrice"),
                 "pre_market_change_pct": info.get("preMarketChangePercent"),
                 "post_market_price": info.get("postMarketPrice"),
                 "post_market_change_pct": info.get("postMarketChangePercent"),
                 "previous_close": info.get("previousClose"),
             }
+
+            from .market import choose_quote
+            quote = choose_quote(info)
+            result["quote"] = quote
+            result["selected_price"] = quote.get("price")
 
             # 只在有盘前/盘后数据时返回
             if result["pre_market_price"] or result["post_market_price"]:

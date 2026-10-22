@@ -11,14 +11,27 @@ sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
 def main():
     parser=argparse.ArgumentParser()
     parser.add_argument('--offline',action='store_true',required=True)
-    parser.add_argument('--scenario',choices=['routing','persistence','portfolio'],required=True)
+    parser.add_argument('--scenario',choices=['routing','persistence','portfolio','research'],required=True)
     args=parser.parse_args()
     os.environ['STOCKMAN_OFFLINE']='1'
     os.environ['LANGSMITH_TRACING']='false'
     from lib.agents import AgentRuntime,OfflineModel
     with tempfile.TemporaryDirectory() as directory:
         runtime=AgentRuntime(directory,OfflineModel())
-        if args.scenario=='portfolio':
+        if args.scenario=='research':
+            from lib.research import ResearchService
+            from tests_data import demo_bars
+            class Market:
+                def info(self,symbol):return {'quoteType':'ETF','longName':'Synthetic QQQ'}
+                bars=staticmethod(demo_bars)
+            class News:
+                def fetch(self,symbol):raise ValueError('offline demo: no network news')
+            service=ResearchService(market=Market(),news=News())
+            runtime.close();runtime=AgentRuntime(directory,OfflineModel(),{'research':service.collect})
+            result=runtime.run('研究 QQQ')
+            assert 'ETF' in result['text'] and 'not_applicable' in result['text']
+            print(json.dumps(result,ensure_ascii=False))
+        elif args.scenario=='portfolio':
             from lib.portfolio import PortfolioService
             from tests_data import demo_bars
             service=PortfolioService(runtime.store,ibkr=lambda account:{'AAPL':{'shares':0.5,'avg_cost':100}},

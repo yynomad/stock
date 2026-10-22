@@ -111,3 +111,7 @@ MVP：双来源持仓读取及快照、保留现有 PA 与仓位规则、基于�
 - [Gemini 3.5 Flash-Lite](https://ai.google.dev/gemini-api/docs/models/gemini-3.5-flash-lite)
 - [Google 搜索接地](https://ai.google.dev/gemini-api/docs/google-search)
 - [Gemini 当前价格](https://ai.google.dev/gemini-api/docs/pricing)
+
+## 实施说明：新闻展示（2026-10-22）
+
+已核对 Google 搜索接地的引用、关联搜索建议及保存要求。新闻原文作为与规则分析分开的报告部分；Telegram 通过临时内存生成的 HTML 报告附件展示原文、来源和供应商搜索建议，不将原始搜索结果或建议放入 SQLite 检查点／研究缓存。无有效引用或建议时明确缺失，不把无接地回答当新闻。真实响应格式和用户端附件显示仍需实际联调；没有切换数据供应商或增加网页服务。
