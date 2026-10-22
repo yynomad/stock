@@ -11,8 +11,6 @@ import json
 import re
 import logging
 
-from google import genai
-from google.genai import types
 
 from .config import GEMINI_API_KEY, GEMINI_MODEL
 
@@ -33,6 +31,8 @@ def fetch_positions_from_image(image_path: str) -> dict:
         return None
 
     try:
+        from google import genai
+        from google.genai import types
         with open(image_path, "rb") as f:
             img_data = f.read()
 

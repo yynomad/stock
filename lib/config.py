@@ -11,10 +11,12 @@
 
 import os
 import logging
+import math
 from dotenv import load_dotenv
 
 # ── 加载 .env 配置文件 ─────────────────────────────────────────────────
-load_dotenv()
+if os.getenv("STOCKMAN_OFFLINE") != "1":
+    load_dotenv()
 
 # ── Telegram 推送配置 ─────────────────────────────────────────────────
 TG_BOT_TOKEN = os.getenv("TG_BOT_TOKEN", "")
@@ -25,7 +27,7 @@ YF_PROXY = os.getenv("YF_PROXY", "")  # 如 http://127.0.0.1:7890
 
 # ── Gemini API 配置 ──────────────────────────────────────────────────
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
-GEMINI_MODEL   = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
+GEMINI_MODEL   = os.getenv("GEMINI_MODEL", "gemini-3.5-flash-lite")
 POSITION_IMAGE_PATH = os.getenv("POSITION_IMAGE_PATH", "")  # 持仓截图路径
 
 # ── 请求间隔（秒），避免触发 Yahoo 限流 ──────────────────────────────
@@ -38,12 +40,11 @@ MONITOR_MAX_DAILY_ALERTS = int(os.getenv("MONITOR_MAX_DAILY_ALERTS", "5")) # 每
 
 # ── 日志初始化 ────────────────────────────────────────────────────────
 LOG_FILE = "premarket_calculator.log"
-logging.basicConfig(
-    filename=LOG_FILE,
-    level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(message)s",
-    datefmt="%Y-%m-%d %H:%M:%S",
-)
+def configure_logging():
+    """Only entry points may create a log file."""
+    logging.basicConfig(filename=os.getenv("STOCKMAN_LOG_FILE", LOG_FILE),
+                        level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
+
 
 # ══════════════════════════════════════════════════════════════════════
 #  PA 策略参数配置
@@ -72,3 +73,10 @@ POSITION_TAKE_PROFIT_PCT     = float(os.getenv("POSITION_TAKE_PROFIT_PCT", "0.20
 POSITION_STRONG_TAKE_PROFIT_PCT = float(os.getenv("POSITION_STRONG_TAKE_PROFIT_PCT", "0.35"))
 POSITION_RISK_REDUCE_PCT     = float(os.getenv("POSITION_RISK_REDUCE_PCT", "0.25"))
 
+
+# Reject non-finite/negative operational settings before any external connection.
+for _name, _value in {"YF_REQUEST_DELAY": YF_REQUEST_DELAY, "MONITOR_INTERVAL": MONITOR_INTERVAL,
+                      "MONITOR_BUFFER_PCT": MONITOR_BUFFER_PCT,
+                      "MONITOR_MAX_DAILY_ALERTS": MONITOR_MAX_DAILY_ALERTS}.items():
+    if not math.isfinite(_value) or _value < 0 or (_name != "YF_REQUEST_DELAY" and _value == 0):
+        raise ValueError(f"Invalid configuration: {_name}")

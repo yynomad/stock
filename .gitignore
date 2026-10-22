@@ -30,3 +30,9 @@ Thumbs.db
 # Codegraph 运行时文件
 .codegraph/daemon.pid
 venv/
+
+# Local Agent state
+runtime/
+*.sqlite*
+*.db
+*.db-*

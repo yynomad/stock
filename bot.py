@@ -8,6 +8,8 @@ StockMan Telegram Bot
 运行：python bot.py
 """
 
+from __future__ import annotations
+
 import os
 import sys
 import time
@@ -29,61 +31,55 @@ watchlist = WatchlistManager()
 
 # ── Gemini 聊天 ──────────────────────────────────────────────────────
 
-_has_gemini = bool(GEMINI_API_KEY)
-if _has_gemini:
-    from google import genai as gemini_client
+def _watchlist_tools():
     from google.genai import types as gemini_types
-
-
-# ── Gemini Function Calling ─────────────────────────────────────────
-
-_WATCHLIST_TOOLS = [
-    gemini_types.Tool(
-        function_declarations=[
-            gemini_types.FunctionDeclaration(
-                name="add_to_watchlist",
-                description="将一只股票加入监控列表。用户说「加上茅台」「监控英伟达」时调用。",
-                parameters=gemini_types.Schema(
-                    type=gemini_types.Type.OBJECT,
-                    properties={
-                        "symbol": gemini_types.Schema(
-                            type=gemini_types.Type.STRING,
-                            description="股票代码。美股直接写代码如 NVDA, AAPL；上海用 .SS 如 600519.SS；深圳用 .SZ 如 000858.SZ",
-                        ),
-                        "display_name": gemini_types.Schema(
-                            type=gemini_types.Type.STRING,
-                            description="显示名称，如 英伟达、贵州茅台。可选，留空则自动使用代码。",
-                        ),
-                    },
-                    required=["symbol"],
+    return [
+        gemini_types.Tool(
+            function_declarations=[
+                gemini_types.FunctionDeclaration(
+                    name="add_to_watchlist",
+                    description="将一只股票加入监控列表。用户说「加上茅台」「监控英伟达」时调用。",
+                    parameters=gemini_types.Schema(
+                        type=gemini_types.Type.OBJECT,
+                        properties={
+                            "symbol": gemini_types.Schema(
+                                type=gemini_types.Type.STRING,
+                                description="股票代码。美股直接写代码如 NVDA, AAPL；上海用 .SS 如 600519.SS；深圳用 .SZ 如 000858.SZ",
+                            ),
+                            "display_name": gemini_types.Schema(
+                                type=gemini_types.Type.STRING,
+                                description="显示名称，如 英伟达、贵州茅台。可选，留空则自动使用代码。",
+                            ),
+                        },
+                        required=["symbol"],
+                    ),
                 ),
-            ),
-            gemini_types.FunctionDeclaration(
-                name="remove_from_watchlist",
-                description="将一只股票从监控列表移除。用户说「删掉茅台」「移除英伟达」时调用。",
-                parameters=gemini_types.Schema(
-                    type=gemini_types.Type.OBJECT,
-                    properties={
-                        "symbol": gemini_types.Schema(
-                            type=gemini_types.Type.STRING,
-                            description="股票代码，如 NVDA, 600519.SS",
-                        ),
-                    },
-                    required=["symbol"],
+                gemini_types.FunctionDeclaration(
+                    name="remove_from_watchlist",
+                    description="将一只股票从监控列表移除。用户说「删掉茅台」「移除英伟达」时调用。",
+                    parameters=gemini_types.Schema(
+                        type=gemini_types.Type.OBJECT,
+                        properties={
+                            "symbol": gemini_types.Schema(
+                                type=gemini_types.Type.STRING,
+                                description="股票代码，如 NVDA, 600519.SS",
+                            ),
+                        },
+                        required=["symbol"],
+                    ),
                 ),
-            ),
-            gemini_types.FunctionDeclaration(
-                name="list_watchlist",
-                description="查询当前监控列表里的所有股票。用户问「我监控了哪些」「有什么股票」时调用。",
-                parameters=gemini_types.Schema(
-                    type=gemini_types.Type.OBJECT,
-                    properties={},
+                gemini_types.FunctionDeclaration(
+                    name="list_watchlist",
+                    description="查询当前监控列表里的所有股票。用户问「我监控了哪些」「有什么股票」时调用。",
+                    parameters=gemini_types.Schema(
+                        type=gemini_types.Type.OBJECT,
+                        properties={},
+                    ),
                 ),
-            ),
-        ],
-    ),
-]
-
+            ],
+        ),
+    ]
+    
 
 def _execute_function(fc: gemini_types.FunctionCall) -> str:
     """执行 Gemini 请求的函数调用，返回结果文本。"""
@@ -114,9 +110,11 @@ def _execute_function(fc: gemini_types.FunctionCall) -> str:
 
 def _chat_with_gemini(text: str, context: str = "") -> str:
     """用 Gemini 回复普通消息，支持 function calling 管理监控列表。"""
-    if not _has_gemini:
+    if not GEMINI_API_KEY:
         return "⚠️ 未配置 GEMINI_API_KEY，无法聊天"
     try:
+        from google import genai as gemini_client
+        from google.genai import types as gemini_types
         client = gemini_client.Client(api_key=GEMINI_API_KEY)
         system_prompt = (
             "你是一个专业的股票投资助手，名叫 StockMan。用中文回答。\n\n"
@@ -148,7 +146,7 @@ def _chat_with_gemini(text: str, context: str = "") -> str:
             contents=contents,
             config=gemini_types.GenerateContentConfig(
                 system_instruction=system_prompt,
-                tools=_WATCHLIST_TOOLS,
+                tools=_watchlist_tools(),
             ),
         )
 
@@ -185,7 +183,7 @@ def _chat_with_gemini(text: str, context: str = "") -> str:
                 contents=contents,
                 config=gemini_types.GenerateContentConfig(
                     system_instruction=system_prompt,
-                    tools=_WATCHLIST_TOOLS,
+                    tools=_watchlist_tools(),
                 ),
             )
             return resp2.text
@@ -198,11 +196,6 @@ def _chat_with_gemini(text: str, context: str = "") -> str:
 
 
 # ── 日志配置 ──────────────────────────────────────────────────────────
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(message)s",
-    datefmt="%Y-%m-%d %H:%M:%S",
-)
 logger = logging.getLogger("stockman")
 
 
@@ -406,6 +399,8 @@ if TG_CHAT_ID:
 
 
 def main():
+    from lib.config import configure_logging
+    configure_logging()
     if not TG_BOT_TOKEN:
         print("❌ TG_BOT_TOKEN 未配置，无法启动 bot")
         sys.exit(1)

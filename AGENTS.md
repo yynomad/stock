@@ -7,7 +7,7 @@
 3. `Plan.md`：阶段依赖、准确检查命令及实际状态。
 4. `Session_Handoff.md`：最新会话进度、验证与下一步。
 
-用户已授权需求讨论与规划文档编写；应用实现须等待用户明确确认本轮文档。选型确认不等于文档确认。获得确认后，在批准范围内按依赖持续执行，不逐阶段重复请求继续授权。
+用户已于 2026-10-22 明确确认文档并要求开始实现；按 M1—M6 连续执行。选型确认不等于文档确认。获得确认后，在批准范围内按依赖持续执行，不逐阶段重复请求继续授权。
 
 ## 位置与现有改动
 
@@ -54,7 +54,7 @@ PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=/Users/yao/personal/stock python3 -B -m uni
 
 ## M1 后的安装与统一检查
 
-以下命令是计划接口，相关文件当前不存在。M1 创建对应文件并实测后更新本节。
+以下安装与验证接口已在 M1 创建并实测通过。
 
 ```sh
 venv/bin/python -m pip install -r requirements.txt
@@ -62,7 +62,7 @@ venv/bin/python -m pip check
 venv/bin/python scripts/validate.py
 ```
 
-要求：`requirements.txt` 是可重复安装的完整依赖，`scripts/validate.py` 隔离凭据和日志，执行测试、AST 检查及文档／配置一致性验证。脚本缺失阶段只能记录“待创建”，不能报告已运行。
+要求：`requirements.txt` 是可重复安装的完整依赖，`scripts/validate.py` 隔离凭据和日志，执行测试、AST 检查及文档／配置一致性验证。后续演示／smoke 脚本仍按各阶段创建；未创建的接口不得报告已运行。
 
 各阶段演示和真实验收命令以 `Plan.md` 的 C1—C3、D1—D6、L1—L3 为准；创建后同步实际路径和参数。当前没有已配置的 lint、静态类型检查或构建脚本，不编造这些检查已经运行。
 

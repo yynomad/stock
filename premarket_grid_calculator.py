@@ -28,8 +28,6 @@ from lib.output import build_console_table, build_telegram_message, send_telegra
 from lib.watchlist import WatchlistManager
 
 
-logging.info("=" * 60)
-logging.info("脚本启动 (Yahoo Finance, modular)")
 
 
 def _adjust_with_premarket(pa_result: dict, premarket: dict, currency_sign: str) -> None:
@@ -210,6 +208,8 @@ def run_calculator(image_path: str = None, symbols: dict = None) -> tuple:
 
 
 if __name__ == "__main__":
+    from lib.config import configure_logging
+    configure_logging()
     import argparse
     parser = argparse.ArgumentParser(description="盘前 Price Action 策略计算器")
     parser.add_argument("--image", type=str, help="持仓截图路径（Gemini Vision 识别）")

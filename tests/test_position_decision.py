@@ -1,15 +1,4 @@
-import sys
-import types
 import unittest
-
-
-def _install_dotenv_stub():
-    dotenv = types.ModuleType("dotenv")
-    dotenv.load_dotenv = lambda *args, **kwargs: None
-    sys.modules.setdefault("dotenv", dotenv)
-
-
-_install_dotenv_stub()
 
 from lib.position_decision import build_position_decision
 
