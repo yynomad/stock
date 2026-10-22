@@ -54,3 +54,31 @@ venv/bin/python scripts/tasks.py --data-dir runtime/offline
 可修改一个合成依赖、写一个可观察断言，然后运行 `scripts/validate.py`。例如把 `SyntheticMarket.quote` 改为无时间戳报价，应没有提醒；真实适配器无需改动。先练习测试与工具边界，再扩展更复杂的分支与恢复。
 
 当前限制与真实接入步骤见 [README.md](README.md)，实际状态见 [Session_Handoff.md](Session_Handoff.md)。
+
+## 每日简报为什么没有再加一堆 Agent
+
+```sh
+venv/bin/python scripts/briefing.py --offline --scenario pipeline
+venv/bin/python scripts/briefing.py --offline --scenario sources
+venv/bin/python scripts/briefing.py --offline --scenario research
+venv/bin/python scripts/briefing.py --offline --scenario budget
+venv/bin/python scripts/briefing.py --offline --scenario schedule
+venv/bin/python scripts/briefing.py --offline --scenario end-to-end
+```
+
+这六个演示使用临时库，分别观察通用契约、来源及关系、研究、预算降级、假时钟、完整闭环。`synthetic: true` 表示模型与网络均替换为合成依赖；不是实盘或真实研究质量证明。
+
+```text
+普通代码：本人／日期认领 → 明确持仓来源 → SEC/RSS → 时间／权限检查
+                                       → 直接关系证据 → 已发送历史去重 → 新增事件分组
+LangChain 研究角色：只读取证据 → 选择／解释 → 输出 JSON
+普通代码：原文／引用／数字检查 → 中文简报 → 本机历史 → Telegram → sent/failed/unknown
+```
+
+`lib/briefing/` 提供不依赖股票的 Evidence、SourcePolicy、History、Budget、Scheduler；`lib/stock_briefing/` 负责持仓、官方素材、关系和简报结构。现有 `create_research_agent` 工厂被按需研究和日报共同使用，日报直接调用研究角色，无需让主控重复分类已知任务。没有手写 LangGraph 状态图。
+
+值得读的路径：`sources.py` 的未知时间拒绝；`relations.py` 如何拒绝仅有公司共现；`agent.py` 如何限制为原文引用；`budget.py` 的 BEGIN IMMEDIATE 如何防并发超额；`schedule.py` 为什么在外部发送前写 sending。超时后无法知道服务端是否完成，所以 unknown 不自动重试。
+
+练习时把 budget 场景的配置从零改为小金额，观察“没有发出模型调用”和“调用超时、用量未知”的区别；把同一 RSS 的正文改一个事实，确认旧标题仍能保留新进展。每次配合测试，运行统一检查。要扩展公司 RSS，先核对许可和完整公司名称，写 fixture 测试，再用真实预览核查，不给模型自己决定来源权限或发送授权。
+
+日报只向模型提供公开材料、股票代码与关系原句，不提供账号、股数或成本。生成、去重和发送的状态由普通代码维护，新闻中的指令无法修改预算或目标会话。研究解释仍需人核查；引用检查不是投资结论正确率测试。

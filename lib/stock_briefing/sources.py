@@ -7,12 +7,12 @@ import json
 import os
 import re
 import socket
-import threading
 import time
 from urllib.parse import urlsplit
 import xml.etree.ElementTree as ET
 import requests
 from ..briefing.models import Evidence,SourcePolicy,canonical_url
+from ..sec_access import SEC_GATE
 
 SEC_POLICY='https://www.sec.gov/about/developer-resources'
 FED_POLICY='https://www.federalreserve.gov/disclaimer.htm'
@@ -29,8 +29,6 @@ def plain(value):return html.unescape(re.sub('<[^>]*>',' ',value or '')).strip()
 
 class PublicHTTP:
     """Bounded, allow-listed HTTPS, no redirects, total SEC rate below 10/s."""
-    _lock=threading.Lock()
-    _sec_last=0
     def __init__(self,user_agent=None,get=requests.get,sleep=time.sleep):
         self.user_agent=user_agent if user_agent is not None else os.getenv('SEC_USER_AGENT','')
         self.get=get;self.sleep=sleep
@@ -43,9 +41,7 @@ class PublicHTTP:
         if is_sec and ('@' not in self.user_agent or len(self.user_agent)<8):raise ValueError('SEC_USER_AGENT must include a real contact email')
         for attempt in range(3):
             if is_sec:
-                with self._lock:
-                    self.sleep(max(0,0.16-(time.monotonic()-PublicHTTP._sec_last)))
-                    PublicHTTP._sec_last=time.monotonic()
+                SEC_GATE.wait(sleep=self.sleep)
             try:
                 with self.get(url,headers={'User-Agent':self.user_agent or 'StockMan public RSS reader','Accept':'application/json, application/xml, text/xml'},timeout=(5,10),allow_redirects=False,stream=True) as response:
                     if response.status_code in (429,500,502,503,504) and attempt<2:

@@ -13,6 +13,7 @@ from .portfolio import valid_symbol
 from .pa_strategy import analyze_pa
 from .market import YahooMarket
 from .agents import CURRENT,CallLimit
+from .sec_access import SEC_GATE
 
 
 def symbol_from_request(request):
@@ -58,8 +59,8 @@ class SECClient:
         identity=os.getenv('SEC_USER_AGENT','')
         if '@' not in identity:raise ValueError('请配置 SEC_USER_AGENT：应用名及可联系邮箱')
         with self.lock:
-            time.sleep(max(0,0.15-(time.monotonic()-self.last)))
             for attempt in range(3):
+                SEC_GATE.wait()
                 try:
                     response=requests.get(url,headers={'User-Agent':identity,'Accept-Encoding':'gzip, deflate'},timeout=15)
                     self.last=time.monotonic()

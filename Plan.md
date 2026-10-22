@@ -106,7 +106,7 @@ N3 实际验收：全量 84 项离线测试；research／budget 演示通过。�
 
 N4 实际验收：93 项全量测试通过；schedule 与 Telegram dry-run 通过。默认关闭；启用后在现有 Bot 中运行，日／本人唯一认领，今日补发、周末、时区、并发、重启及 unknown 覆盖。生成前失败每 15 分钟最多尝试三次；可能已发送的报告不自动重试。新增实际 runtime 进程锁；截图来源限本人会话。
 
-### N5：完整验收、配置和学习交付
+### N5：完整验收、配置和学习交付（离线完成，真实验收部分待办）
 
 前置：N4。可观察结果：完整 Stock 离线闭环、预算可调、故障可解释，已有功能保留，用户可以据说明启用真实日报。
 
@@ -117,8 +117,13 @@ N4 实际验收：93 项全量测试通过；schedule 与 Telegram dry-run 通�
 - 真实公开来源和 Gemini 预览可在不含账户敏感信息的条件下显式验证；IBKR 等用户登录；真实 Telegram 与自动日报由用户在本人会话验收。无法运行的检查保留未验证和恢复步骤。
 - 无真实测试不能把 B1—B8 全部勾选完成。预算真实成本以用量记录核对，不能用通用假模型测试代替研究质量评估。
 
-## 新命令状态与原有授权
+## 最终命令状态与验收证据
 
-`scripts/briefing.py --offline --scenario pipeline` 已创建并验证；N1 共用契约和 SQLite 状态、并发、重启边界通过 68 项全量测试。sources／research／budget／schedule／end-to-end 按 N2—N5 实现，尚未验收。
+- 统一检查 `venv/bin/python scripts/validate.py`：104 项离线测试、AST、文档结构／链接及 pip check 通过。原 62 项回归保留；未配置 lint／类型／build，不编造结果。
+- 原 D1—D6 六场景、新 `scripts/briefing.py --offline --scenario pipeline/sources/research/budget/schedule/end-to-end` 六场景、L3 Telegram dry-run 全通过（每个场景分别执行，非将斜线字符串传给 CLI）。
+- 完整合成验收实际经过 PortfolioService 图片快照、SEC/RSS 适配、关系核对后同次补抓直接发行人、研究角色、预算、报告／历史、假时钟、两次假投递、重启及 unknown 不重发。合成快照时间由固定时钟决定，不依赖真实时间。
+- 2026-10-22 真实公开预览：`BRIEFING_LOOKBACK_HOURS=168 BRIEFING_MAX_MODEL_CALLS=1 venv/bin/python scripts/briefing.py --dry-run --public-symbols AAPL QQQ --data-dir runtime/public-check`。美联储 RSS 连通、格式有效，窗口内 0 条；SEC 因缺有效 SEC_USER_AGENT 报 ValueError；QQQ 基金材料未配置，输出 partial。没有调用模型（费用账本 0）、没有读取券商或发送 Telegram。该结果只证明实际 RSS 和降级流程，不证明真实 Gemini 研究质量。
+- 新 CLI 默认真实预览；`--send` 只允许用户配置的本人私聊且当天一次，未实际执行；`--status` 只读本地状态。启用说明见 README.md，阶段学习见 Learning.md。
+- N1 `585012c`、N2 `7a78d7c`、N3 `2bb2ef9`、N4 `9dfcea5`；N5 为包含本记录的提交。
 
-用户已确认 Stock 日报新增范围及默认；既有框架、型号、数据路线和直接关系范围不重新提问。按 N1—N5 连续执行，逐独立验证改动提交；重大选择变化或真实外部阻塞才暂停相关工作。
+用户已确认新增 Stock 日报文档，N1—N5 按授权实施，不重复请求批准。下一步需要用户的外部条件：设置真实 SEC 联系信息、IBKR 用户名获批并登录 Gateway／核对联名账户，以及本人 Telegram 和 Gemini 的实际质量／费用验收。不要启动 Bot 或发送真实测试来冒充这些步骤完成。

@@ -20,6 +20,10 @@ class History:
             rows=self.store.execute("SELECT e.id FROM brief_evidence e JOIN brief_report_items i ON i.evidence=e.id JOIN brief_reports r ON r.id=i.report WHERE r.owner=? AND r.status='sent' AND e.fingerprint=? LIMIT 1",(owner,item.fingerprint))
             if not rows:result.append(item)
         return result
+    def context(self,owner,event_key):
+        if not event_key:return []
+        rows=self.store.execute("SELECT e.metadata FROM brief_evidence e JOIN brief_report_items i ON i.evidence=e.id JOIN brief_reports r ON r.id=i.report WHERE r.owner=? AND r.status='sent' AND e.event_key=? ORDER BY r.at DESC LIMIT 1",(owner,event_key))
+        return [json.loads(row['metadata']) for row in rows]
     def save(self,owner,day,items,policies,text,meta):
         identity=uuid.uuid4().hex
         can_store=all(policies[i.source].store_analysis for i in items)

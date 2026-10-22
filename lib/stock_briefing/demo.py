@@ -71,3 +71,73 @@ def schedule_demo(directory):
         assert len(store.execute('SELECT * FROM brief_daily'))==2
         return {'synthetic':True,'scenario':'schedule','deliveries':len(sent),'today_only_catchup':delayed,'restart_dedup':'passed'}
     finally:store.close()
+
+def end_to_end(directory):
+    from datetime import datetime,timezone
+    from zoneinfo import ZoneInfo
+    from dataclasses import replace
+    import json
+    from langchain_core.language_models.chat_models import BaseChatModel
+    from langchain_core.messages import AIMessage
+    from langchain_core.outputs import ChatGeneration,ChatResult
+    from ..briefing.config import BriefingConfig
+    from ..briefing.schedule import Scheduler
+    from ..portfolio import PortfolioService
+    from .service import StockBriefing
+    class Model(BaseChatModel):
+        @property
+        def _llm_type(self):return 'synthetic-daily-end-to-end'
+        def _generate(self,messages,**kwargs):
+            data=json.loads(messages[-1].content)
+            rows=[{'id':i['id'],'quote':i['body'][:200],'impact':'存在间接影响的可能，需后续验证。','unknown':'未核实持仓的收入影响。','watch':'关注公司下一份披露。'} for i in data['evidence'][:data['max_events']]]
+            return ChatResult(generations=[ChatGeneration(message=AIMessage(content=json.dumps({'events':rows}),usage_metadata={'input_tokens':200,'output_tokens':200,'total_tokens':400}))])
+    class FixtureHTTP:
+        def __init__(self):self.now=0;self.calls=[]
+        def read(self,url,hosts):
+            self.calls.append(url)
+            if 'submissions' in url:
+                cik='0000000123' if '0000000123' in url else '0000000456'
+                data={'filings':{'recent':{'form':['8-K'],'accessionNumber':[cik+'-26-000001'],'primaryDocument':['update.htm'],'acceptanceDateTime':[datetime.fromtimestamp(self.now-10,timezone.utc).isoformat()]}}}
+                return json.dumps(data).encode()
+            if url.endswith('/broken'):raise TimeoutError()
+            published=datetime.fromtimestamp(self.now-10,timezone.utc).strftime('%a, %d %b %Y %H:%M:%S GMT')
+            return f'<rss><channel><item><title>合成：直接供应关系</title><link>https://example.com/relationship</link><pubDate>{published}</pubDate><description>Beta Corp supplies Alpha Corp.</description></item></channel></rss>'.encode()
+    def at(value):return datetime.fromisoformat(value).replace(tzinfo=ZoneInfo('Asia/Shanghai')).timestamp()
+    http=FixtureHTTP();sent=[];config=BriefingConfig(enabled=True)
+    registry={'issuers':{'AAA':{'name':'Alpha Corp','cik':'123'},'BBB':{'name':'Beta Corp','cik':'456'}},'rss':[
+        {'url':'https://example.com/relationships','symbols':['AAA'],'relationships':True,'policy':{'source':'synthetic-relations','review_url':'https://example.com/policy','reviewed':True,'analyze':True,'store_metadata':True,'store_analysis':True}},
+        {'url':'https://example.com/broken','macro':True,'policy':{'source':'synthetic-unavailable','review_url':'https://example.com/policy','reviewed':True,'analyze':True,'store_metadata':True,'store_analysis':True}}]}
+    store=Store(Path(directory)/'stockman.sqlite')
+    try:
+        portfolio=PortfolioService(store,ibkr=lambda account:{'AAA':{'shares':0.5}},image=lambda path:{'AAA':{'shares':2}})
+        # Import the screenshot once; source scopes are independent.
+        image=portfolio.import_image('SYNTHETIC','123')
+        store.execute('UPDATE snapshots SET asof=? WHERE id=?',(at('2026-10-22T07:00:00'),image))
+        service=StockBriefing(store,config,Model(),registry,http)
+        def build(owner,now,day):
+            http.now=now
+            return service.generate(owner,portfolio.load(owner,image),now,day)
+        scheduler=Scheduler(store,config,'123',{'123'},build,lambda result:sent.append(result) or 'sent')
+        assert scheduler.tick(at('2026-10-22T07:59:00'))['status']=='not_due'
+        first=scheduler.tick(at('2026-10-22T08:00:00'));assert first['status']=='sent',first
+        assert any('0000000456' in url for url in http.calls) # newly verified one-hop issuer, same run
+        assert '来源异常' in sent[0]['text'] and '事实原文摘录' in sent[0]['text']
+        assert len(service.relations.direct(['AAA'],http.now))==1
+        # Same facts are not suppressed just because a preview ran, but sent evidence is.
+        http.now=at('2026-10-22T09:00:00')
+        preview=build('123',http.now,'2026-10-22');assert preview['meta']['selected']==0
+        store.close();store=Store(Path(directory)/'stockman.sqlite')
+        service=StockBriefing(store,config,Model(),registry,http)
+        portfolio=PortfolioService(store,ibkr=lambda account:{'AAA':{'shares':0.5}})
+        scheduler=Scheduler(store,config,'123',{'123'},build,lambda result:sent.append(result) or 'sent')
+        scheduler.recover();assert scheduler.tick(at('2026-10-22T10:00:00'))['status']=='sent'
+        delayed=scheduler.tick(at('2026-10-25T12:00:00'));assert delayed['status']=='sent' and delayed['delayed']
+        assert len(store.execute('SELECT * FROM brief_daily'))==2 and len(sent)==2
+        assert '缓存' not in sent[0]['text'] # explicit original screenshot, not a merged broker source
+        # Separate fake day simulates partial network delivery; recovery must stop replay.
+        scheduler.send=lambda result:'unknown'
+        assert scheduler.tick(at('2026-10-26T08:00:00'))['status']=='unknown'
+        scheduler.recover();scheduler.send=lambda result:(_ for _ in ()).throw(AssertionError('replay'))
+        assert scheduler.tick(at('2026-10-26T09:00:00'))['status']=='unknown'
+        return {'synthetic':True,'scenario':'end-to-end','deliveries':len(sent),'sources':['image (synthetic)','SEC adapter (synthetic)','RSS adapter (synthetic)'],'relationship_hops':1,'today_only_catchup':'passed','restart_and_dedup':'passed','unconfirmed_delivery':'unknown','budget':service.budget.status('2026-10-22')}
+    finally:store.close()

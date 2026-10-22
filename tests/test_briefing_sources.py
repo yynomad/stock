@@ -67,3 +67,15 @@ class BriefingSourcesTest(unittest.TestCase):
     def test_holdings_scope_does_not_expose_account_or_costs(self):
         result=scope({'source':'image','asof':1000,'account':'SECRET','positions':{'AAPL':{'shares':2,'avg_cost':99}}},100000)
         self.assertNotIn('SECRET',str(result));self.assertNotIn('99',str(result));self.assertTrue(result['stale'])
+
+    def test_sec_pacing_gate_is_shared_with_existing_research(self):
+        from lib.sec_access import RateGate,SEC_GATE
+        from lib import research
+        from lib.stock_briefing import sources
+        self.assertIs(research.SEC_GATE,SEC_GATE);self.assertIs(sources.SEC_GATE,SEC_GATE)
+        clock=[100.0];starts=[]
+        def sleep(seconds):clock[0]+=seconds
+        gate=RateGate()
+        for _ in range(12):
+            gate.wait(sleep=sleep,clock=lambda:clock[0]);starts.append(clock[0])
+        self.assertTrue(all(b-a>=0.159999 for a,b in zip(starts,starts[1:])))

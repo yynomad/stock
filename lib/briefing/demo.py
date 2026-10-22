@@ -11,7 +11,7 @@ class SyntheticSource:
         return [Evidence('synthetic','合成事件：订单计划有更新','https://example.com/event',now-10,now,'Synthetic facts, not real financial evidence.',('DEMO',),'demo-order')]
 
 def run(scenario,directory):
-    if scenario!='pipeline':raise ValueError('scenario not implemented yet')
+    if scenario!='pipeline':raise ValueError('generic demo only supports pipeline; Stock demos have their own module')
     store=Store(Path(directory)/'stockman.sqlite')
     try:
         result=preview(store,[SyntheticSource()],now=2000000000)

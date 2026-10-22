@@ -2,9 +2,71 @@
 
 用 Python 和 LangChain 实现的自用多 Agent 项目。一个主控按请求委派持仓、研究、监控三个 Agent；复用原有 PA 与仓位计算。支持 **IBKR 只读持仓同步和持仓截图**，以 Telegram 交互，在本地 SQLite 保存执行记录。首版支持美股与美股 ETF。
 
-当前离线闭环已实现（62 个测试通过）；真实 IBKR 尚待新用户名获批与 Gateway 登录。Gemini 搜索真实探测超过 75 秒总时限，未验证成功；Telegram 真实会话也尚待验收。不要把合成演示数据当成实际持仓或真实研究。
+每日持仓信息简报和原多 Agent 离线闭环已实现（最终检查记录见 Plan.md）；真实 IBKR 尚待新用户名获批与 Gateway 登录。Gemini 搜索真实探测超过 75 秒总时限，未验证成功；Telegram 真实会话也尚待验收。不要把合成演示数据当成实际持仓或真实研究。
 
 物理项目目录：`/Users/yao/personal/stock/`。完整需求见 [Product.md](Product.md)，实施与逐项验收见 [Plan.md](Plan.md)，学习示例见 [Learning.md](Learning.md)。
+
+## 每天上班前需要知道什么
+
+围绕持仓筛选官方素材，按“发生了什么、为何相关、可能影响、未知、后续观察、来源”生成中文日报。默认北京时间 08:00，自然日含周末；Mac 和 Bot 恢复后只补当天一份。自动发送默认关闭，不会因安装或预览而启动。
+
+先看完整合成演示，无凭据、不联网、不发送：
+
+```sh
+venv/bin/python scripts/briefing.py --offline --scenario end-to-end
+venv/bin/python scripts/briefing.py --offline --scenario budget
+```
+
+真实预览默认不发送；会访问公开来源，存在新材料且预算允许时调用 Gemini。公开标的预览不读取券商：
+
+```sh
+venv/bin/python scripts/briefing.py --dry-run --public-symbols AAPL QQQ
+venv/bin/python scripts/briefing.py --dry-run
+venv/bin/python scripts/briefing.py --status --data-dir runtime
+```
+
+第二条读取配置的持仓来源。等待 IBKR 用户名期间，可设置 `BRIEFING_PORTFOLIO_SOURCE=image`，先在本人 Bot 会话发送截图；也可用原 `scripts/chat.py --session <本人ChatID> --image <绝对路径>` 导入同一会话快照。日报使用该会话最近图片，不混入 IBKR；旧快照标明时间与过期。`--snapshot <ID>` 可指定同一会话的图片快照。
+
+| 可配置项 | 默认及说明 |
+| --- | --- |
+| `BRIEFING_ENABLED` | `false`；用户改为 `true` 并启动 Bot 才自动运行 |
+| `BRIEFING_PORTFOLIO_SOURCE` | `ibkr` 或 `image`，不自动跨源回退 |
+| `BRIEFING_TIME` / `BRIEFING_TIMEZONE` | `08:00` / `Asia/Shanghai`；更改后按所配本地自然日计日报和预算 |
+| `BRIEFING_DAILY_BUDGET_USD` | `0.20`；可任意调小调大，`0` 关闭日报模型并保留来源简报；非有限／负值拒绝 |
+| `BRIEFING_MAX_MODEL_CALLS` | `8`；每天跨所有预览及发送共同累计，显式重试也占一次 |
+| `BRIEFING_MAX_OUTPUT_TOKENS` | `2048`；单次输出上限 |
+| `BRIEFING_MAX_EVENTS` | `5`；未展开的新增数量会注明 |
+| `BRIEFING_LOOKBACK_HOURS` / `BRIEFING_RETENTION_DAYS` | `24` / `30`；跨天休眠不补齐全部历史，报告注明缺口 |
+| `BRIEFING_INPUT_USD_PER_MILLION` / `BRIEFING_OUTPUT_USD_PER_MILLION` | `0.30` / `2.50`，按已核对的标准文本费率估算；换型号／费率需更新 |
+| `BRIEFING_SOURCES_FILE` | 空值使用 [briefing.sources.json](briefing.sources.json)；可改成本机已审核的来源配置 |
+
+日报费用按 SQLite 原子预留，SDK 每次仅一次网络尝试，最多一次应用重试且重新预留；超时保留未知用量估算，不按零元处理。输入按字节加开销保守估算，输出含思考按 SDK usage 结算；这不是供应商账单硬封顶。预览也消耗日报预算，按需聊天／截图／Google 搜索另计。
+
+事实只展示可匹配的原文摘录；数字限在原文，解释分为推测、未知和观察点。引用 ID、原文匹配只能检查来源一致性，不能保证模型推断正确。失效模型／预算不足时回到原文与链接，来源失败不会当作无新闻。
+
+### 来源覆盖的实际范围
+
+默认配置 9 个常见美股发行人的 SEC 申报元数据和美联储货币政策 RSS。SEC 条目只确认申报类型／时间，**没有读取财报或公告正文**，无法仅凭这些判断业绩好坏。QQQ 等 ETF 不套公司财务，未配置基金材料会提示缺失；当前还没有完整的公司新闻、行业、ETF 成分或供应链覆盖。
+
+自定义官方 RSS 需逐源审核 `review_url` 及 `reviewed/analyze/store_metadata/store_body/store_analysis`。未审核拒绝采集；默认不存正文；不允许保存分析的来源仅临时显示，报告库保存限制标记。美联储保留出处；来源政策依据见 Product.md。Google 接地仍仅用于原按需展示，不进入日报库，也不用来发现爬取目标。
+
+直接关系从可信配置的完整公司名称和材料中的明确供应／购买／竞争句式抽取，保留原句、来源与核对时间，只跟一层；不把公司共现当关系。当前严格英语句式识别可能漏报复杂表述，默认没有凭空填入的关系库，180 天旧证据停止扩展。新确认的直接发行人本次即可补抓，仍受每次最多 20 来源限制。
+
+### 启用与恢复
+
+填好已有 `.env` 所需字段及 `SEC_USER_AGENT`，先预览核对来源、持仓时点和成本，再自行设置 `BRIEFING_ENABLED=true` 并运行 `venv/bin/python bot.py`。本轮没有修改用户 `.env`、启动 Bot 或真实发送。
+
+用户确需手动发送今天一份时，先停止同目录 Bot，再显式运行：
+
+```sh
+venv/bin/python scripts/briefing.py --send
+```
+
+只允许 `TG_CHAT_ID` 对应的正数本人私聊和授权用户，不向群发日报；同一天已确认发送则返回现有状态。手动发送不需要打开自动调度；公开标的预览不能直接转为发送。没有删除 webhook 或修改轮询 offset 的行为。
+
+`--status` 只读显示 `brief_daily/brief_reports`；`unknown` 先在 Telegram 人工核实，程序不自动重发。生成前失败可在当天每 15 分钟重试、最多三次；发送失败或可能部分发送后停止自动重试。保留错误类型，不记录带密钥的原始异常。运行目录有进程锁；预览／发送要先停止同目录 Bot。
+
+业务表：`brief_evidence` 保存许可内元数据与指纹，`brief_reports/brief_report_items` 保存报告／引用，`brief_relations` 保存已核对原句，`brief_budget` 保存估算及未知用量，`brief_daily` 保存计划和投递状态。它们在已有本机 SQLite 中，Git 忽略；不是公开数据或云端服务。报告历史默认清理三十天，财务账本和日投递索引保留用于审计。
 
 ## 安装和离线体验
 

@@ -101,3 +101,32 @@ class BriefingResearchTest(unittest.TestCase):
             self.assertEqual(request['config'].http_options.retry_options.attempts,1)
             self.assertEqual(request['config'].max_output_tokens,2048)
         finally:model.client.close()
+
+    def test_numbers_with_wrong_units_rejected_even_if_digit_occurs_in_source(self):
+        item=replace(StockSource().fetch(2000000000)[0],body='Revenue was 99 USD.')
+        row={'id':item.identity,'quote':item.body,'impact':'收入上涨 99%','unknown':'未知','watch':'关注公告'}
+        with self.assertRaises(ValueError):validate_output(json.dumps({'events':[row]}),[item],5)
+    def test_no_news_receipt_and_missing_sources_are_distinct(self):
+        class Empty(StockSource):
+            def fetch(self,now):return []
+        service=StockBriefing(self.store,BriefingConfig(),registry={'issuers':{},'rss':[]})
+        snapshot={'source':'image','asof':2000000000,'positions':{'AAA':{'shares':1}}}
+        empty=service.generate('local',snapshot,2000000000,sources=[Empty()])
+        failed=service.generate('local',snapshot,2000000000,sources=[BrokenSource()])
+        self.assertEqual(empty['status'],'completed');self.assertEqual(failed['status'],'partial')
+        self.assertNotIn('来源异常',empty['text']);self.assertIn('来源异常',failed['text'])
+
+    def test_exhausted_call_limit_and_settlement_keeps_reasoning_once(self):
+        budget=Budget(self.store,BriefingConfig(budget=1,max_calls=1))
+        identity=budget.reserve('day',100)
+        budget.settle(identity,{'input_tokens':100,'output_tokens':200,'output_token_details':{'reasoning':100}})
+        self.assertEqual(budget.status('day')['estimated_usd'],0.00053)
+        with self.assertRaises(BudgetExceeded):budget.reserve('day',100)
+    def test_invalid_reference_type_is_validation_failure(self):
+        item=StockSource().fetch(2000000000)[0]
+        row={'id':[],'quote':item.body,'impact':'可能变化','unknown':'未知','watch':'关注公告'}
+        with self.assertRaises(ValueError):validate_output(json.dumps({'events':[row]}),[item],5)
+    def test_identical_boilerplate_for_different_entities_is_not_deduplicated(self):
+        item=StockSource().fetch(2000000000)[0]
+        other=replace(item,entities=('CCC',))
+        self.assertNotEqual(item.fingerprint,other.fingerprint)

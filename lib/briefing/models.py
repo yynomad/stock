@@ -37,11 +37,12 @@ class Evidence:
     body: str=''
     entities: tuple=()
     event_key: str=''
+    occurred: float | None=None
 
     def validate(self,now):
         canonical_url(self.url)
         if not self.source or not isinstance(self.title,str) or not self.title.strip() or len(self.title)>2000 or not isinstance(self.body,str) or len(self.body)>200000:raise ValueError('invalid evidence text')
-        for stamp in [self.published,self.fetched]:
+        for stamp in [self.published,self.fetched]+([] if self.occurred is None else [self.occurred]):
             if isinstance(stamp,bool) or not isinstance(stamp,(int,float)) or not math.isfinite(stamp) or stamp<=0 or stamp>now+30:raise ValueError('missing or invalid evidence timestamp')
         if not all(isinstance(x,str) and x for x in self.entities):raise ValueError('invalid entities')
 
@@ -50,7 +51,8 @@ class Evidence:
         # Never suppress an update just because it reuses the previous title or URL.
         content=re.sub(r'\s+',' ',self.body).strip().casefold()
         if not content:content=canonical_url(self.url)+' '+self.title.strip()
-        return hashlib.sha256(content.encode()).hexdigest()
+        # Identical boilerplate about different companies is not the same event.
+        return hashlib.sha256((repr(sorted(self.entities))+' '+content).encode()).hexdigest()
 
     @property
     def identity(self):return hashlib.sha256((self.source+canonical_url(self.url)+self.fingerprint).encode()).hexdigest()[:24]

@@ -1,7 +1,7 @@
 # StockMan 会话交接
 
 更新：2026-10-22，Asia/Shanghai。
-当前状态：用户已回复“是的”，批准新增 Stock 日报 Product.md／Plan.md，按 N1—N5 连续实施。N1 共用证据／历史／投递和离线入口已完成，68 项测试及 pipeline 演示通过；N2／N3 已完成，N4 已完成，下一步 N5。
+当前状态：用户已回复“是的”，新增日报 N1—N5 按批准范围完成离线实现和交付。104 项测试、原六场景、新六场景、Telegram dry-run 通过。真实美联储 RSS 可读，SEC 配置、Gemini 实际质量、IBKR 与本人 Telegram 仍待验收；自动发送未启用。
 
 ## 位置、工作区与授权
 
@@ -33,11 +33,12 @@ Product.md 已把可配置参数集中列为用户已批准的可调建议默认
 
 来源逐源记录处理能力，未知权限不默认全文缓存／分析，不能用 Google 接地返回值建立日报库、再分析或自动收集爬取目标。SQLite 保留必要事件事实和去重／引用／投递，正文处理遵守来源限制。上下游关系需要来源和核对时间，实际输出必须有真实引用，模板中的虚构甲乙公司不能冒充新闻。
 
-## 下一步
+## 下一步与外部条件
 
-1. N1 完成于包含本记录的提交：共用 Evidence／SourcePolicy、SQLite 历史和发送前认领、unknown 恢复，预览不消耗正式去重状态。
-2. N2 已接入 SEC 申报元数据、经官方条款核对的美联储 RSS、严格句式的直接关系提取和来源证据；N3 已完成研究角色、原文引用校验／预算／降级；N4 调度和本人 Bot 接入已完成，继续 N5 全体验收及配置／学习说明。保持现有物理目录，不改用户 .env，不真实发送。
-3. 新入口 `scripts/briefing.py --offline --scenario pipeline` 已创建并通过；sources 演示及 75 项全量测试已通过；其余场景按阶段实现。
+1. 用户补有效 SEC_USER_AGENT，重新运行 README 的公开预览；美联储 RSS 本轮已真实连接，窗口内没有材料，正确地没有调用模型。预览 partial 的配置／覆盖缺失不能说成全部通过。
+2. 用户新 IBKR 用户名获批并登录 Gateway 后，按原 L1 核对联名账户、只读开关及手机并发；等待期间可明确选择 image，同一本人会话最近截图为日报来源，不跨源回退。
+3. 用户本人核查真实简报质量、Gemini 用量／费率、Telegram 分段与 unknown 处理，再设置 BRIEFING_ENABLED=true 并自行启动 Bot。未授权发布、push、自动化或真实发送，不替用户启用。
+4. 功能代码已交付，不再重复原技术或文档批准。若要扩大丰富公司新闻、ETF 成分或关系识别，先明确下一范围；当前默认 SEC 只取元数据，严格关系语法会漏报。
 
 ## 原有实现与提交
 
@@ -56,12 +57,12 @@ Product.md 已把可配置参数集中列为用户已批准的可调建议默认
 | ce1be7c | 素材 A |
 | 7f83dca | 直接关联 A |
 | 34cfa1b | 补发 A、预算候选与虚构结构样例 |
-| 包含本记录的提交 | 按用户要求将预算改为可配置，整合新增日报产品／实施文档（024ce43，已获确认） |
+| 024ce43 | 将预算改为可配置，整合新增日报产品／实施文档，已获确认 |
 
 ## 验证和真实服务状态
 
-- 之前 62 个原有离线测试、C1—C3、D1—D6、L3 已通过。本轮 N1 的 scripts/validate.py 已通过：68 个离线测试、AST、文档结构／链接及 pip check；pipeline 假投递一次及重启去重通过。未改依赖或用户 .env。
-- 新日报 B1—B8 尚未整体验收，N1 基础闭环已通过，不以旧测试或虚构样例代替验收。
+- 最终 scripts/validate.py 通过 104 项离线测试（含原 62 项）、AST、文档结构／链接及 pip check；原六场景、新六场景及 L3 均通过。分阶段历史验证见后文。未改依赖或用户 .env。
+- 新日报 B1—B7 已通过离线验收；B8 仍有外部条件，不能宣布整体实盘验收完成。
 - 真实 IBKR：用户仍等待新用户名或尚未登录 Gateway；IBKR_ACCOUNT 之前未配置。尚未核对联名持仓、只读设置、手机号与 Gateway 并发及当前 ibapi SDK 兼容性。
 - 真实 Gemini 搜索：已超过 75 秒总期限，退出 2；元数据查询 ConnectTimeout，Google 根地址曾 404，Yahoo 根地址 429。不能证明模型／搜索或实际行情可用。保留已选型号，不自动换供应商或开通计费。
 - SEC_USER_AGENT 之前未配置；本人 Telegram、真实图片识别和完整研究仍待验收。未打印密钥、未自动发真实消息、未删 webhook、未 push 或发布。
@@ -81,8 +82,18 @@ venv/bin/python scripts/tasks.py --data-dir runtime/offline
 
 ## 本轮 N3 验证记录
 
-N1 `585012c`；N2 `7a78d7c`；N3 为包含本记录的提交。统一检查 84 项测试通过，pipeline／sources／research／budget 离线演示通过。SDK 隐式重试禁用（attempts=1），最多一次应用重试且重新预留；未知成本不清零。标准输出 token 已含 reasoning，避免再次累加。日报账本不约束原聊天／图片模型费用。真实研究质量、来源连通性及账单未验收。
+N1 `585012c`；N2 `7a78d7c`；N3 `2bb2ef9`。统一检查 84 项测试通过，pipeline／sources／research／budget 离线演示通过。SDK 隐式重试禁用（attempts=1），最多一次应用重试且重新预留；未知成本不清零。标准输出 token 已含 reasoning，避免再次累加。日报账本不约束原聊天／图片模型费用。真实研究质量、来源连通性及账单未验收。
 
 ## 本轮 N4 验证记录
 
-N3 `2bb2ef9`；N4 为包含本记录的提交。93 项测试、schedule 假时钟／假发送及 Telegram dry-run 通过。自动日报未启用，真实 Bot 未运行；新增调度器只在用户启用后启动线程。日报只允许配置的正数私聊本人；IBKR／截图来源由 BRIEFING_PORTFOLIO_SOURCE 显式选择，不跨源回退。相同 runtime 用 fcntl 锁避免 Bot 与 CLI 同时恢复状态。
+N3 `2bb2ef9`；N4 `9dfcea5`。93 项测试、schedule 假时钟／假发送及 Telegram dry-run 通过。自动日报未启用，真实 Bot 未运行；新增调度器只在用户启用后启动线程。日报只允许配置的正数私聊本人；IBKR／截图来源由 BRIEFING_PORTFOLIO_SOURCE 显式选择，不跨源回退。相同 runtime 用 fcntl 锁避免 Bot 与 CLI 同时恢复状态。
+
+## N5 最终验收与交付
+
+包含本记录的提交提供完整 CLI、真实预览、本人显式发送入口、只读状态、README 与 Learning。统一检查 104 项测试、AST、六文档结构／链接、pip check 通过；原 D1—D6、新六演示及 L3 全通过，git diff --check 通过。进程锁、来源权限、数字限原文、同事件新事实、不同实体模板文本去重边界都有回归。
+
+真实公开预览（runtime/public-check，仅公开 AAPL/QQQ）输出 partial：fed:monetary ok、最近 168 小时 0 条；sec:AAPL 因缺有效 SEC_USER_AGENT 为 ValueError，QQQ coverage missing；没有模型调用，估算 0。真实 Gemini 新闻分析仍未验证，不以合成模型替代。未改实际 .env、未操作账户、未发送真实 Telegram、未启动 Bot、未改 webhook、未 push。
+
+文件入口：scripts/briefing.py 默认预览，--offline --scenario end-to-end 为无凭据学习演示，--status 为只读；--send 由用户明确执行，需本人正数 ChatID 和授权且一天一次。当天生成前失败最多三次（15 分钟间隔），发送 unknown 或失败不自动重发。报告历史默认三十天，日索引和预算账本保留审计，关系过期停用。所有配置已写 env.template，用户 .env 需本人补字段。
+
+N5 集成复核补充：原按需 SEC 与新日报共用同一进程限速门，避免各自限速叠加超过官方请求速率；回归涵盖共享对象及连续请求间距。
