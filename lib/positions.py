@@ -30,6 +30,13 @@ def fetch_positions_from_image(image_path: str) -> dict:
         print(f"  ℹ️  持仓截图不存在: {image_path or '(未提供)'}")
         return None
 
+    from .agents import CURRENT,CallLimit
+    context=CURRENT.get()
+    if context:
+        with context.lock:
+            context.models+=1
+            if context.models>int(os.getenv('STOCKMAN_MAX_MODEL_CALLS','8')):
+                raise CallLimit('截图模型调用次数达到上限')
     try:
         from google import genai
         from google.genai import types

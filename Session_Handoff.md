@@ -24,13 +24,14 @@ M1—M6 的离线实现与验收已完成。真实 IBKR、完整 Gemini／搜索
 | `4a8f57b` | 限定账户 IBKR 完整快照、截图独立来源、持仓校验与复盘 |
 | `068081d` | 带事件时间行情、SEC 报告期、ETF、接地引用与临时新闻输出 |
 | `85e9140` | 本人 Telegram 入口、图片、持久监控、交易时段、去重与投递状态 |
-| 包含本记录的提交 | 完整 D6、CLI、学习文档、有限重试、部分失败与投递状态、图片恢复与更多回归测试 |
+| `542b370` | 完整 D6、CLI、学习文档、有限重试、部分失败与投递状态、图片恢复与更多回归测试 |
+| 包含本记录的提交 | 将截图准备纳入任务生命周期；失败有任务／调用记录，识图计入共享模型预算 |
 
 入口在 lib/application.py；bot.py 的 main 已接入新应用。lib/agents.py 是实际框架工具循环；lib/storage.py 与 checkpoints.sqlite 分别保存业务及框架状态。lib/offline.py 所有数据／模型均为合成，禁止冒充真实验证。
 
 ## 验证结果
 
-- C1 pip check、C2 直接 unittest 和 C3 `venv/bin/python scripts/validate.py`：当前 60 个离线测试通过，AST／文档／配置与 pip check 通过；禁止 socket 连接、隔离凭据及数据目录。
+- C1 pip check、C2 直接 unittest 和 C3 `venv/bin/python scripts/validate.py`：当前 62 个离线测试通过，AST／文档／配置与 pip check 通过；禁止 socket 连接、隔离凭据及数据目录。
 - D1—D6 六个演示通过；D6 完成双来源持仓、股票与 ETF 研究、规则创建、事件假发送、重启去重和停止。`scripts/chat.py --offline`＋`scripts/tasks.py` 读写通过。
 - L3 Telegram dry-run 通过，6 段合成文本，没有发送真实消息。
 - L2 真实 Gemini 搜索：首次长时间无输出已停止；加总时限后再次返回 `unverified: Gemini probe exceeded 75-second total deadline`，退出码 2。没有来源／用量可验证，不能报接入成功。

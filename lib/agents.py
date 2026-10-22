@@ -131,20 +131,31 @@ class AgentRuntime:
                 return ToolMessage(content=json.dumps({'error':type(exc).__name__,'detail':'工具调用失败，数据未验证；不要宣称成功'},ensure_ascii=False),tool_call_id=request.tool_call['id'])
         return [count_model,trace_tool]
 
-    def run(self, text, session='local', snapshot=None):
+    def run(self, text, session='local', snapshot=None, prepare=None):
         with self.lock:session_lock=self.session_locks.setdefault(session,threading.RLock())
         with session_lock:
             task=self.store.create_task(session,text)
             self.store.execute('INSERT INTO task_context VALUES(?,?)',(task,snapshot))
-            return self._invoke(task,session,{'messages':[HumanMessage(content=text)]},snapshot)
+            return self._invoke(task,session,{'messages':[HumanMessage(content=text)]},snapshot,prepare)
 
-    def _invoke(self, task, session, payload, snapshot=None):
+    def _invoke(self, task, session, payload, snapshot=None, prepare=None):
         if payload is None:
             rows=self.store.execute('SELECT snapshot FROM task_context WHERE task_id=?',(task,))
             snapshot=rows[0]['snapshot'] if rows else None
         original = payload["messages"][0].content if payload else json.loads(self.store.task(task)["input"])
         token=CURRENT.set(Invocation(task,session,snapshot,request=str(original)))
         try:
+            if prepare:
+                started=time.monotonic()
+                self.store.trace(task,'input','image_ingest','start',{})
+                try:
+                    snapshot=prepare()
+                    CURRENT.get().snapshot=snapshot
+                    self.store.execute('UPDATE task_context SET snapshot=? WHERE task_id=?',(snapshot,task))
+                    self.store.trace(task,'input','image_ingest','success',{'seconds':round(time.monotonic()-started,3)})
+                except Exception as exc:
+                    self.store.trace(task,'input','image_ingest','failed',{'error_type':type(exc).__name__})
+                    raise
             # User chose local execution records; inherited LangSmith settings must not upload holdings.
             with tracing_context(enabled=False):
                 state=self.agent.invoke(payload,config={'configurable':{'thread_id':session},'recursion_limit':32})

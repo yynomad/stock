@@ -33,8 +33,8 @@ class Application:
         if not self.allowed and str(TG_CHAT_ID).isdigit() and int(TG_CHAT_ID)>0:self.allowed={int(TG_CHAT_ID)}
 
     def handle(self,text,session='local',image_path=None):
-        snapshot=self.portfolio.import_image(image_path,session) if image_path else None
-        return self.runtime.run(text,session,snapshot)
+        prepare=(lambda:self.portfolio.import_image(image_path,session)) if image_path else None
+        return self.runtime.run(text,session,prepare=prepare)
 
     def handle_update(self,update):
         identity=update['update_id'];message=update.get('message',{})
