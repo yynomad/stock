@@ -74,7 +74,7 @@ venv/bin/python scripts/tasks.py --data-dir runtime/offline
 
 用户将 AI News 与 Stock 识别为相近简报需求，询问是否应抽共用开源工具供 Agent 使用。已检查实际代码：lib/telegram.py 引用 lib/research.py 的 news_html；GoogleNews.fetch 绑定股票代码及股票研究提示；当前尚无通用简报引擎。
 
-已在 Product.md 记录 A 股票单体、B 同仓库模块化复用、C 立即独立库双仓库；用户已明确回复 B。当前物理目录继续为 /Users/yao/personal/stock，既有项目内整理模块，不移动或建立新仓库。用户最新明确“先做 stock 这个项目”，首版仅 Stock，AI News 实现及示例后置。用户已选择新增日报采集路线 A（公司公告／SEC／可用 RSS＋Gemini 分析），既有 Gemini 型号及按需搜索不重选。下一项只确认有证据的关联公司覆盖深度。维持 Python、LangChain、Gemini、SQLite 等已有选择；没有创建新目录／仓库、服务、依赖或应用代码。若将来明确新项目，仍须按位置规则在 /Users/yao/personal 下创建并预检。
+已在 Product.md 记录 A 股票单体、B 同仓库模块化复用、C 立即独立库双仓库；用户已明确回复 B。当前物理目录继续为 /Users/yao/personal/stock，既有项目内整理模块，不移动或建立新仓库。用户最新明确“先做 stock 这个项目”，首版仅 Stock，AI News 实现及示例后置。用户已选择新增日报采集路线 A（公司公告／SEC／可用 RSS＋Gemini 分析），既有 Gemini 型号及按需搜索不重选。用户已选直接关联范围 A；下一项决定本机错过 08:00 时如何处理。维持 Python、LangChain、Gemini、SQLite 等已有选择；没有创建新目录／仓库、服务、依赖或应用代码。若将来明确新项目，仍须按位置规则在 /Users/yao/personal 下创建并预检。
 
 本轮只修改三份文档；venv/bin/python scripts/validate.py 通过：62 个原有离线测试、AST、文档链接／围栏和 pip check 均通过；git diff --check 通过。保留每天北京时间 08:00 的已确认需求，日报来源／保存、成本及运行可靠性仍需澄清。
 
@@ -91,4 +91,11 @@ venv/bin/python scripts/tasks.py --data-dir runtime/offline
 
 用户回复 A，确认日报直接采集公告／SEC／核对后可用 RSS，Gemini 筛选解释；按需 Google 接地功能保留，不把返回内容存成日报新闻库或用于发现爬取目标。具体来源及逐源保存方式后续细化，不暗中选择新付费 API。物理目录仍为 /Users/yao/personal/stock，未移动。
 
-下一项待选择是关联覆盖深度：推荐直接上下游、主要竞争对手与明确相关的行业／宏观主题；另一个选项为首版多层递归扩展。用户尚未选择此项。每日报价与新闻成本、运行可靠性仍待明确。本轮只有四份文档变更；已运行 venv/bin/python scripts/validate.py，62 个原有离线测试、AST、文档校验及 pip check 通过，git diff --check 通过；未开始依赖未决选择的应用实现。
+用户已回复 A，确认直接上下游、主要竞争对手与明确相关的行业／宏观主题，不递归扩展多层。每日报价与新闻成本、运行可靠性仍待明确。本轮只有四份文档变更；已运行 venv/bin/python scripts/validate.py，62 个原有离线测试、AST、文档校验及 pip check 通过，git diff --check 通过；未开始依赖未决选择的应用实现。
+
+
+## 最新关联范围确认：A
+
+用户已明确选择直接关联范围。每日素材路线、架构及首版 Stock 优先均保留，不重新提问。下一项是沿用 Mac 部署时错过 08:00 的处理：推荐恢复后补发当天一份并标记延迟，另一个方案是跳过至次日；用户未选择此项。没有创建定时任务或修改应用。
+
+本次只更新四份文档，已校验六份文档结构／链接、选择状态及 git diff --check，均通过；应用代码未变，上次 62 个离线测试通过的证据保留，不宣称本次重跑或日报验收完成。物理目录仍为 /Users/yao/personal/stock，保留原工作区。
