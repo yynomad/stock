@@ -35,6 +35,7 @@ class Invocation:
     models: int = 0
     tools: int = 0
     lock: Any = field(default_factory=threading.Lock)
+    max_models: int | None = None
 
 
 CURRENT=ContextVar("stockman_invocation",default=None)
@@ -72,16 +73,16 @@ def create_research_agent(model,tools=(),system_prompt='',middleware=()):
     return create_agent(model,tools=list(tools),system_prompt=system_prompt,middleware=list(middleware),name='research')
 
 class AgentRuntime:
-    def __init__(self, data_dir=None, model=None, services=None):
+    def __init__(self, data_dir=None, model=None, services=None, settings=None):
         from .briefing.locking import DirectoryLock
         self.process_lock=DirectoryLock(data_dir or os.getenv('STOCKMAN_DATA_DIR','runtime'))
-        try:self._initialize(data_dir,model,services)
+        try:self._initialize(data_dir,model,services,settings)
         except BaseException:
             if hasattr(self,'conn'):self.conn.close()
             if hasattr(self,'store'):self.store.close()
             self.process_lock.close();raise
 
-    def _initialize(self, data_dir=None, model=None, services=None):
+    def _initialize(self, data_dir=None, model=None, services=None, settings=None):
         directory=Path(data_dir or os.getenv('STOCKMAN_DATA_DIR','runtime'))
         directory.mkdir(parents=True,exist_ok=True)
         self.store=Store(directory/'stockman.sqlite')
@@ -90,10 +91,13 @@ class AgentRuntime:
         self.conn=sqlite3.connect(str(directory/'checkpoints.sqlite'),check_same_thread=False,timeout=30)
         self.checkpointer=SqliteSaver(self.conn)
         self.session_locks={};self.lock=threading.Lock()
+        self.max_models=settings.max_calls if settings else int(os.getenv('STOCKMAN_MAX_MODEL_CALLS','8'))
+        self.max_tools=settings.max_tools if settings else int(os.getenv('STOCKMAN_MAX_TOOL_CALLS','12'))
         if model is None:
-            if not GEMINI_API_KEY:raise ValueError('GEMINI_API_KEY 未配置；离线演示请显式使用 OfflineModel')
+            key=settings.key if settings else GEMINI_API_KEY
+            if not key:raise ValueError('GEMINI_API_KEY 未配置；离线演示请显式使用 OfflineModel')
             from langchain_google_genai import ChatGoogleGenerativeAI
-            models={role:ChatGoogleGenerativeAI(model=os.getenv('GEMINI_'+role.upper()+'_MODEL',GEMINI_MODEL),api_key=GEMINI_API_KEY,temperature=0,max_retries=2,timeout=45,max_output_tokens=2048) for role in ('supervisor','portfolio','research','monitor')}
+            models={role:ChatGoogleGenerativeAI(model=dict(settings.roles)[role] if settings else os.getenv('GEMINI_'+role.upper()+'_MODEL',GEMINI_MODEL),api_key=key,temperature=0,max_retries=2,timeout=45,max_output_tokens=2048) for role in ('supervisor','portfolio','research','monitor')}
         else:models={role:model for role in ('supervisor','portfolio','research','monitor')}
         self.services=services or {}
         self.children={}
@@ -123,14 +127,14 @@ class AgentRuntime:
             if current is None:raise RuntimeError('Missing invocation scope')
             with current.lock:
                 current.models+=1
-                if current.models>int(os.getenv('STOCKMAN_MAX_MODEL_CALLS','8')):raise CallLimit('模型调用次数达到上限')
+                if current.models>self.max_models:raise CallLimit('模型调用次数达到上限')
             self.store.trace(current.task,agent,'model','start',{'call':current.models})
         @wrap_tool_call
         def trace_tool(request, handler):
             current=CURRENT.get()
             with current.lock:
                 current.tools+=1
-                if current.tools>int(os.getenv('STOCKMAN_MAX_TOOL_CALLS','12')):raise CallLimit('工具调用次数达到上限')
+                if current.tools>self.max_tools:raise CallLimit('工具调用次数达到上限')
             name=request.tool_call['name'];start=time.monotonic()
             self.store.trace(current.task,agent,name,'start',{'args':request.tool_call.get('args')})
             try:
@@ -157,7 +161,7 @@ class AgentRuntime:
             rows=self.store.execute('SELECT snapshot FROM task_context WHERE task_id=?',(task,))
             snapshot=rows[0]['snapshot'] if rows else None
         original = payload["messages"][0].content if payload else json.loads(self.store.task(task)["input"])
-        token=CURRENT.set(Invocation(task,session,snapshot,request=str(original)))
+        token=CURRENT.set(Invocation(task,session,snapshot,request=str(original),max_models=self.max_models))
         try:
             if prepare:
                 started=time.monotonic()

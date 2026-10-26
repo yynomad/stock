@@ -20,8 +20,8 @@ def monitor_intent(text):
 
 
 class MonitoringService:
-    def __init__(self,store,portfolio,market=None,in_session=regular_session):
-        self.store=store;self.portfolio=portfolio;self.market=market or YahooMarket();self.in_session=in_session
+    def __init__(self,store,portfolio,market=None,in_session=regular_session,settings=None):
+        self.store=store;self.portfolio=portfolio;self.market=market or YahooMarket();self.in_session=in_session;self.settings=settings
     def command(self,request: str):
         context=CURRENT.get();action=monitor_intent(context.request) if context else None
         symbols=[valid_symbol(s) for s in re.findall(r'(?<![A-Za-z0-9])([A-Z][A-Z0-9.-]{0,14})(?![A-Za-z0-9])',context.request if action else request) if s not in ('ETF','PA','IBKR','USD')]
@@ -42,7 +42,7 @@ class MonitoringService:
                 if pa.get('pa_error') or not pa.get('support') or not pa.get('resistance'):
                     errors.append({'symbol':symbol,'error':'历史K线不足，未创建监控规则'});continue
                 spec={'symbol':symbol,'support':pa['support'],'resistance':pa['resistance'],
-                      'buffer':float(os.getenv('MONITOR_BUFFER_PCT','0.02')),
+                      'buffer':(self.settings.buffer if self.settings else float(os.getenv('MONITOR_BUFFER_PCT','0.02'))),
                       'created_at':time.time(),'bars_asof':bars[-1].get('date') if bars else None,'source':source['source'] if source else 'explicit-symbol',
                       'source_asof':source['asof'] if source else None}
                 self.store.execute("INSERT INTO rules(symbol,spec,enabled) VALUES(?,?,1) ON CONFLICT(symbol) DO UPDATE SET spec=excluded.spec,enabled=1",(symbol,json.dumps(spec)))
@@ -58,7 +58,7 @@ class MonitoringService:
         if not self.in_session(now) or quote.get('kind')!='regular':return None
         stamp=quote.get('asof');price=quote.get('price')
         if not quote.get('valid') or isinstance(stamp,bool) or isinstance(price,bool) or not isinstance(stamp,(float,int)) or not isinstance(price,(float,int)):return None
-        if not math.isfinite(price) or price<=0 or not math.isfinite(stamp) or not 0<=now-stamp<=float(os.getenv('STOCKMAN_QUOTE_MAX_AGE','900')):return None
+        if not math.isfinite(price) or price<=0 or not math.isfinite(stamp) or not 0<=now-stamp<=(self.settings.quote_age if self.settings else float(os.getenv('STOCKMAN_QUOTE_MAX_AGE','900'))):return None
         with self.store.lock,self.store.conn:
             rule=self.store.conn.execute('SELECT * FROM rules WHERE symbol=? AND enabled=1',(symbol,)).fetchone()
             if not rule or stamp<=rule['last_time']:return None
@@ -68,7 +68,7 @@ class MonitoringService:
             if state=='normal' or state==rule['state']:return None
             day=datetime.fromtimestamp(now,ZoneInfo('America/New_York')).date().isoformat()
             count=self.store.conn.execute('SELECT COUNT(*) FROM events WHERE symbol=? AND day=?',(symbol,day)).fetchone()[0]
-            if count>=int(os.getenv('MONITOR_MAX_DAILY_ALERTS','5')):return None
+            if count>=(self.settings.max_alerts if self.settings else int(os.getenv('MONITOR_MAX_DAILY_ALERTS','5'))):return None
             identity=hashlib.sha256(f'{symbol}:{state}:{stamp}'.encode()).hexdigest()
             payload={'symbol':symbol,'event':state,'quote':quote,'levels':spec}
             cursor=self.store.conn.execute("INSERT OR IGNORE INTO events VALUES(?,?,?,'pending',?,?)",(identity,symbol,day,json.dumps(payload),now))

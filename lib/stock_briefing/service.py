@@ -22,10 +22,10 @@ def event_groups(items):
     return list(groups.values())
 
 class StockBriefing:
-    def __init__(self,store,config=None,model=None,registry=None,http=None):
+    def __init__(self,store,config=None,model=None,registry=None,http=None,model_factory=None):
         self.store=store;self.config=config or BriefingConfig.load();self.registry=registry if registry is not None else load_registry()
         self.history=History(store);self.relations=Relations(store);self.budget=Budget(store,self.config)
-        self.research=ResearchAgent(store,self.config,model);self.http=http or PublicHTTP()
+        self.research=ResearchAgent(store,self.config,model,model_factory);self.http=http or PublicHTTP()
     def generate(self,owner,snapshot,now=None,day=None,sources=None):
         now=time.time() if now is None else now;config=self.config
         day=day or datetime.fromtimestamp(now,ZoneInfo(config.timezone)).date().isoformat()

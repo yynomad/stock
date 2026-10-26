@@ -15,14 +15,16 @@ import logging
 from .config import GEMINI_API_KEY, GEMINI_MODEL
 
 
-def fetch_positions_from_image(image_path: str) -> dict:
+def fetch_positions_from_image(image_path: str, *, api_key=None, model_name=None) -> dict:
     """
     通过 Gemini Vision API 读取持仓截图。
 
     将图片发送给 Gemini，提取持仓信息。
     返回：{symbol: {"shares": float, "avg_cost": float}} 或 None
     """
-    if not GEMINI_API_KEY:
+    key=GEMINI_API_KEY if api_key is None else api_key
+    name=GEMINI_MODEL if model_name is None else model_name
+    if not key:
         print("  ℹ️  GEMINI_API_KEY 未配置，跳过 Gemini 读图")
         return None
 
@@ -35,7 +37,7 @@ def fetch_positions_from_image(image_path: str) -> dict:
     if context:
         with context.lock:
             context.models+=1
-            if context.models>int(os.getenv('STOCKMAN_MAX_MODEL_CALLS','8')):
+            if context.models>(context.max_models if context.max_models is not None else int(os.getenv('STOCKMAN_MAX_MODEL_CALLS','8'))):
                 raise CallLimit('截图模型调用次数达到上限')
     try:
         from google import genai
@@ -54,7 +56,7 @@ def fetch_positions_from_image(image_path: str) -> dict:
 
         print(f"  🖼️  正在通过 Gemini Vision 读取持仓截图...")
 
-        client = genai.Client(api_key=GEMINI_API_KEY,http_options=types.HttpOptions(timeout=45000, retry_options=types.HttpRetryOptions(attempts=3)))
+        client = genai.Client(api_key=key,http_options=types.HttpOptions(timeout=45000, retry_options=types.HttpRetryOptions(attempts=3)))
 
         prompt = (
             "请读取这张投资组合截图中的持仓信息，输出严格的 JSON 格式。\n"
@@ -72,7 +74,7 @@ def fetch_positions_from_image(image_path: str) -> dict:
 
         with client:
             response = client.models.generate_content(
-                model=GEMINI_MODEL,
+                model=name,
                 contents=[
                     types.Part.from_bytes(data=img_data, mime_type=mime_type),
                     types.Part.from_text(text=prompt),

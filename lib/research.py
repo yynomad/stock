@@ -54,9 +54,9 @@ def financial_facts(payload,cik):
 
 
 class SECClient:
-    def __init__(self):self.lock=threading.Lock();self.last=0;self.tickers=None
+    def __init__(self,user_agent=None):self.lock=threading.Lock();self.last=0;self.tickers=None;self.user_agent=user_agent
     def get(self,url):
-        identity=os.getenv('SEC_USER_AGENT','')
+        identity=os.getenv('SEC_USER_AGENT','') if self.user_agent is None else self.user_agent
         if '@' not in identity:raise ValueError('请配置 SEC_USER_AGENT：应用名及可联系邮箱')
         with self.lock:
             for attempt in range(3):
@@ -104,17 +104,20 @@ def parse_grounding(response):
 
 
 class GoogleNews:
+    def __init__(self,api_key=None,model_name=None):self.key=api_key;self.name=model_name
     def fetch(self,symbol):
-        if not GEMINI_API_KEY:raise ValueError('GEMINI_API_KEY 未配置')
+        key=GEMINI_API_KEY if self.key is None else self.key
+        name=GEMINI_MODEL if self.name is None else self.name
+        if not key:raise ValueError('GEMINI_API_KEY 未配置')
         from google import genai
         from google.genai import types
         context=CURRENT.get()
         if context:
             with context.lock:
                 context.models+=1
-                if context.models>int(os.getenv('STOCKMAN_MAX_MODEL_CALLS','8')):raise CallLimit('搜索模型调用次数达到上限')
-        with genai.Client(api_key=GEMINI_API_KEY,http_options=types.HttpOptions(timeout=45000,retry_options=types.HttpRetryOptions(attempts=3))) as client:
-            response=client.models.generate_content(model=GEMINI_MODEL,
+                if context.models>(context.max_models if context.max_models is not None else int(os.getenv('STOCKMAN_MAX_MODEL_CALLS','8'))):raise CallLimit('搜索模型调用次数达到上限')
+        with genai.Client(api_key=key,http_options=types.HttpOptions(timeout=45000,retry_options=types.HttpRetryOptions(attempts=3))) as client:
+            response=client.models.generate_content(model=name,
                 contents=f'研究美股或ETF {symbol} 最近7天的重要公开事件。今天为 {date.today().isoformat()}。用中文说明事实、事件日期与发布日期，并给出来源。无法证实时明确说明，不做下单建议。',
                 config=types.GenerateContentConfig(tools=[types.Tool(google_search=types.GoogleSearch())],max_output_tokens=2048))
         return parse_grounding(response)

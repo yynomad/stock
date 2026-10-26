@@ -12,8 +12,10 @@ import time
 from .config import YF_PROXY, YF_REQUEST_DELAY
 
 
-def fetch_yahoo_bars(symbol: str, period: str = None, retries: int = 3) -> list[dict]:
+def fetch_yahoo_bars(symbol: str, period: str = None, retries: int = 3, *, proxy=None, request_delay=None) -> list[dict]:
     """通过 yfinance 获取日K线数据，带重试机制。"""
+    proxy=YF_PROXY if proxy is None else proxy
+    delay=YF_REQUEST_DELAY if request_delay is None else request_delay
     try:
         import yfinance as yf
     except ImportError:
@@ -29,9 +31,9 @@ def fetch_yahoo_bars(symbol: str, period: str = None, retries: int = 3) -> list[
                   f"{'  [重试 ' + str(attempt) + '/' + str(retries) + ']' if attempt > 1 else ''}")
 
             # 如果配置了代理，设置环境变量
-            if YF_PROXY:
-                os.environ["HTTP_PROXY"] = YF_PROXY
-                os.environ["HTTPS_PROXY"] = YF_PROXY
+            if proxy:
+                os.environ["HTTP_PROXY"] = proxy
+                os.environ["HTTPS_PROXY"] = proxy
 
             ticker = yf.Ticker(symbol)
             df = ticker.history(period=period, auto_adjust=True)
@@ -39,8 +41,8 @@ def fetch_yahoo_bars(symbol: str, period: str = None, retries: int = 3) -> list[
             if df.empty:
                 print(f"  ⚠️  [{symbol}] 未获取到数据。")
                 if attempt < retries:
-                    print(f"  ⏳ 等待 {YF_REQUEST_DELAY}s 后重试...")
-                    time.sleep(YF_REQUEST_DELAY)
+                    print(f"  ⏳ 等待 {delay}s 后重试...")
+                    time.sleep(delay)
                     continue
                 return []
 
@@ -63,7 +65,7 @@ def fetch_yahoo_bars(symbol: str, period: str = None, retries: int = 3) -> list[
             print(f"  ❌ [{symbol}] 第{attempt}次获取失败：{e}")
             logging.error(f"[{symbol}] 第{attempt}次获取失败：{e}")
             if attempt < retries:
-                wait = YF_REQUEST_DELAY * attempt  # 递增等待
+                wait = delay * attempt  # 递增等待
                 print(f"  ⏳ 等待 {wait}s 后重试...")
                 time.sleep(wait)
 
