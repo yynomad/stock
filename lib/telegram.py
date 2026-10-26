@@ -12,10 +12,11 @@ def message_chunks(text,size=1500):
 
 
 class Telegram:
-    def __init__(self,token=TG_BOT_TOKEN,chat=TG_CHAT_ID):
+    def __init__(self,token=TG_BOT_TOKEN,chat=TG_CHAT_ID,proxy=None):
         if not token or not str(chat).lstrip('-').isdigit():raise ValueError('请配置 TG_BOT_TOKEN 和 TG_CHAT_ID')
         self.base='https://api.telegram.org/bot'+token
-        self.chat=int(chat);self.proxies={'http':YF_PROXY,'https':YF_PROXY} if YF_PROXY else None
+        self.chat=int(chat);proxy=YF_PROXY if proxy is None else proxy
+        self.proxies={'http':proxy,'https':proxy} if proxy else None
     def updates(self,offset):
         response=requests.get(self.base+'/getUpdates',params={'offset':offset,'timeout':25},timeout=35,proxies=self.proxies)
         response.raise_for_status();return response.json().get('result',[])

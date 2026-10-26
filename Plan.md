@@ -165,7 +165,7 @@ N4 实际验收：93 项全量测试通过；schedule 与 Telegram dry-run 通�
 - 测试正常、空持仓、部分返回、错账户、超时／断线、未知／空头／分数股、同名不同合约、同时定时与主动请求。
 - 验收：C3；新建并运行 venv/bin/python service.py --offline --scenario broker。真实 IBKR 仍使用 L1，并需用户 Gateway 就绪后人工核对。
 
-### R3：推送与主动交互经通道契约接入
+### R3：推送与主动交互经通道契约接入（已完成）
 
 依赖 R1、R2。创建 lib/channels/ 的报告发送、标准入站事件及能力声明，包装现有 Telegram 发送／文字／图片能力；保持原 lib/telegram.py 的兼容接口。业务处理只消费规范事件／报告。
 
@@ -202,3 +202,5 @@ service.py、stock.conf.example、lib/brokers/、lib/channels/ 均为上述计�
 R1 实测：108 项离线测试、AST、文档及依赖检查通过；service.py --offline --scenario config 通过，--check 无网络／模型／数据库写入。其他 service 场景尚在后续阶段，不能提前宣称支持。
 
 R2 实测：112 项测试与统一检查通过，broker 离线演示通过；同账户并发请求共享一次读取，错误账户／部分快照拒绝，真实空快照与失败分开，图片查询不改变后台券商快照。
+
+R3 实测：115 项测试、channel 离线演示通过；标准文字／图片事件与发送能力声明，旧 Telegram 授权、去重、附件及 unknown 行为回归通过。

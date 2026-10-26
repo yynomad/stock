@@ -48,22 +48,24 @@ class Application:
         return self.runtime.run(text,session,prepare=prepare)
 
     def handle_update(self,update):
-        identity=update['update_id'];message=update.get('message',{})
-        user=message.get('from',{}).get('id');chat=message.get('chat',{}).get('id')
+        from .channels.telegram import decode
+        return self.handle_event(decode(update))
+
+    def handle_event(self,event):
+        identity=event.identity;user=event.sender;chat=event.target
         with self.runtime.store.lock,self.runtime.store.conn:
             cursor=self.runtime.store.conn.execute("INSERT OR IGNORE INTO updates VALUES(?,'processing')",(identity,))
             if not cursor.rowcount:return 'duplicate'
         if user not in self.allowed or chat!=self.transport.chat:
             self.runtime.store.execute("UPDATE updates SET status='ignored' WHERE id=?",(identity,));return 'unauthorized'
         try:
-            photos=message.get('photo',[])
-            if photos:
-                data=self.transport.photo(photos[-1]['file_id'])
+            if event.image_id:
+                data=self.transport.photo(event.image_id)
                 folder=self.directory/'screenshots';folder.mkdir(exist_ok=True)
                 path=folder/(uuid.uuid4().hex+'.jpg');path.write_bytes(data)
                 result=self.handle('请检查这张截图中的持仓',str(chat),str(path))
-            elif message.get('text'):
-                result=self.handle(message['text'].strip(),str(chat))
+            elif event.text:
+                result=self.handle(event.text,str(chat))
             else:
                 self.runtime.store.execute("UPDATE updates SET status='ignored' WHERE id=?",(identity,))
                 return 'ignored'
