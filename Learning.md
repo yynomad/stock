@@ -9,6 +9,22 @@ venv/bin/python scripts/chat.py --offline "研究 QQQ"
 venv/bin/python scripts/tasks.py --data-dir runtime/offline
 ```
 
+## 先理解后台主流程
+
+```sh
+venv/bin/python service.py --offline --scenario config
+venv/bin/python service.py --offline --scenario broker
+venv/bin/python service.py --offline --scenario channel
+venv/bin/python service.py --offline --scenario service
+venv/bin/python service.py --offline --scenario end-to-end
+```
+
+新主线从 service.py 开始：读取 INI → 检查环境引用 → 创建 BackendService → 注入券商／通道／模型 → 自动同步／定时研究 → 推送。IM 接收是独立辅助路径；图片仍只绑定本次会话任务。新增同步和服务健康记录在 broker_health、service_health 中；检查点和原业务表继续复用。
+
+lib/service_config.py 只用标准库读配置，不加载 .env。lib/brokers/base.py 负责完整快照、账户作用域、缓存和串行化；lib/channels/base.py 说明发送能力与接收能力分开。lib/service.py 用相同 PortfolioService、ResearchService、AgentRuntime 与 StockBriefing 组装后台，不重写模型框架。普通同步和轮询不调用模型。
+
+完整演示使用真实线程／SQLite／LangChain 调用循环与假外部依赖，覆盖无人提问自动发报、主动研究、图片、重启去重及未知投递。原 scripts/demo.py 和下面的旧对话学习路径仍保留。
+
 ## 一次请求经过哪里
 
 `scripts/chat.py` 或 `lib/application.py` 接收输入，创建本次任务及会话作用域。`lib/agents.py` 使用 LangChain `create_agent` 创建主控，主控的三个工具分别包装三个子 Agent。子 Agent 再使用自己的业务工具，结果由主控汇总。

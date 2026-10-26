@@ -45,3 +45,15 @@ class ServiceBrokerTest(unittest.TestCase):
         self.assertEqual(set(portfolio.load('123',image)['positions']),{'NVDA'})
         self.assertEqual(set(portfolio.load('123')['positions']),{'AAPL'})
         with self.assertRaises(ValueError):portfolio.load('other',image)
+
+    def test_out_of_order_and_future_cache_never_replace_valid_snapshot(self):
+        class Adapter:
+            provider='ibkr';account='U1234567'
+            def sync(self):return self.snapshot
+        adapter=Adapter();adapter.snapshot=BrokerSnapshot('ibkr',adapter.account,200,{'AAPL':{'shares':1}})
+        service=BrokerService(self.store,adapter);service.load(now=200)
+        adapter.snapshot=BrokerSnapshot('ibkr',adapter.account,100,{'AAPL':{'shares':9}})
+        row=service.load(force=True,now=300)
+        self.assertTrue(row['cached']);self.assertEqual(row['positions']['AAPL']['shares'],1)
+        adapter.snapshot=BrokerSnapshot('ibkr',adapter.account,500,{'AAPL':{'shares':9}})
+        with self.assertRaises(BrokerError):service.load(force=True,now=100)

@@ -34,3 +34,16 @@ class ServiceConfigTest(unittest.TestCase):
         with patch.dict(os.environ,ENV),patch('builtins.print') as output,patch('socket.socket.connect',side_effect=AssertionError('network')):
             self.assertEqual(main(['--config',str(self.path),'--check']),0)
         self.assertFalse(self.config.directory.exists());self.assertIn('config_valid',output.call_args.args[0])
+
+    def test_registry_json_is_checked_before_runtime(self):
+        invalid=Path(self.temp.name)/'broken.json';invalid.write_text('private-invalid-json')
+        self.path.write_text(self.original.replace(str(self.config.sources),str(invalid)))
+        with self.assertRaises(ConfigError) as caught:load_config(self.path,ENV)
+        self.assertNotIn('private-invalid-json',str(caught.exception))
+
+    def test_explicit_service_import_ignores_invalid_legacy_environment(self):
+        import subprocess,sys
+        root=Path(__file__).resolve().parents[1]
+        env=dict(os.environ,STOCKMAN_EXPLICIT_CONFIG='1',STOCKMAN_OFFLINE='1',PYTHONDONTWRITEBYTECODE='1',PYTHONPATH=str(root),MONITOR_INTERVAL='invalid-legacy-value',YF_REQUEST_DELAY='nan')
+        result=subprocess.run([sys.executable,'-B','-c','import lib.service; from lib import config; assert config.MONITOR_INTERVAL==5; assert config.YF_REQUEST_DELAY==5'],cwd=self.temp.name,env=env,capture_output=True,text=True,timeout=15)
+        self.assertEqual(result.returncode,0,result.stderr)

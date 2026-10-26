@@ -112,6 +112,15 @@ def service_demo(scenario):
             assert set(app.broker.load()['positions'])=={'AAPL'}
             app.close();app=build_synthetic(config,channel)
             assert app.tick(now+2)['status']=='sent' and len(channel.sent)==3
+            unknown='not_exercised'
+            if scenario=='end-to-end':
+                from unittest.mock import patch
+                channel.outcome='unknown'
+                with patch('time.time',return_value=now+86400):
+                    assert app.tick(now+86400)['status']=='unknown'
+                    count=len(channel.sent)
+                    assert app.tick(now+86401)['status']=='unknown' and len(channel.sent)==count
+                unknown='retained_without_replay'
             return {'synthetic':True,'scenario':scenario,'automatic_reports_without_input':1,'on_demand_responses':2,
-                'image_and_broker_isolation':'passed','restart_dedup':'passed','broker':'ibkr (synthetic)','channel':'telegram (synthetic)','real_messages_sent':0}
+                'image_and_broker_isolation':'passed','restart_dedup':'passed','unconfirmed_delivery':unknown,'broker':'ibkr (synthetic)','channel':'telegram (synthetic)','real_messages_sent':0}
         finally:app.close()

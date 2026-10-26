@@ -1,5 +1,6 @@
 """Standalone backend lifecycle. IM input is optional and independent of scheduled jobs."""
 from functools import partial
+import logging
 import threading
 import time
 from .application import Application
@@ -19,6 +20,9 @@ from .stock_briefing.agent import make_model
 class BackendService(Application):
     def __init__(self,config,model=None,daily_model=None,broker=None,channel=None,market=None,research=None,image=None,sources=None):
         self.config=config;self.directory=config.directory;self.briefing_config=config.briefing
+        self.logger=logging.getLogger('stockman.service');self.logger.setLevel(config.log_level)
+        self.logger.propagate=False
+        if not self.logger.handlers:self.logger.addHandler(logging.StreamHandler())
         self.stop_event=threading.Event();self.workers=[];self.closed=False;self.next_sync=0;self.next_price=0
         self.runtime=AgentRuntime(self.directory,model,services={
             'portfolio':lambda request:self.portfolio.report(request),
@@ -29,6 +33,7 @@ class BackendService(Application):
             self.broker=BrokerService(store,broker or create_broker(config.broker),config.broker.sync_interval)
             self.transport=channel or create_channel(config.channel);self.allowed=set(config.channel.allowed)
             if str(self.transport.chat)!=str(config.channel.chat):raise ValueError('configured channel destination mismatch')
+            if config.channel.interactive and 'text' not in self.transport.capabilities:raise ValueError('channel does not support incoming text')
             self.market=market or YahooMarket(proxy='',quote_age=config.monitor.quote_age)
             self.portfolio=PortfolioService(store,broker=self.broker,bars=self.market.bars,
                 image=image or partial(fetch_positions_from_image,api_key=config.model.key,model_name=config.model.name))
@@ -81,6 +86,10 @@ class BackendService(Application):
             except Exception as exc:self.record(job,'failed',now,type(exc).__name__)
             self.stop_event.wait(interval)
 
+    def handle_event(self,event):
+        if event.channel!=self.config.channel.provider:return 'unauthorized'
+        return super().handle_event(event)
+
     def receive_once(self,offset):
         for event in self.transport.receive(offset):
             if self.stop_event.is_set():break
@@ -92,6 +101,7 @@ class BackendService(Application):
     def run(self):
         try:
             self.sync_once(force=True)
+            self.logger.info('Backend started; configured background jobs are active')
             jobs=[('sync',self.config.broker.sync_interval,self.sync_once),
                   ('daily',30,self.daily.tick),
                   ('prices',self.config.monitor.interval,lambda now:self.monitor.tick(self.runtime,self.transport.deliver,str(self.transport.chat),now))]
@@ -112,3 +122,17 @@ class BackendService(Application):
         for worker in self.workers:worker.join(timeout=max(0,deadline-time.monotonic()))
         if not self.closed and not any(w.is_alive() for w in self.workers):
             self.runtime.close();self.closed=True
+            self.logger.info('Backend stopped')
+
+def read_status(config):
+    """Read-only monitoring is safe while the service holds its writer lock."""
+    import sqlite3
+    path=config.directory/'stockman.sqlite'
+    if not path.is_file():return {'status':'not_started','jobs':[],'daily':[]}
+    with sqlite3.connect(path.resolve().as_uri()+'?mode=ro',uri=True) as conn:
+        conn.row_factory=sqlite3.Row
+        tables={r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+        jobs=[dict(r) for r in conn.execute('SELECT * FROM service_health ORDER BY job')] if 'service_health' in tables else []
+        broker=[dict(r) for r in conn.execute('SELECT status,last_attempt,last_success,error FROM broker_health WHERE provider=? AND scope=?',(config.broker.provider,config.broker.account))] if 'broker_health' in tables else []
+        daily=[dict(r) for r in conn.execute('SELECT day,status,report,attempts,error FROM brief_daily WHERE owner=? ORDER BY day DESC LIMIT 10',(str(config.channel.chat),))] if 'brief_daily' in tables else []
+        return {'status':'recorded_state','jobs':jobs,'broker':broker,'daily':daily,'note':'记录时间请自行核对；unknown 需人工核实，记录不证明进程仍存活。'}

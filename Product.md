@@ -1,7 +1,7 @@
 # StockMan 持仓信息简报与研究助手
 
 更新：2026-10-26，Asia/Shanghai。
-状态：原 M1—M6、日报 N1—N5 已完成离线交付，真实服务仍有验收待办。本轮已明确开源后台服务、.conf 配置、单实例单账户、保留主动问答与截图；新的 R1—R5 服务重构方案已获用户确认，尚未改应用代码。
+状态：原 M/N 版本保留，用户批准的 R1—R5 配置驱动后台重构已离线完成。新 service.py、stock.conf.example、券商／IM 适配层和问答／截图辅助均已实现；真实 IBKR、Gemini 和本人 IM 尚需验收。未自动部署或发送。
 
 ## 用户、目标与位置
 
@@ -262,7 +262,7 @@ lib/briefing/ 继续提供通用条目、历史、预算和调度；lib/stock_br
 - R4：假时钟在无人发送消息时，完成启动同步、周期同步、到点研究和假推送；同时收到本人文字／图片也不改变自动持仓来源。券商／IM 故障可解释并彼此隔离。
 - R5：新服务端到端合成演示、旧 104 项回归和原／日报演示通过；README 与 Learning 提供配置、启动、诊断和恢复方法；真实外部条件仍逐项待验收。
 
-本次不删除已有入口，不加页面、HTTP API、云部署、多账户聚合、其他已未选择的券商／IM 或自动交易。正式公开发布前还需用户选择许可证及确认发布范围；本轮不自动创建许可证、推送 GitHub 或部署真实服务。需求方向已确认，R1—R5 新实施方案须本次文档确认后开始。
+本次不删除已有入口，不加页面、HTTP API、云部署、多账户聚合、其他已未选择的券商／IM 或自动交易。正式公开发布前还需用户选择许可证及确认发布范围；本轮不自动创建许可证、推送 GitHub 或部署真实服务。需求方向已确认，用户已明确回复“可以”批准本方案，R1—R5 已按授权完成离线实现。
 
 ## 开源参考核对（2026-10-26）
 
@@ -272,3 +272,11 @@ lib/briefing/ 继续提供通用条目、历史、预算和调度；lib/stock_br
 - [daily_stock_analysis](https://github.com/ZhuLinsen/daily_stock_analysis)：配置自选股、定时分析、多源数据与多通道推送，业务形态相近；不能据自选股配置声称已自动读取券商持仓。
 - [Wealthfolio 同步实现](https://github.com/wealthfolio/wealthfolio/blob/main/crates/connect/src/broker/orchestrator.rs)：独立编排连接、账户、活动和持仓；[Connect](https://wealthfolio.app/connect/learn-more/) 使用 SnapTrade，属可选订阅，并非免费开源任意券商认证能力。
 - [TradingAgents](https://github.com/TauricResearch/TradingAgents)：LangGraph 研究角色编排、配置及状态恢复。只参考研究模块边界，保留已选 LangChain 接口，不引入其完整交易决策框架。
+
+## R1—R5 实际交付状态（2026-10-26）
+
+新入口 service.py 支持 --config、--check、--status、--offline --scenario；stock.conf.example 已提供，实际文件忽略。BackendService 启动同步与各后台 worker 不依赖入站消息；IBKRBroker／BrokerService 负责完整单账户快照和健康，TelegramChannel 负责投递与标准文字／图片事件。显式模型、SEC 身份、图像识别、监控参数注入，不被旧 .env 或其他账户替代。
+
+129 项全量离线测试通过；原六场景、日报六场景、新服务五场景及 Telegram dry-run 全通过。包含真实线程启动／停止、接收故障下自动任务继续、配置密钥传入 SDK、并发图片与日报、只读状态和未知投递不重放的验收。模型与外部服务仍为合成依赖，不能证明真实消息／研究质量或券商兼容性。
+
+来源覆盖仍是既有 SEC 元数据和经审核 RSS；没有借重构扩大到全部新闻／全部券商。正式许可证与公开发布未执行；真实连接、配置、费用和报告内容核对仍需用户完成，恢复步骤见 README.md。本节是当前实现状态，前面的 R 设计描述保留为方案记录。

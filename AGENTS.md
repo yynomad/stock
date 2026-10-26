@@ -13,7 +13,7 @@
 
 用户明确：开源配置驱动后台、首版无页面、.conf、单实例单券商账户；保留 IM 主动提问和截图，截图仅独立辅助来源。核心自动同步／分析／推送不依赖收到消息。沿用 Python、LangChain、Gemini、SQLite 及已有 IBKR／Telegram 首个实现。
 
-Product.md 的 R 整合方案与 Plan.md 的 R1—R5 本轮刚形成，用户已确认，执行 R1—R5；此前 A 仅确认单账户，之后“保留”仅确认问答／图片，不是新实现授权。确认后按 R1—R5 持续执行，不重复索要旧决策。service.py 等新入口当前尚未创建；准确计划命令见 Plan.md，不冒充运行成功。
+用户已回复“可以”批准 Product.md 的 R 整合方案及 Plan.md 的 R1—R5，现已完成离线实现。新 service.py 为配置驱动后台主入口；--check 无外部副作用，--status 只读。用户随后询问开源实现参考未撤销授权。原 Bot／CLI／图片入口与 104 项原有回归保留，当前统一检查为 129 项。
 
 新增实现遵守配置对象注入、券商只读适配、IM 发送／入站契约、单账户作用域、来源隔离及进程锁。新 .conf 不被旧模块 .env 全局常量覆盖；认证和发送目标不能交给模型决定。普通配置与模板可提交，实际 stock.conf、密钥及运行数据不得提交。保留原脚本兼容和 104 项回归，不悄悄删除截图、主动问答或既有策略。
 
@@ -51,6 +51,7 @@ venv/bin/python -m pip install -r requirements.txt
 venv/bin/python -m pip check
 venv/bin/python -m unittest discover -s tests -v
 venv/bin/python scripts/validate.py
+venv/bin/python service.py --offline --scenario end-to-end
 venv/bin/python scripts/demo.py --offline --scenario end-to-end
 venv/bin/python scripts/chat.py --offline "研究 QQQ"
 venv/bin/python scripts/tasks.py --data-dir runtime/offline
@@ -58,7 +59,7 @@ venv/bin/python scripts/tasks.py --data-dir runtime/offline
 
 `requirements.txt` 已锁定实际虚拟环境依赖。统一检查禁止网络、清空凭据、在临时目录运行，并检查 AST 与文档。没有配置 lint、静态类型检查或构建，不编造检查结果。完整 C1—C3、D1—D6、L1—L3 见 Plan.md。
 
-真实服务入口：`venv/bin/python scripts/chat.py "研究 AAPL"`、`venv/bin/python bot.py`；后者由用户显式启动。原 `analyze_image.py` 和 `premarket_grid_calculator.py --image` 继续保留。配置和运行限制见 README.md，学习流程见 Learning.md。同一数据目录只允许一个运行中的应用进程；本地任务 CLI 不与 Bot 同时操作同一目录。
+新服务由用户自行准备 stock.conf 和进程环境后运行 service.py --config stock.conf，--check 先验证；同一配置 --status 可只读查看。旧兼容真实入口：`venv/bin/python scripts/chat.py "研究 AAPL"`、`venv/bin/python bot.py`；后者由用户显式启动。原 `analyze_image.py` 和 `premarket_grid_calculator.py --image` 继续保留。配置和运行限制见 README.md，学习流程见 Learning.md。同一数据目录只允许一个运行中的应用进程；本地任务 CLI 不与 Bot 同时操作同一目录。
 
 ## 测试与 Stop-and-Fix
 

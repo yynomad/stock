@@ -37,6 +37,7 @@ class BrokerService:
         now=time.time() if now is None else now
         with self.lock:
             adapter=self.adapter;cached=self.store.latest(adapter.provider,adapter.account)
+            if cached and cached['asof']>now+30:cached=None
             if cached and not force and 0<=now-cached['asof']<self.interval:return self._row(cached,now,True)
             if not force and self.last_attempt is not None and 0<=now-self.last_attempt<min(60,self.interval):
                 if cached:return self._row(cached,now,True,'recent_sync_failure')
@@ -44,6 +45,7 @@ class BrokerService:
             self.last_attempt=now
             try:
                 snapshot=adapter.sync();positions=snapshot.validate(adapter.provider,adapter.account,now)
+                if cached and snapshot.asof<cached['asof']:raise BrokerError('out-of-order snapshot')
                 self.store.snapshot(adapter.provider,adapter.account,positions,asof=snapshot.asof)
                 self.store.execute('INSERT OR REPLACE INTO broker_health VALUES(?,?,?,?,?,?)',(adapter.provider,adapter.account,'ok',now,now,None))
                 return self._row(self.store.latest(adapter.provider,adapter.account),now,False)

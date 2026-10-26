@@ -1,7 +1,7 @@
 # StockMan 会话交接
 
 更新：2026-10-26，Asia/Shanghai。
-当前状态：用户已回复“可以”批准 R1—R5；后续开源实现调研未撤销授权。R1 显式 INI、环境引用和独立 --check 完成，108 项回归通过。R2 券商适配已完成，112 项回归通过；R3 已完成，115 项回归通过；R4 独立后台已完成，120 项回归通过；下一步 R5 完整交付。
+当前状态：用户已批准 R1—R5，配置驱动独立后台全部离线实现交付。129 项测试及 18 个验收／演示命令通过。新主入口 service.py，保留主动问答与图片辅助；只实现 IBKR／Telegram 首个适配。未启动真实服务、发送消息、改真实配置或发布。
 
 ## 位置、工作区与授权
 
@@ -137,3 +137,12 @@ R1 提交 9893315；R2 为包含本记录的提交。原 ibapi 读取增加显�
 R2 提交 9ac4574；R3 为包含本记录的提交。IM 适配新增通道发送契约和标准入站事件，实际发送仍复用原 Telegram 实现。原 Application 处理统一事件，文字和截图未删除。115 项测试和 channel 演示通过。
 
 R3 提交 604c2bd；R4 为包含本记录的提交。service.py 常驻路径接通；各自动工作线程独立，启动强制尝试一次券商同步，日常查询共享缓存，IM 接收失败不停止自动任务。显式模型密钥／角色、SEC 身份、图片识别、监控参数已注入；旧入口兼容。120 项离线测试与 service 演示通过，未启动真实服务。
+
+## R5 最终交接
+
+- 入口：service.py --offline --scenario end-to-end 无凭据体验；真实用户准备 stock.conf（由 stock.conf.example 复制）和进程环境，--check 后自行启动 --config stock.conf；--status 只读，可与服务并行。新入口不自动读 .env，旧 Bot／CLI 继续兼容。项目仍在 /Users/yao/personal/stock/。
+- BrokerService 与 BackendService 配置单账户，启动同步与后台工作不依赖 IM 输入；同账户请求串行共享，乱序／未来／错账户／部分快照不变成可信持仓。Telegram 保留权限／去重／原临时新闻附件，文字与截图走独立按需任务；图片不污染后台券商来源。
+- R1 9893315、R2 9ac4574、R3 604c2bd、R4 af7498e；R5 为包含本记录的提交。最终 129 项测试、AST、文档链接／结构和 pip check；原六、新日报六、新服务五、Telegram dry-run 共 18 命令通过，diff 检查通过。native IM 接收失败不影响后台发报及显式 Vision SDK 配置都用假服务实际验证。
+- 真实 IBKR／Gemini／IM 没有新增验收成功证据；不能把合成结果当实盘能力。SEC_USER_AGENT 等仍由用户配置，默认来源覆盖限制仍存在。正式开源前许可证由用户选择，未自行发布或 push，未复制其他开源代码。
+- 最近用户问开源工具的实现方式，已核对官方 README／代码和文档：Freqtrade 配置／worker／Telegram 控制、daily_stock_analysis 定时分析与多渠道、Wealthfolio 独立同步（Connect 为可选订阅／SnapTrade）、TradingAgents 研究框架。设计参考见 Product.md；保留既选技术，没有因调研换框架、数据源或引入付费接入。
+- 下一步：用户按 README 准备自己的配置并实际核对只读持仓、模型用量／内容和 IM 送达；代理不代为启用真实发送。没有待完成的已批准离线里程碑。

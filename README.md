@@ -1,14 +1,49 @@
 # StockMan 个人持仓助手
 
-用 Python 和 LangChain 实现的自用多 Agent 项目。一个主控按请求委派持仓、研究、监控三个 Agent；复用原有 PA 与仓位计算。支持 **IBKR 只读持仓同步和持仓截图**，以 Telegram 交互，在本地 SQLite 保存执行记录。首版支持美股与美股 ETF。
+配置驱动、可自行运行的持仓信息后台服务。配置券商账户、模型和 IM 后，后台自动同步持仓、生成简报并推送；保留主动提问和截图分析。使用 Python、LangChain 和本机 SQLite，首版单实例单账户，支持美股／美股 ETF。当前提供 IBKR 与 Telegram 适配器，其他平台需要对应适配实现。
 
 每日持仓信息简报和原多 Agent 离线闭环已实现（最终检查记录见 Plan.md）；真实 IBKR 尚待新用户名获批与 Gateway 登录。Gemini 搜索真实探测超过 75 秒总时限，未验证成功；Telegram 真实会话也尚待验收。不要把合成演示数据当成实际持仓或真实研究。
 
 物理项目目录：`/Users/yao/personal/stock/`。完整需求见 [Product.md](Product.md)，实施与逐项验收见 [Plan.md](Plan.md)，学习示例见 [Learning.md](Learning.md)。
 
+## 后台服务：推荐的使用入口
+
+先运行无凭据、无网络、无真实消息的完整演示：
+
+```sh
+venv/bin/python service.py --offline --scenario end-to-end
+```
+
+实际使用时，先在项目根目录准备配置，再检查，最后由自己启动常驻进程：
+
+```sh
+cp stock.conf.example stock.conf
+# 编辑 stock.conf；在进程环境中提供其引用的认证值
+venv/bin/python service.py --config stock.conf --check
+venv/bin/python service.py --config stock.conf
+```
+
+配置样例见 [stock.conf.example](stock.conf.example)。`.conf` 采用 INI 语法；只读取显式指定文件，路径相对配置文件所在目录解析，修改后重启生效。`--check` 检查配置／环境引用和来源 JSON，不联网、不调用模型、不发送、不创建业务库。实际 stock.conf 被 Git 忽略。
+
+默认引用 `IBKR_ACCOUNT`、`GEMINI_API_KEY`、`TG_BOT_TOKEN`、`TG_CHAT_ID`，可在 .conf 中改为其他环境变量名；`TG_ALLOWED_USERS` 可选，私聊默认允许目标本人，`SEC_USER_AGENT` 缺少时 SEC 来源会报告失败。新服务不自动读取 .env；需要通过启动进程的环境提供这些值，不能只在旧 .env 中填写后假定会生效。不要把实际值贴入问题或提交 Git。
+
+IBKR 用户名与二次认证仍在 Gateway 完成，.conf 只描述连接和指定只读账户。模板 `[briefing] enabled=true` 表示用户启动该服务后按计划自动推送；安装、检查和离线演示均不启动常驻服务。旧 bot.py 的 .env 默认行为保持兼容。
+
+服务启动尝试同步指定账户，随后每 900 秒同步（可配）；到点自动研究和推送不依赖 IM 来消息。报价轮询、日报和同步独立运行；IM 辅助接收文字与图片，可配置 interactive=false 只推送。截图只作用于本次图片任务，不覆盖后台券商持仓。同账户请求共享同步结果，失败只使用该账户缓存并显示时间／过期，不能把未同步当成空持仓。
+
+日常只读查看状态，可在服务运行时执行：
+
+```sh
+venv/bin/python service.py --config stock.conf --status
+```
+
+输出最近记录的同步、任务与投递状态，须核对记录时间，不能据旧记录判断进程仍存活。`unknown` 需到 Telegram 人工核实，不自动重发。Ctrl+C 停止服务；关闭时等待有界退出，不在工作线程仍使用数据库时关闭连接。Bot 与其他写入 CLI 不能同时占用相同 runtime；只读状态可并行。
+
+新目录 `lib/brokers/` 为只读券商及统一快照契约，`lib/channels/` 为报告发送与入站事件契约，`lib/service.py` 为后台组装与生命周期。依赖、模型、价格规则和日报来源沿用既有方案；配置驱动不意味着所有券商和 IM 已接入，也不意味着已有完整行业新闻覆盖。
+
 ## 每天上班前需要知道什么
 
-围绕持仓筛选官方素材，按“发生了什么、为何相关、可能影响、未知、后续观察、来源”生成中文日报。默认北京时间 08:00，自然日含周末；Mac 和 Bot 恢复后只补当天一份。自动发送默认关闭，不会因安装或预览而启动。
+围绕持仓筛选官方素材，按“发生了什么、为何相关、可能影响、未知、后续观察、来源”生成中文日报。默认北京时间 08:00，自然日含周末；服务恢复后只补当天一份。旧 Bot 的自动发送默认关闭；新服务按 .conf 的显式开关运行。安装、检查或预览不会自动启动。
 
 先看完整合成演示，无凭据、不联网、不发送：
 
@@ -85,7 +120,7 @@ venv/bin/python scripts/tasks.py --data-dir runtime/offline
 
 `demo.py` 使用临时目录，退出后清理；`chat.py --offline` 使用 `runtime/offline`，适合查看检查点和跨次对话。离线模式替换模型、行情、券商、SEC、新闻与识图，输出明确标为合成数据；使用真实 LangChain 工具调用循环和 SQLite，并非真实模型效果验收。统一检查禁止 socket 连接，清空凭据、不读取 `.env`。
 
-## 配置真实服务
+## 旧入口的 .env 配置（兼容）
 
 首次可复制 `env.template` 为 `.env`；已有 `.env` 请只补所需字段，不覆盖现有值。运行依赖网络和相应服务权限。
 
@@ -120,7 +155,7 @@ venv/bin/python scripts/smoke.py --service ibkr --read-only
 
 未登录、账户错误、超时或快照未完整返回时，不保存伪完整结果；可用同一账户的旧快照时明确标为缓存，超过 24 小时标为过期。没有缓存时可以继续使用截图入口。当前固定 SDK 是 PyPI `ibapi`，与实际 Gateway 版本的兼容性仍需真实联调。
 
-## 运行入口
+## 旧对话和单次入口（兼容）
 
 本地单次任务不发送 Telegram 消息：
 

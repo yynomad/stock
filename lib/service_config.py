@@ -2,6 +2,7 @@
 import configparser
 from dataclasses import dataclass,field
 import math
+import json
 import os
 from pathlib import Path
 import re
@@ -130,5 +131,9 @@ def load_config(path,env=None):
           number('monitor','max_daily_alerts',5,1,100,True),number('monitor','quote_max_age_seconds',900,1,86400))
     sources=relative(value('sources','file',str(Path(__file__).resolve().parents[1]/'briefing.sources.json')))
     if not sources.is_file():raise ConfigError('sources.file does not exist')
+    try:
+        registry=json.loads(sources.read_text(encoding='utf-8'))
+        if not isinstance(registry,dict) or not isinstance(registry.get('issuers'),dict) or not isinstance(registry.get('rss'),list):raise ValueError()
+    except (OSError,UnicodeError,ValueError):raise ConfigError('invalid sources.file registry') from None
     return ServiceConfig(path,relative(value('service','data_dir','runtime')),sources,level,broker,notification,model,briefing,monitor,
           secret('sources','sec_user_agent_env','SEC_USER_AGENT',False))

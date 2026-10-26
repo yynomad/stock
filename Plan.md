@@ -1,6 +1,6 @@
 # StockMan 实施计划
 
-状态：原 M1—M6、日报 N1—N5 已离线交付。用户现已明确配置驱动后台、单账户、保留 IM 问答与截图；本文末 R1—R5 是新的服务重构方案，已获用户确认，不表示已开始实现。真实服务验收仍有待办。
+状态：原 M/N 及用户已确认的 R1—R5 均完成离线实现和验收；R5 交付新后台入口、配置、只读状态与学习说明。真实服务验收仍有待办，未自动部署或发送。
 
 物理目录 `/Users/yao/personal/stock/`，现有项目扩展，未搬移。需求依据 [Product.md](Product.md)，工作规则见 [AGENTS.md](AGENTS.md)，当前状态见 [Session_Handoff.md](Session_Handoff.md)。
 
@@ -184,7 +184,7 @@ N4 实际验收：93 项全量测试通过；schedule 与 Telegram dry-run 通�
 - 覆盖假时钟、无人发消息、到点一次假投递、休眠当天补发、重启去重、并发提问／图片／同步、跨来源污染、停止及数据库有界关闭。
 - 验收：C3；新建并运行 venv/bin/python service.py --offline --scenario service。真实常驻 service.py --config stock.conf 由用户准备连接后启动，代理不自动启用或发送。
 
-### R5：新旧入口回归、学习说明与完整交付
+### R5：新旧入口回归、学习说明与完整交付（离线完成）
 
 依赖 R1—R4。创建 venv/bin/python service.py --offline --scenario end-to-end，使用临时 .conf、假券商、假模型、假 IM、假时钟：无人输入也自动同步／日报；本人文字和图片正常响应；来源隔离、预算、故障、重启与投递状态可核查。
 
@@ -195,7 +195,7 @@ N4 实际验收：93 项全量测试通过；schedule 与 Telegram dry-run 通�
 
 ### 新命令与当前验证的准确状态
 
-service.py、stock.conf.example、lib/brokers/、lib/channels/ 均为上述计划交付物，当前尚不存在；R1 先创建入口，R2—R5 逐步扩充并验证，不提前报告执行成功。现有 scripts/validate.py 仍可运行，本次文档调整通过 104 项离线测试、AST、文档结构／链接及 pip check；结果只覆盖既有实现与文档一致性。
+service.py、stock.conf.example、lib/brokers/、lib/channels/ 已创建并验收。新 --check 和 --status、config／broker／channel／service／end-to-end 五离线场景已实现；--status 只读，可与运行中的实例并行。scripts/validate.py 最终通过 129 项离线测试、AST、文档结构／链接及 pip check。
 
 用户确认本整合方案后，按 R1—R5 连续执行，不重问已选栈、单账户或保留辅助交互；重大新技术／范围变化才逐项询问。
 
@@ -206,3 +206,11 @@ R2 实测：112 项测试与统一检查通过，broker 离线演示通过；同
 R3 实测：115 项测试、channel 离线演示通过；标准文字／图片事件与发送能力声明，旧 Telegram 授权、去重、附件及 unknown 行为回归通过。
 
 R4 实测：120 项测试与统一检查通过，service 演示通过；真实线程／SQLite／LangChain 工具循环在全假外部依赖下验证无人输入自动推送、关闭、故障恢复、主动提问和图片隔离。新配置注入模型／预算／券商／通道，不被旧环境默认覆盖。
+
+## R5 最终验收记录
+
+- venv/bin/python scripts/validate.py：129 项测试通过，原 104 项保留；AST、文档链接／结构、pip check 通过。
+- 原 D1—D6 六演示、新日报六演示、新 service.py 五演示、Telegram dry-run 共 18 个命令逐项退出 0。新场景命令为 venv/bin/python service.py --offline --scenario <config|broker|channel|service|end-to-end>，每个名称分别执行。
+- --check 的无网络／模型／运行文件副作用、--status 的只读及敏感信息隔离、线程真实关闭、接收异常下自动工作持续、并发图片／后台隔离、显式 SDK 凭据与角色、错误／乱序／未来快照及 unknown 皆有回归。
+- R1 9893315；R2 9ac4574；R3 604c2bd；R4 af7498e；R5 为包含本记录的提交。未 push、未启动真实服务、未改 .env、未填真实 stock.conf、未发消息。
+- 新启动与恢复说明见 README.md，结构与合成练习见 Learning.md。实际认证／网络／数据覆盖／模型效果和费用、本人 IM 仍待用户验收，正式许可证与发布另行确认。

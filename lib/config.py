@@ -18,31 +18,36 @@ from dotenv import load_dotenv
 if os.getenv("STOCKMAN_OFFLINE") != "1" and os.getenv("STOCKMAN_EXPLICIT_CONFIG") != "1":
     load_dotenv()
 
+def _legacy_env(name,default):
+    # Standalone service injects its explicit config; legacy module defaults must
+    # not validate or override unrelated settings left in the process environment.
+    return default if os.getenv('STOCKMAN_EXPLICIT_CONFIG')=='1' else os.getenv(name,default)
+
 # ── Telegram 推送配置 ─────────────────────────────────────────────────
-TG_BOT_TOKEN = os.getenv("TG_BOT_TOKEN", "")
-TG_CHAT_ID   = os.getenv("TG_CHAT_ID", "")
+TG_BOT_TOKEN = _legacy_env("TG_BOT_TOKEN", "")
+TG_CHAT_ID   = _legacy_env("TG_CHAT_ID", "")
 
 # ── Yahoo Finance 代理配置（国内网络可能需要）───────────────────────────
-YF_PROXY = os.getenv("YF_PROXY", "")  # 如 http://127.0.0.1:7890
+YF_PROXY = _legacy_env("YF_PROXY", "")  # 如 http://127.0.0.1:7890
 
 # ── Gemini API 配置 ──────────────────────────────────────────────────
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
-GEMINI_MODEL   = os.getenv("GEMINI_MODEL", "gemini-3.5-flash-lite")
-POSITION_IMAGE_PATH = os.getenv("POSITION_IMAGE_PATH", "")  # 持仓截图路径
+GEMINI_API_KEY = _legacy_env("GEMINI_API_KEY", "")
+GEMINI_MODEL   = _legacy_env("GEMINI_MODEL", "gemini-3.5-flash-lite")
+POSITION_IMAGE_PATH = _legacy_env("POSITION_IMAGE_PATH", "")  # 持仓截图路径
 
 # ── 请求间隔（秒），避免触发 Yahoo 限流 ──────────────────────────────
-YF_REQUEST_DELAY = float(os.getenv("YF_REQUEST_DELAY", "5"))
+YF_REQUEST_DELAY = float(_legacy_env("YF_REQUEST_DELAY", "5"))
 
 # ── 实时价格监控参数 ───────────────────────────────────────────────────
-MONITOR_INTERVAL        = int(os.getenv("MONITOR_INTERVAL", "5"))         # 轮询间隔（分钟）
-MONITOR_BUFFER_PCT      = float(os.getenv("MONITOR_BUFFER_PCT", "0.02"))  # 突破确认缓冲比例
-MONITOR_MAX_DAILY_ALERTS = int(os.getenv("MONITOR_MAX_DAILY_ALERTS", "5")) # 每标的每日最大提醒数
+MONITOR_INTERVAL        = int(_legacy_env("MONITOR_INTERVAL", "5"))         # 轮询间隔（分钟）
+MONITOR_BUFFER_PCT      = float(_legacy_env("MONITOR_BUFFER_PCT", "0.02"))  # 突破确认缓冲比例
+MONITOR_MAX_DAILY_ALERTS = int(_legacy_env("MONITOR_MAX_DAILY_ALERTS", "5")) # 每标的每日最大提醒数
 
 # ── 日志初始化 ────────────────────────────────────────────────────────
 LOG_FILE = "premarket_calculator.log"
 def configure_logging():
     """Only entry points may create a log file."""
-    logging.basicConfig(filename=os.getenv("STOCKMAN_LOG_FILE", LOG_FILE),
+    logging.basicConfig(filename=_legacy_env("STOCKMAN_LOG_FILE", LOG_FILE),
                         level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 
 
@@ -66,12 +71,12 @@ LIMIT_ENTRY_PCT        = 0.005 # 限价单距支撑的偏移（0.5%）
 
 # ── 仓位决策参数 ────────────────────────────────────────────────────
 # 这些参数把 PA 技术信号转成更明确的「试探加仓 / 分批止盈 / 风控减仓」。
-POSITION_PROBE_ADD_PCT       = float(os.getenv("POSITION_PROBE_ADD_PCT", "0.05"))
-POSITION_NORMAL_ADD_PCT      = float(os.getenv("POSITION_NORMAL_ADD_PCT", "0.10"))
-POSITION_STRONG_ADD_PCT      = float(os.getenv("POSITION_STRONG_ADD_PCT", "0.20"))
-POSITION_TAKE_PROFIT_PCT     = float(os.getenv("POSITION_TAKE_PROFIT_PCT", "0.20"))
-POSITION_STRONG_TAKE_PROFIT_PCT = float(os.getenv("POSITION_STRONG_TAKE_PROFIT_PCT", "0.35"))
-POSITION_RISK_REDUCE_PCT     = float(os.getenv("POSITION_RISK_REDUCE_PCT", "0.25"))
+POSITION_PROBE_ADD_PCT       = float(_legacy_env("POSITION_PROBE_ADD_PCT", "0.05"))
+POSITION_NORMAL_ADD_PCT      = float(_legacy_env("POSITION_NORMAL_ADD_PCT", "0.10"))
+POSITION_STRONG_ADD_PCT      = float(_legacy_env("POSITION_STRONG_ADD_PCT", "0.20"))
+POSITION_TAKE_PROFIT_PCT     = float(_legacy_env("POSITION_TAKE_PROFIT_PCT", "0.20"))
+POSITION_STRONG_TAKE_PROFIT_PCT = float(_legacy_env("POSITION_STRONG_TAKE_PROFIT_PCT", "0.35"))
+POSITION_RISK_REDUCE_PCT     = float(_legacy_env("POSITION_RISK_REDUCE_PCT", "0.25"))
 
 
 # Reject non-finite/negative operational settings before any external connection.

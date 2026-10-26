@@ -139,7 +139,7 @@ class ResearchService:
         except Exception as exc:info={};evidence['missing'].append('Yahoo资料：'+type(exc).__name__)
         evidence['kind']='ETF' if info.get('quoteType')=='ETF' else 'stock'
         from .market import choose_quote
-        evidence['quote']=choose_quote(info)
+        evidence['quote']=choose_quote(info,max_age=getattr(self.market,'quote_age',None))
         try:
             bars=self.market.bars(symbol)
             evidence['technical']=analyze_pa(bars,'$')
