@@ -7,7 +7,7 @@ import threading
 class IBKRUnavailable(RuntimeError):pass
 
 
-def fetch_ibkr_positions(account=None, timeout=12):
+def fetch_ibkr_positions(account=None, timeout=12, *, host=None, port=None, client_id=None):
     account=os.getenv('IBKR_ACCOUNT','') if account is None else account
     if not re.fullmatch(r'U[0-9]{5,}',account):
         raise IBKRUnavailable('请配置目标联名账户 IBKR_ACCOUNT')
@@ -41,7 +41,7 @@ def fetch_ibkr_positions(account=None, timeout=12):
 
     reader=Reader();thread=None
     try:
-        reader.connect(os.getenv('IBKR_HOST','127.0.0.1'),int(os.getenv('IBKR_PORT','4001')),int(os.getenv('IBKR_CLIENT_ID','17')))
+        reader.connect(host if host is not None else os.getenv('IBKR_HOST','127.0.0.1'),port if port is not None else int(os.getenv('IBKR_PORT','4001')),client_id if client_id is not None else int(os.getenv('IBKR_CLIENT_ID','17')))
         thread=threading.Thread(target=reader.run,daemon=True,name='IBKR-read-only')
         thread.start()
         if not reader.ready.wait(timeout) or reader.failure:raise IBKRUnavailable(reader.failure or 'Gateway 登录或连接超时')

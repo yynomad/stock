@@ -9,7 +9,7 @@ def main(argv=None):
     parser.add_argument('--config',default='stock.conf')
     parser.add_argument('--check',action='store_true')
     parser.add_argument('--offline',action='store_true')
-    parser.add_argument('--scenario',default='config',choices=['config'])
+    parser.add_argument('--scenario',default='config',choices=['config','broker'])
     args=parser.parse_args(argv)
     os.environ['STOCKMAN_EXPLICIT_CONFIG']='1'
     if args.offline:os.environ['STOCKMAN_OFFLINE']='1'

@@ -156,7 +156,7 @@ N4 实际验收：93 项全量测试通过；schedule 与 Telegram dry-run 通�
 - 本阶段创建未来验收接口：service.py --offline --scenario config，使用临时配置／环境；不是调用真实账户。后续真实服务执行路径依次接通。
 - 验收：C3；venv/bin/python service.py --offline --scenario config，输出 synthetic=true 和配置边界通过；真实 --check 用用户自行准备的本地配置验收，本文不宣称已执行。
 
-### R2：券商选择经适配器产生统一、作用域明确的持仓
+### R2：券商选择经适配器产生统一、作用域明确的持仓（已完成）
 
 依赖 R1。创建 lib/brokers/ 的只读同步／健康／快照契约和注册映射，包装现有 lib/ibkr.py；PortfolioService 从注入提供者加载单账户，保留旧构造方式的兼容测试。
 
@@ -200,3 +200,5 @@ service.py、stock.conf.example、lib/brokers/、lib/channels/ 均为上述计�
 用户确认本整合方案后，按 R1—R5 连续执行，不重问已选栈、单账户或保留辅助交互；重大新技术／范围变化才逐项询问。
 
 R1 实测：108 项离线测试、AST、文档及依赖检查通过；service.py --offline --scenario config 通过，--check 无网络／模型／数据库写入。其他 service 场景尚在后续阶段，不能提前宣称支持。
+
+R2 实测：112 项测试与统一检查通过，broker 离线演示通过；同账户并发请求共享一次读取，错误账户／部分快照拒绝，真实空快照与失败分开，图片查询不改变后台券商快照。

@@ -42,8 +42,8 @@ def normalize_positions(positions):
 
 
 class PortfolioService:
-    def __init__(self, store, ibkr=fetch_ibkr_positions, image=fetch_positions_from_image, bars=fetch_yahoo_bars):
-        self.store=store;self.ibkr=ibkr;self.image=image;self.bars=bars
+    def __init__(self, store, ibkr=fetch_ibkr_positions, image=fetch_positions_from_image, bars=fetch_yahoo_bars,broker=None):
+        self.store=store;self.ibkr=ibkr;self.image=image;self.bars=bars;self.broker=broker
 
     def import_image(self, path, session='local'):
         positions=self.image(path)
@@ -56,6 +56,7 @@ class PortfolioService:
             row=self.store.get_snapshot(snapshot)
             if not row or row['source']!='image' or row['scope']!=session:raise ValueError('截图快照不存在或不属于本会话')
             row['cached']=False;return row
+        if self.broker is not None:return self.broker.load()
         account=os.getenv('IBKR_ACCOUNT','')
         try:
             positions=normalize_positions(self.ibkr(account))

@@ -13,8 +13,22 @@ def fixture(directory):
     return load_config(path,ENV)
 
 def run(scenario):
+    if scenario=='broker':return broker_demo()
     if scenario!='config':raise ValueError('unsupported demo scenario')
     with tempfile.TemporaryDirectory() as d:
         config=fixture(d)
         assert not config.directory.exists()
         return {'synthetic':True,'scenario':scenario,'broker':config.broker.provider,'channel':config.channel.provider,'check_without_runtime_write':'passed'}
+
+def broker_demo():
+    from .storage import Store
+    from .brokers import create_broker,BrokerService
+    with tempfile.TemporaryDirectory() as d:
+        config=fixture(d);store=Store(Path(d)/'db')
+        try:
+            calls=[]
+            def read(*args,**kwargs):calls.append(1);return {'AAPL':{'shares':0.5,'avg_cost':100}}
+            broker=BrokerService(store,create_broker(config.broker,read))
+            first=broker.load();assert broker.load()['cached'] and len(calls)==1
+            return {'synthetic':True,'scenario':'broker','source':first['source'],'complete_single_account':'passed','native_calls':len(calls)}
+        finally:store.close()
