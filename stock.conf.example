@@ -1,0 +1,51 @@
+# Copy to stock.conf. Actual stock.conf is ignored by Git.
+# Export the referenced secrets in the process environment; no implicit .env loading.
+[service]
+data_dir = runtime
+timezone = Asia/Shanghai
+log_level = INFO
+
+[broker]
+provider = ibkr
+account_env = IBKR_ACCOUNT
+host = 127.0.0.1
+port = 4001
+client_id = 17
+timeout_seconds = 12
+sync_interval_seconds = 900
+
+[model]
+name = gemini-3.5-flash-lite
+api_key_env = GEMINI_API_KEY
+max_calls = 8
+max_tools = 12
+
+[notification]
+provider = telegram
+token_env = TG_BOT_TOKEN
+chat_id_env = TG_CHAT_ID
+allowed_users_env = TG_ALLOWED_USERS
+interactive = true
+
+[briefing]
+# Starts automatically on schedule when YOU launch the configured service.
+enabled = true
+time = 08:00
+daily_budget_usd = 0.20
+max_calls = 8
+max_output_tokens = 2048
+max_events = 5
+lookback_hours = 24
+retention_days = 30
+input_rate = 0.30
+output_rate = 2.50
+
+[monitor]
+interval_seconds = 300
+buffer_pct = 0.02
+max_daily_alerts = 5
+quote_max_age_seconds = 900
+
+[sources]
+file = briefing.sources.json
+sec_user_agent_env = SEC_USER_AGENT

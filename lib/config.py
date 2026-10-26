@@ -15,7 +15,7 @@ import math
 from dotenv import load_dotenv
 
 # ── 加载 .env 配置文件 ─────────────────────────────────────────────────
-if os.getenv("STOCKMAN_OFFLINE") != "1":
+if os.getenv("STOCKMAN_OFFLINE") != "1" and os.getenv("STOCKMAN_EXPLICIT_CONFIG") != "1":
     load_dotenv()
 
 # ── Telegram 推送配置 ─────────────────────────────────────────────────

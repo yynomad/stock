@@ -36,3 +36,7 @@ runtime/
 *.sqlite*
 *.db
 *.db-*
+
+# Actual standalone service configuration
+stock.conf
+*.private.conf

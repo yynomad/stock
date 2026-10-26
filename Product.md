@@ -1,7 +1,7 @@
 # StockMan 持仓信息简报与研究助手
 
 更新：2026-10-26，Asia/Shanghai。
-状态：原 M1—M6、日报 N1—N5 已完成离线交付，真实服务仍有验收待办。本轮已明确开源后台服务、.conf 配置、单实例单账户、保留主动问答与截图；新的 R1—R5 服务重构方案待本次文档确认，尚未改应用代码。
+状态：原 M1—M6、日报 N1—N5 已完成离线交付，真实服务仍有验收待办。本轮已明确开源后台服务、.conf 配置、单实例单账户、保留主动问答与截图；新的 R1—R5 服务重构方案已获用户确认，尚未改应用代码。
 
 ## 用户、目标与位置
 
@@ -202,7 +202,7 @@
 
 IM 交互现已明确：用户回复“那就保留这个吧，截图识别那部分功能也先不删掉”，确认保留现有主动问答与截图识别。后台自动流程为主，IM 提问与图片为辅助；保留原本人权限、重复消息防护和会话／来源隔离，不再要求用户二选一。
 
-## R：配置驱动后台服务的整合方案（待本次文档确认）
+## R：配置驱动后台服务的整合方案（已获用户确认）
 
 ### 确认范围与沿用技术
 
@@ -263,3 +263,12 @@ lib/briefing/ 继续提供通用条目、历史、预算和调度；lib/stock_br
 - R5：新服务端到端合成演示、旧 104 项回归和原／日报演示通过；README 与 Learning 提供配置、启动、诊断和恢复方法；真实外部条件仍逐项待验收。
 
 本次不删除已有入口，不加页面、HTTP API、云部署、多账户聚合、其他已未选择的券商／IM 或自动交易。正式公开发布前还需用户选择许可证及确认发布范围；本轮不自动创建许可证、推送 GitHub 或部署真实服务。需求方向已确认，R1—R5 新实施方案须本次文档确认后开始。
+
+## 开源参考核对（2026-10-26）
+
+用户已明确回复“可以”批准 R1—R5；后续询问开源实现方式不是撤销授权。研究仅参考设计，不复制第三方代码或改变选型。
+
+- [Freqtrade 配置](https://www.freqtrade.io/en/stable/configuration/)与[worker](https://github.com/freqtrade/freqtrade/blob/develop/freqtrade/worker.py)：配置校验、常驻 worker、状态与 Telegram 控制分离，适合作为后台生命周期参考；其自动交易不属于本项目。
+- [daily_stock_analysis](https://github.com/ZhuLinsen/daily_stock_analysis)：配置自选股、定时分析、多源数据与多通道推送，业务形态相近；不能据自选股配置声称已自动读取券商持仓。
+- [Wealthfolio 同步实现](https://github.com/wealthfolio/wealthfolio/blob/main/crates/connect/src/broker/orchestrator.rs)：独立编排连接、账户、活动和持仓；[Connect](https://wealthfolio.app/connect/learn-more/) 使用 SnapTrade，属可选订阅，并非免费开源任意券商认证能力。
+- [TradingAgents](https://github.com/TauricResearch/TradingAgents)：LangGraph 研究角色编排、配置及状态恢复。只参考研究模块边界，保留已选 LangChain 接口，不引入其完整交易决策框架。
