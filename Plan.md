@@ -12,18 +12,20 @@
 
 实际结果：`venv/bin/python scripts/validate.py` 退出 0（137 项离线测试全过、AST、文档结构／链接、pip check 通过）；原六场景、日报六场景、服务五场景、Telegram dry-run 及 `bot.py --offline --scenario config`（验证别名转发）共 19 个命令全部退出 0。云端 Linux／Python 3.12 验证环境中，默认代理变量曾使 1 项与 SDK 构造有关的既有测试因 httpx 解析代理地址失败，清除代理变量后通过，与本轮改动无关；在项目锁定的 macOS／Python 3.10 环境以同一命令为准。
 
-## I1：移除持仓截图及相关入口（用户已明确授权，实施中）
+## I1：移除持仓截图及相关入口（已完成）
 
 本轮延续 `/Users/yao/personal/stock/`，无新项目或技术选型；本节覆盖历史里程碑中保留图片的条目。
 
 1. 已完成：核对物理目录、Git 基线 `cf09953`、工作区和影响范围；同步最新产品／规则／计划。
-2. 待完成：删除识图模块、Telegram 下载及图片任务、CLI 图片参数、图片日报配置与上下文；保留通用快照及文字业务。
-3. 待完成：替换图片功能测试为忽略／拒绝旧入口／保护历史数据的回归，验证券商故障不会读取图片快照、旧任务不会错误恢复。
-4. 待完成：全量离线检查与原六场景、日报六场景、服务五场景及 Telegram dry-run；更新结果，创建本地语义化提交，不推送。
+2. 已完成：删除识图模块、Telegram 下载及图片任务、CLI 图片参数、图片日报配置与上下文；保留通用快照及文字业务。
+3. 已完成：替换图片功能测试为忽略／拒绝旧入口／保护历史数据的回归，验证券商故障不会读取图片快照、旧任务不会错误恢复。补充“开始监控持仓”无显式代码的端到端回归，先复现 AttributeError，再改为只读券商来源。
+4. 已完成：截图移除代码已纳入用户提交 `6169eaf`；随后同步的 `6d8d4ea` 清理旧 Bot 路线。本机对最新版本运行全量离线检查及原六场景、日报六场景、服务五场景、Telegram dry-run 和 Bot 别名 config，共 19 个验收命令全部退出 0。本次仅补齐验收文档并本地提交，不推送。
 
 验证命令：`venv/bin/python scripts/validate.py`；`venv/bin/python scripts/demo.py --offline --scenario <routing|persistence|portfolio|research|monitor|end-to-end>`；`venv/bin/python scripts/briefing.py --offline --scenario <pipeline|sources|research|budget|schedule|end-to-end>`；`venv/bin/python service.py --offline --scenario <config|broker|channel|service|end-to-end>`；`venv/bin/python scripts/smoke.py --service telegram --dry-run`。占位符代表分别执行各场景，不是单条可直接复制的命令。
 
-预期：全部退出 0；图片更新 ignored、重复更新 duplicate；旧 --image／--snapshot 参数在调用外部服务前拒绝；旧图片来源配置明确报错；旧中断图片任务保留记录并拒绝恢复；真实外部服务不启动。实际测试数与命令结果验收后记录。
+预期：全部退出 0；图片更新 ignored、重复更新 duplicate；旧 --image／--snapshot 参数在调用外部服务前拒绝；旧图片来源配置明确报错；旧中断图片任务保留记录并拒绝恢复；真实外部服务不启动。
+
+实际验收（2026-10-28，Mac／Python 3.10）：`venv/bin/python scripts/validate.py` 退出 0，137 项测试、AST、文档与 pip check 全部通过；上述 18 个原验收场景在禁用网络的进程中通过，额外 `STOCKMAN_OFFLINE=1 venv/bin/python bot.py --offline --scenario config` 退出 0。旧图片文件和数据库未清理。真实 IBKR、Gemini 与本人 Telegram 仍未完成联调。
 
 状态：原 M/N 及用户已确认的 R1—R5 均完成离线实现和验收；R5 交付新后台入口、配置、只读状态与学习说明。真实服务验收仍有待办，未自动部署或发送。
 
@@ -54,10 +56,10 @@
 | C3 | `venv/bin/python scripts/validate.py` | 全量离线测试、Python AST、文档链接／代码围栏、模型配置及依赖检查通过；已通过 |
 | D1 | `venv/bin/python scripts/demo.py --offline --scenario routing` | 持仓／研究／监控按需委派，无关请求不调用业务工具；通过 |
 | D2 | `venv/bin/python scripts/demo.py --offline --scenario persistence` | 业务任务和 LangChain 会话在重启后保留；通过 |
-| D3 | `venv/bin/python scripts/demo.py --offline --scenario portfolio` | 截图持仓独立分析，双来源和失败边界另由测试覆盖；通过 |
+| D3 | `venv/bin/python scripts/demo.py --offline --scenario portfolio` | 券商持仓独立分析，分数股、同账户缓存和失败边界由测试覆盖；通过 |
 | D4 | `venv/bin/python scripts/demo.py --offline --scenario research` | ETF 不套公司财务，缺少新闻明确说明；股票、引用和口径由测试覆盖；通过 |
 | D5 | `venv/bin/python scripts/demo.py --offline --scenario monitor` | 有效事件、过期报价与持久化去重；通过 |
-| D6 | `venv/bin/python scripts/demo.py --offline --scenario end-to-end` | 模拟 IBKR／截图→股票／ETF 研究→监控→一次假投递→重启去重→停止；通过 |
+| D6 | `venv/bin/python scripts/demo.py --offline --scenario end-to-end` | 模拟 IBKR→股票／ETF 研究→监控→一次假投递→重启去重→停止；通过 |
 | L1 | `venv/bin/python scripts/smoke.py --service ibkr --read-only` | 目标联名账户真实读取后人工核对；未运行，用户仍等待或未登录 Gateway |
 | L2 | `venv/bin/python scripts/smoke.py --service gemini --symbol AAPL` | 实际模型、接地来源和用量；已运行，75 秒总超时，退出 2，未验证成功 |
 | L3 | `venv/bin/python scripts/smoke.py --service telegram --dry-run` | HTML 转义和分段检查，不发送消息；通过 |
@@ -69,7 +71,7 @@
 1. **IBKR**：新用户名获批、登录 Gateway、启用只读 Socket API、配置联名账户 ID；L1 成功后人工对比持仓、权限和手机并发。模拟器不证明服务兼容，特别是当前固定的 PyPI `ibapi` SDK。
 2. **Gemini／研究**：检查已选模型权限、网络代理及搜索额度，重跑 L2；再从本地 CLI 检查实际 Agent 委派、新闻引用和报告。基础 HTTP 可达不代表生成或搜索成功，不自动换供应商或型号。
 3. **SEC／Yahoo**：用户填写真实可联系的 `SEC_USER_AGENT`；公开 AAPL 与 QQQ 分别确认公司财务／基金资料、报告期、价格事件时间和缺失项。基础 Yahoo 地址出现 429，实际数据尚待验收。
-4. **Telegram**：用户启动本人 Bot，依次验证文字复盘、单股／ETF 研究、图片、状态、开始及停止；打开新闻 HTML 附件核对原文、来源、关联搜索建议。检查非授权用户被拒绝、长消息可读。发生未知投递先人工核实，避免重复发送。
+4. **Telegram**：用户启动本人 Bot，依次验证文字复盘、单股／ETF 研究、状态、开始及停止，并确认图片被忽略；打开新闻 HTML 附件核对原文、来源、关联搜索建议。检查非授权用户被拒绝、长消息可读。发生未知投递先人工核实，避免重复发送。
 
 这些是外部条件和用户端验收待办，不再添加文档批准关卡。全部 AC1—AC8 满足后才能标为产品整体完成；当前交付为离线已验证的实现及明确的恢复步骤。
 
