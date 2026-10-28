@@ -1,8 +1,14 @@
 # StockMan 项目工作规则
 
+## 2026-10-28 本轮授权 K1：打包改造
+
+用户明确授权在现有物理目录 `/Users/yao/personal/stock/` 完成 src 布局、stockman 包及命令行入口，再以独立 K2 删除 bot.py；均为纯结构调整，无行为变化。先按顺序读取四份文档，K1／K2 分别验证、记录并提交，推送按用户本轮要求执行：全部验收通过后 `git push origin main`。不启动真实服务、不发送真实消息、不改 .env 和真实 stock.conf；requirements.txt 保持原样，不新增许可证。
+
+前置检查发现 7 个带冲突标记的未提交文件，已按用户随后明确要求还原至 HEAD；工作区干净。保留本地已有文档提交 `eaf5b8f`（其父提交为用户指定的 `6d8d4ea`），不重置提交历史。K1 验证结果：全新临时 venv 的锁定依赖安装、editable 安装、pip check 均退出 0；scripts/validate.py 退出 0，140 项测试、AST、文档结构／链接和依赖检查全部通过；19 条离线场景及仓库外 stockman 命令全部退出 0。44 个业务模块和原 CLI 逐文件比较，仅有授权的导入／路径变化。K2 尚待执行；推送按本轮要求在两项全部验收后进行。
+
 ## 2026-10-28 最新授权：清理双启动路线，推送 GitHub
 
-用户明确要求修复“新 service.py／旧 bot.py 两条启动路线并存、旧入口留死代码”的历史包袱，并推送代码。唯一启动路线为配置驱动的 `service.py`；`bot.py` 只保留为转发到 `service.py` 的废弃别名，不得再实现独立行为。旧 bot.py 中已不可达的直连 Gemini 聊天、watchlist 对话工具、Telegram 轮询辅助及只被其引用的 `lib/monitor.py`（PriceMonitor）一并删除；现行价格监控是 `lib/monitoring.py`，不得混淆。`lib/application.py` 不是旧路线残留：`BackendService` 继承它、`scripts/chat.py` 与离线演示仍使用它，保留。`lib/watchlist.py`、`lib/output.py` 仍被保留入口 `premarket_grid_calculator.py` 使用，不得随手删除。本轮按用户明确要求在验证后提交并推送；不启动真实服务、不发送真实消息。
+用户明确要求修复“新 service.py／旧 bot.py 两条启动路线并存、旧入口留死代码”的历史包袱，并推送代码。唯一启动路线为配置驱动的 `service.py`；`bot.py` 只保留为转发到 `service.py` 的废弃别名，不得再实现独立行为。旧 bot.py 中已不可达的直连 Gemini 聊天、watchlist 对话工具、Telegram 轮询辅助及只被其引用的 `lib/monitor.py`（PriceMonitor）一并删除；现行价格监控是 `src/stockman/monitoring.py`，不得混淆。`src/stockman/application.py` 不是旧路线残留：`BackendService` 继承它、`scripts/chat.py` 与离线演示仍使用它，保留。`src/stockman/watchlist.py`、`src/stockman/output.py` 仍被保留入口 `premarket_grid_calculator.py` 使用，不得随手删除。本轮按用户明确要求在验证后提交并推送；不启动真实服务、不发送真实消息。
 
 ## 2026-10-28 授权：移除持仓截图功能
 
@@ -60,6 +66,7 @@
 
 ```sh
 venv/bin/python -m pip install -r requirements.txt
+venv/bin/python -m pip install -e .
 venv/bin/python -m pip check
 venv/bin/python -m unittest discover -s tests -v
 venv/bin/python scripts/validate.py

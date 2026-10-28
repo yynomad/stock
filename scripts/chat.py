@@ -5,7 +5,6 @@ import json
 import os
 from pathlib import Path
 import sys
-sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
 
 def main():
     parser=argparse.ArgumentParser()
@@ -16,8 +15,8 @@ def main():
     parser.add_argument('--resume-task')
     args=parser.parse_args()
     if args.offline:os.environ['STOCKMAN_OFFLINE']='1'
-    from lib.application import Application
-    from lib.offline import create_offline_app
+    from stockman.application import Application
+    from stockman.offline import create_offline_app
     directory=args.data_dir or ('runtime/offline' if args.offline else None)
     app=None
     try:

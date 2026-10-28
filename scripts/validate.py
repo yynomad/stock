@@ -11,7 +11,7 @@ import tempfile
 ROOT=Path(__file__).resolve().parents[1]
 
 def main():
-    for path in list(ROOT.glob("*.py"))+list((ROOT/"lib").rglob("*.py"))+list((ROOT/"tests").rglob("*.py"))+list((ROOT/"scripts").glob("*.py")):
+    for path in list(ROOT.glob("*.py"))+list((ROOT/"src").rglob("*.py"))+list((ROOT/"tests").rglob("*.py"))+list((ROOT/"scripts").glob("*.py")):
         ast.parse(path.read_text(),filename=str(path))
     for name in ["Product.md","Plan.md","AGENTS.md","Session_Handoff.md","README.md","Learning.md"]:
         text=(ROOT/name).read_text()
@@ -19,8 +19,8 @@ def main():
         for target in re.findall(r"\]\(([^)]+)\)",text):
             if not target.startswith(("https://","http://","#")):
                 assert (ROOT/target.split("#")[0]).is_file(),target
-    assert 'gemini-3.5-flash-lite' in (ROOT/'lib/config.py').read_text()
-    env=dict(os.environ,STOCKMAN_OFFLINE="1",PYTHONDONTWRITEBYTECODE="1",PYTHONPATH=str(ROOT),
+    assert 'gemini-3.5-flash-lite' in (ROOT/'src/stockman/config.py').read_text()
+    env=dict(os.environ,STOCKMAN_OFFLINE="1",PYTHONDONTWRITEBYTECODE="1",PYTHONPATH=str(ROOT/'src')+os.pathsep+str(ROOT),
              GEMINI_API_KEY="",GOOGLE_API_KEY="",TG_BOT_TOKEN="",TG_CHAT_ID="",LANGSMITH_TRACING="false",BRIEFING_ENABLED="false")
     with tempfile.TemporaryDirectory() as directory:
         env['STOCKMAN_DATA_DIR']=directory

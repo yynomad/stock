@@ -3,12 +3,12 @@ import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import Mock,patch
-from lib.storage import Store
-from lib.monitoring import MonitoringService
-from lib.agents import CURRENT,Invocation
-from lib.telegram import message_chunks,Telegram
-from lib.application import Application
-from lib.agents import OfflineModel
+from stockman.storage import Store
+from stockman.monitoring import MonitoringService
+from stockman.agents import CURRENT,Invocation
+from stockman.telegram import message_chunks,Telegram
+from stockman.application import Application
+from stockman.agents import OfflineModel
 
 class MonitorTest(unittest.TestCase):
     def setUp(self):
@@ -88,7 +88,7 @@ class TelegramTest(unittest.TestCase):
 
     def test_real_transport_preserves_unknown_delivery_state(self):
         import requests
-        with patch('lib.telegram.requests.post',side_effect=requests.Timeout()):
+        with patch('stockman.telegram.requests.post',side_effect=requests.Timeout()):
             transport=Telegram(token='synthetic',chat='123')
             self.assertEqual(transport.deliver({'text':'synthetic'}),'unknown')
 

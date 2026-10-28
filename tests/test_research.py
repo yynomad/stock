@@ -1,8 +1,8 @@
 import json
 import unittest
 from types import SimpleNamespace as NS
-from lib.market import choose_quote,regular_session
-from lib.research import financial_facts,parse_grounding,news_html,ResearchService,symbol_from_request
+from stockman.market import choose_quote,regular_session
+from stockman.research import financial_facts,parse_grounding,news_html,ResearchService,symbol_from_request
 
 class ResearchTest(unittest.TestCase):
     def test_newer_regular_quote_beats_stale_premarket(self):
@@ -52,7 +52,7 @@ class ResearchTest(unittest.TestCase):
     def test_grounded_news_is_not_put_in_checkpoints_or_business_records(self):
         import tempfile
         from pathlib import Path
-        from lib.agents import AgentRuntime,OfflineModel
+        from stockman.agents import AgentRuntime,OfflineModel
         class Market:
             def info(self,symbol):return {'quoteType':'ETF'}
             def bars(self,symbol):return []

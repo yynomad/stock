@@ -129,7 +129,7 @@ def load_config(path,env=None):
     notification=ChannelConfig(channel,secret('notification','token_env','TG_BOT_TOKEN'),int(target),allowed,boolean('notification','interactive',True))
     monitor=MonitorConfig(number('monitor','interval_seconds',300,1,86400),number('monitor','buffer_pct',0.02,0.000001,1),
           number('monitor','max_daily_alerts',5,1,100,True),number('monitor','quote_max_age_seconds',900,1,86400))
-    sources=relative(value('sources','file',str(Path(__file__).resolve().parents[1]/'briefing.sources.json')))
+    sources=relative(value('sources','file',str(Path(__file__).resolve().parents[2]/'briefing.sources.json')))
     if not sources.is_file():raise ConfigError('sources.file does not exist')
     try:
         registry=json.loads(sources.read_text(encoding='utf-8'))

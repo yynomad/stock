@@ -122,6 +122,6 @@ def load_registry(path=None):
         with open(path) as handle:data=json.load(handle)
     else:
         from pathlib import Path
-        data=json.loads((Path(__file__).resolve().parents[2]/'briefing.sources.json').read_text())
+        data=json.loads((Path(__file__).resolve().parents[3]/'briefing.sources.json').read_text())
     if not isinstance(data,dict) or not isinstance(data.get('issuers'),dict) or not isinstance(data.get('rss'),list):raise ValueError('invalid source registry')
     return data

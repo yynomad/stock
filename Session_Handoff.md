@@ -1,5 +1,13 @@
 # StockMan 会话交接
 
+## 2026-10-28 K1 打包改造交接（已完成）
+
+- 位置：`/Users/yao/personal/stock/`，现有项目原物理目录，未移动或创建新项目。先读 AGENTS.md、Product.md、Plan.md、Session_Handoff.md。
+- 前置：首次检查发现 7 个未提交冲突文件，已暂停；用户明确要求全部还原，已仅还原这 7 个文件，工作区干净。保留 `eaf5b8f` 既有文档提交，其父为 `6d8d4ea`；不覆盖提交历史。
+- 授权：按用户指定的 K1／K2 分成两个语义化提交，先打包、后删除 bot.py；纯结构调整，无行为变化。推送按用户本轮要求执行，全部验收通过后 git push origin main。不启动真实服务、不发送真实消息、不改 .env／真实 stock.conf。
+- K1 范围：src/stockman、指定 pyproject.toml 和 stockman 命令、service.py 懒加载别名、导入／仓库路径／脚本／测试及六份文档同步；requirements.txt 不变，不写许可证。
+- 验证结果：全新临时 venv 的锁定依赖安装、editable 安装、pip check 均退出 0；scripts/validate.py 退出 0，140 项测试、AST、文档结构／链接和依赖检查全部通过；19 条离线场景及仓库外 stockman 命令全部退出 0。44 个业务模块和原 CLI 逐文件比较，仅有授权的导入／路径变化。日志位于 /private/tmp/stockman-acceptance-k1。临时 venv 为 `/private/tmp/stockman-packaging-validation-20261028`，准确命令及 19 条场景见 Plan.md K1；另验证仓库外 stockman 命令。相关提交：包含本记录的提交。下一步：执行 K2 删除 bot.py，复验通过后按授权推送。
+
 ## 2026-10-28 同步与本机验收复核
 
 - 用户在本轮工作期间提交并推送代码，随后要求重新拉取。核对本地 `HEAD`、`origin/main` 与 GitHub 实时 `refs/heads/main` 均为 `6d8d4eab5dd0ee0609cc7de8f5a2e15856d56f78`；`git merge --ff-only origin/main` 返回 Already up to date，无冲突、无覆盖。
@@ -12,7 +20,7 @@
 
 - 触发：用户指出新 `service.py`（stock.conf）与旧 `bot.py`（.env）两条启动路线并存、旧文件留有走不到的老代码，要求修复并推送。基线 `main@6169eaf`。
 - 已实施：`bot.py` 改为约 30 行的转发别名（参数原样转发 `service.main`）；删除其直连 Gemini 聊天、watchlist 对话工具、Telegram 轮询辅助、PA 调度死代码及只被死代码引用的 `lib/monitor.py`。
-- 明确保留：`lib/application.py`（`BackendService` 继承它，`scripts/chat.py`／离线演示共用）、`lib/watchlist.py`、`lib/output.py`（`premarket_grid_calculator.py` 仍引用）、`scripts/chat.py`、`scripts/briefing.py`。现行价格监控为 `lib/monitoring.py`，与被删的 `lib/monitor.py` 不是同一模块。
+- 明确保留：`src/stockman/application.py`（`BackendService` 继承它，`scripts/chat.py`／离线演示共用）、`src/stockman/watchlist.py`、`src/stockman/output.py`（`premarket_grid_calculator.py` 仍引用）、`scripts/chat.py`、`scripts/briefing.py`。现行价格监控为 `src/stockman/monitoring.py`，与被删的 `lib/monitor.py` 不是同一模块。
 - 测试同步：重写 `tests/test_telegram_workflow.py`（别名转发／WatchlistManager 本体／简报消息格式）、更新 `tests/test_imports.py` 两处断言、新增 `tests/test_removed_legacy_bot.py`。
 - 验证结果：`scripts/validate.py` 退出 0，137 项离线测试全过；原六场景、日报六场景、服务五场景、Telegram dry-run 及经别名的 `bot.py --offline --scenario config` 共 19 个命令全部退出 0（详见 Plan.md J1）。本轮不启动真实服务、不发真实消息。推送按用户本轮明确要求执行，不同于此前各轮“不推送”的默认；推送结果以 Git 远端为准，本地提交号见 `git log`。
 

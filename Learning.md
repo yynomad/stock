@@ -19,15 +19,15 @@ venv/bin/python service.py --offline --scenario service
 venv/bin/python service.py --offline --scenario end-to-end
 ```
 
-新主线从 service.py 开始：读取 INI → 检查环境引用 → 创建 BackendService → 注入券商／通道／模型 → 自动同步／定时研究 → 推送。IM 文字接收是独立辅助路径；图片消息被忽略，不进入业务任务。新增同步和服务健康记录在 broker_health、service_health 中；检查点和原业务表继续复用。
+安装包后，stockman 命令与根 service.py 均转发到 src/stockman/cli.py；参数与业务流程不变。新主线从 CLI 开始：读取 INI → 检查环境引用 → 创建 BackendService → 注入券商／通道／模型 → 自动同步／定时研究 → 推送。IM 文字接收是独立辅助路径；图片消息被忽略，不进入业务任务。新增同步和服务健康记录在 broker_health、service_health 中；检查点和原业务表继续复用。
 
-lib/service_config.py 只用标准库读配置，不加载 .env。lib/brokers/base.py 负责完整快照、账户作用域、缓存和串行化；lib/channels/base.py 说明发送能力与接收能力分开。lib/service.py 用相同 PortfolioService、ResearchService、AgentRuntime 与 StockBriefing 组装后台，不重写模型框架。普通同步和轮询不调用模型。
+src/stockman/service_config.py 只用标准库读配置，不加载 .env。src/stockman/brokers/base.py 负责完整快照、账户作用域、缓存和串行化；src/stockman/channels/base.py 说明发送能力与接收能力分开。src/stockman/service.py 用相同 PortfolioService、ResearchService、AgentRuntime 与 StockBriefing 组装后台，不重写模型框架。普通同步和轮询不调用模型。
 
 完整演示使用真实线程／SQLite／LangChain 调用循环与假外部依赖，覆盖无人提问自动发报、主动研究、忽略媒体输入、重启去重及未知投递。原 scripts/demo.py 和下面的旧对话学习路径仍保留。
 
 ## 一次请求经过哪里
 
-`scripts/chat.py` 或 `lib/application.py` 接收输入，创建本次任务及会话作用域。`lib/agents.py` 使用 LangChain `create_agent` 创建主控，主控的三个工具分别包装三个子 Agent。子 Agent 再使用自己的业务工具，结果由主控汇总。
+`scripts/chat.py` 或 `src/stockman/application.py` 接收输入，创建本次任务及会话作用域。`src/stockman/agents.py` 使用 LangChain `create_agent` 创建主控，主控的三个工具分别包装三个子 Agent。子 Agent 再使用自己的业务工具，结果由主控汇总。
 
 ```text
 用户 → Application → 主控 Agent
@@ -54,9 +54,9 @@ venv/bin/python scripts/tasks.py --data-dir runtime/offline --task <任务编号
 
 ## 看清哪些步骤无需 Agent
 
-`lib/monitoring.py` 的 `check` 只比较交易时段、报价时间、价位与历史状态，不调用模型。有效事件才交给运行时分析。D6 用假行情强制触发一次、重复检查、关闭并重启数据库、再次检查和停止规则，验证只投递一次。
+`src/stockman/monitoring.py` 的 `check` 只比较交易时段、报价时间、价位与历史状态，不调用模型。有效事件才交给运行时分析。D6 用假行情强制触发一次、重复检查、关闭并重启数据库、再次检查和停止规则，验证只投递一次。
 
-`lib/portfolio.py` 校验股数、成本、币种和资产类别，调用原有 PA／仓位算法；这些计算交给确定性代码。`lib/research.py` 处理 SEC 报告期与引用；缺数据保留缺失。Agent 负责选择工具、组织解释，不能代替数值校验或授权检查。
+`src/stockman/portfolio.py` 校验股数、成本、币种和资产类别，调用原有 PA／仓位算法；这些计算交给确定性代码。`src/stockman/research.py` 处理 SEC 报告期与引用；缺数据保留缺失。Agent 负责选择工具、组织解释，不能代替数值校验或授权检查。
 
 ## 失败与恢复练习
 
@@ -91,7 +91,7 @@ LangChain 研究角色：只读取证据 → 选择／解释 → 输出 JSON
 普通代码：原文／引用／数字检查 → 中文简报 → 本机历史 → Telegram → sent/failed/unknown
 ```
 
-`lib/briefing/` 提供不依赖股票的 Evidence、SourcePolicy、History、Budget、Scheduler；`lib/stock_briefing/` 负责持仓、官方素材、关系和简报结构。现有 `create_research_agent` 工厂被按需研究和日报共同使用，日报直接调用研究角色，无需让主控重复分类已知任务。没有手写 LangGraph 状态图。
+`src/stockman/briefing/` 提供不依赖股票的 Evidence、SourcePolicy、History、Budget、Scheduler；`src/stockman/stock_briefing/` 负责持仓、官方素材、关系和简报结构。现有 `create_research_agent` 工厂被按需研究和日报共同使用，日报直接调用研究角色，无需让主控重复分类已知任务。没有手写 LangGraph 状态图。
 
 值得读的路径：`sources.py` 的未知时间拒绝；`relations.py` 如何拒绝仅有公司共现；`agent.py` 如何限制为原文引用；`budget.py` 的 BEGIN IMMEDIATE 如何防并发超额；`schedule.py` 为什么在外部发送前写 sending。超时后无法知道服务端是否完成，所以 unknown 不自动重试。
 

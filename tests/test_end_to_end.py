@@ -5,9 +5,9 @@ import tempfile
 import unittest
 from unittest.mock import patch,Mock
 import requests
-from lib.offline import end_to_end,create_offline_app
-from lib.telegram import Telegram
-from lib.research import SECClient
+from stockman.offline import end_to_end,create_offline_app
+from stockman.telegram import Telegram
+from stockman.research import SECClient
 
 
 class EndToEndTest(unittest.TestCase):
@@ -25,7 +25,7 @@ class EndToEndTest(unittest.TestCase):
                 update={'update_id':2,'message':{'from':{'id':123},'chat':{'id':123},'caption':'检查持仓',**media}}
                 before={p.relative_to(d) for p in Path(d).rglob('*')}
                 try:
-                    with patch.object(app.runtime,'run') as run,patch('lib.telegram.requests.get') as get,patch('google.genai.Client') as model:
+                    with patch.object(app.runtime,'run') as run,patch('stockman.telegram.requests.get') as get,patch('google.genai.Client') as model:
                         self.assertEqual(app.handle_update(update),'ignored')
                         self.assertEqual(app.handle_update(update),'duplicate')
                         run.assert_not_called();get.assert_not_called();model.assert_not_called()
@@ -37,7 +37,7 @@ class EndToEndTest(unittest.TestCase):
                 finally:app.runtime.close()
 
     def test_text_task_model_budget_still_applies(self):
-        from lib.agents import CallLimit
+        from stockman.agents import CallLimit
         with tempfile.TemporaryDirectory() as d,patch.dict('os.environ',{'STOCKMAN_MAX_MODEL_CALLS':'1'}):
             app=create_offline_app(d)
             try:
@@ -72,22 +72,22 @@ class EndToEndTest(unittest.TestCase):
 
     def test_partial_transport_delivery_is_unknown(self):
         responses=[Mock(status_code=200,json=lambda:{'ok':True}),Mock(status_code=500)]
-        with patch('lib.telegram.requests.post',side_effect=responses):
+        with patch('stockman.telegram.requests.post',side_effect=responses):
             self.assertEqual(Telegram('synthetic','123').deliver({'text':'x'*2000}),'unknown')
-        with patch('lib.telegram.requests.post',return_value=Mock(status_code=200,json=lambda:{'ok':False})):
+        with patch('stockman.telegram.requests.post',return_value=Mock(status_code=200,json=lambda:{'ok':False})):
             self.assertEqual(Telegram('synthetic','123').deliver({'text':'x'}),'failed')
 
     def test_transient_sec_errors_retry_at_most_twice(self):
         response=Mock(status_code=200);response.json.return_value={'ok':True}
-        with patch.dict('os.environ',{'SEC_USER_AGENT':'Synthetic contact@example.com'}),patch('lib.research.time.sleep'),patch('lib.research.requests.get',side_effect=[requests.Timeout(),requests.ConnectionError(),response]) as get:
+        with patch.dict('os.environ',{'SEC_USER_AGENT':'Synthetic contact@example.com'}),patch('stockman.research.time.sleep'),patch('stockman.research.requests.get',side_effect=[requests.Timeout(),requests.ConnectionError(),response]) as get:
             self.assertEqual(SECClient().get('https://www.sec.gov/example'),{'ok':True})
             self.assertEqual(get.call_count,3)
-        with patch.dict('os.environ',{'SEC_USER_AGENT':'Synthetic contact@example.com'}),patch('lib.research.time.sleep'),patch('lib.research.requests.get',side_effect=requests.Timeout()) as get:
+        with patch.dict('os.environ',{'SEC_USER_AGENT':'Synthetic contact@example.com'}),patch('stockman.research.time.sleep'),patch('stockman.research.requests.get',side_effect=requests.Timeout()) as get:
             with self.assertRaises(requests.Timeout):SECClient().get('https://www.sec.gov/example')
             self.assertEqual(get.call_count,3)
 
     def test_non_retryable_sec_error_fails_once(self):
         response=Mock(status_code=403);response.raise_for_status.side_effect=requests.HTTPError()
-        with patch.dict('os.environ',{'SEC_USER_AGENT':'Synthetic contact@example.com'}),patch('lib.research.time.sleep'),patch('lib.research.requests.get',return_value=response) as get:
+        with patch.dict('os.environ',{'SEC_USER_AGENT':'Synthetic contact@example.com'}),patch('stockman.research.time.sleep'),patch('stockman.research.requests.get',return_value=response) as get:
             with self.assertRaises(requests.HTTPError):SECClient().get('https://www.sec.gov/example')
             self.assertEqual(get.call_count,1)

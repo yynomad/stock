@@ -6,7 +6,6 @@ import os
 from pathlib import Path
 import sys
 import tempfile
-sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
 
 def main():
     parser=argparse.ArgumentParser()
@@ -15,16 +14,16 @@ def main():
     args=parser.parse_args()
     os.environ['STOCKMAN_OFFLINE']='1'
     os.environ['LANGSMITH_TRACING']='false'
-    from lib.agents import AgentRuntime,OfflineModel
+    from stockman.agents import AgentRuntime,OfflineModel
     with tempfile.TemporaryDirectory() as directory:
         runtime=AgentRuntime(directory,OfflineModel())
         if args.scenario=='end-to-end':
             runtime.close()
-            from lib.offline import end_to_end
+            from stockman.offline import end_to_end
             print(json.dumps(end_to_end(directory),ensure_ascii=False))
             return
         if args.scenario=='monitor':
-            from lib.monitoring import MonitoringService
+            from stockman.monitoring import MonitoringService
             service=MonitoringService(runtime.store,None,in_session=lambda now:True)
             runtime.store.execute('INSERT INTO rules(symbol,spec) VALUES(?,?)',('AAPL',json.dumps({'support':100,'resistance':120,'buffer':0.02})))
             quote={'price':125,'asof':1000,'kind':'regular','valid':True}
@@ -33,7 +32,7 @@ def main():
             assert service.check('AAPL',dict(quote,asof=1),1002) is None
             print('PASS: synthetic crossing event, stale filtering and persistent deduplication')
         elif args.scenario=='research':
-            from lib.research import ResearchService
+            from stockman.research import ResearchService
             from tests_data import demo_bars
             class Market:
                 def info(self,symbol):return {'quoteType':'ETF','longName':'Synthetic QQQ'}
@@ -46,7 +45,7 @@ def main():
             assert 'ETF' in result['text'] and 'not_applicable' in result['text']
             print(json.dumps(result,ensure_ascii=False))
         elif args.scenario=='portfolio':
-            from lib.portfolio import PortfolioService
+            from stockman.portfolio import PortfolioService
             from tests_data import demo_bars
             service=PortfolioService(runtime.store,ibkr=lambda account:{'AAPL':{'shares':0.5,'avg_cost':100}},
                                      bars=demo_bars)

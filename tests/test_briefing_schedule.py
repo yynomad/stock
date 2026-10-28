@@ -4,13 +4,13 @@ from pathlib import Path
 import tempfile
 import unittest
 from zoneinfo import ZoneInfo
-from lib.storage import Store
-from lib.briefing.config import BriefingConfig
-from lib.briefing.schedule import Scheduler
-from lib.briefing.history import History
-from lib.briefing.locking import DirectoryLock
-from lib.briefing.pipeline import preview
-from lib.briefing.demo import SyntheticSource
+from stockman.storage import Store
+from stockman.briefing.config import BriefingConfig
+from stockman.briefing.schedule import Scheduler
+from stockman.briefing.history import History
+from stockman.briefing.locking import DirectoryLock
+from stockman.briefing.pipeline import preview
+from stockman.briefing.demo import SyntheticSource
 
 def at(value):return datetime.fromisoformat(value).replace(tzinfo=ZoneInfo('Asia/Shanghai')).timestamp()
 
@@ -68,9 +68,9 @@ class BriefingScheduleTest(unittest.TestCase):
     def test_application_uses_broker_and_constructor_never_sends(self):
         import os
         from unittest.mock import patch,Mock
-        from lib.application import Application
-        from lib.agents import OfflineModel
-        from lib.portfolio import PortfolioService
+        from stockman.application import Application
+        from stockman.agents import OfflineModel
+        from stockman.portfolio import PortfolioService
         transport=Mock(chat=123)
         factory=lambda store:PortfolioService(store,ibkr=lambda account:{'AAPL':{'shares':1}})
         with patch.dict(os.environ,{'BRIEFING_ENABLED':'true','TG_ALLOWED_USERS':'123'}):

@@ -39,7 +39,7 @@ venv/bin/python service.py --config stock.conf --status
 
 输出最近记录的同步、任务与投递状态，须核对记录时间，不能据旧记录判断进程仍存活。`unknown` 需到 Telegram 人工核实，不自动重发。Ctrl+C 停止服务；关闭时等待有界退出，不在工作线程仍使用数据库时关闭连接。服务与其他写入 CLI 不能同时占用相同 runtime；只读状态可并行。
 
-新目录 `lib/brokers/` 为只读券商及统一快照契约，`lib/channels/` 为报告发送与入站事件契约，`lib/service.py` 为后台组装与生命周期。依赖、模型、价格规则和日报来源沿用既有方案；配置驱动不意味着所有券商和 IM 已接入，也不意味着已有完整行业新闻覆盖。
+新目录 `src/stockman/brokers/` 为只读券商及统一快照契约，`src/stockman/channels/` 为报告发送与入站事件契约，`src/stockman/service.py` 为后台组装与生命周期。依赖、模型、价格规则和日报来源沿用既有方案；配置驱动不意味着所有券商和 IM 已接入，也不意味着已有完整行业新闻覆盖。
 
 ## 每天上班前需要知道什么
 
@@ -106,6 +106,8 @@ venv/bin/python scripts/briefing.py --send
 
 ## 安装和离线体验
 
+业务代码位于 `src/stockman/`。`pyproject.toml` 声明直接依赖下限，`requirements.txt` 保留完整精确锁定；先安装锁定依赖，再安装当前项目。安装后 `stockman` 与根 `service.py` 使用同一个 CLI 实现，参数不变，例如 `stockman --offline --scenario end-to-end`；从其他目录使用配置时传入配置文件的路径。
+
 已在 Python 3.10.14 验证；使用项目虚拟环境。
 
 ```sh
@@ -113,6 +115,7 @@ cd /Users/yao/personal/stock
 # 已有 venv 时沿用；首次安装才执行下一行
 python3 -m venv venv
 venv/bin/python -m pip install -r requirements.txt
+venv/bin/python -m pip install -e .
 venv/bin/python scripts/validate.py
 venv/bin/python scripts/demo.py --offline --scenario end-to-end
 venv/bin/python scripts/chat.py --offline "研究 QQQ"

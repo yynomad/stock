@@ -6,7 +6,6 @@ import os
 from pathlib import Path
 import sys
 import tempfile
-sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
 
 def main(argv=None):
     parser=argparse.ArgumentParser(description=__doc__)
@@ -25,8 +24,8 @@ def main(argv=None):
     if args.offline:os.environ['STOCKMAN_OFFLINE']='1'
     try:
         if args.offline:
-            from lib.briefing.demo import run
-            from lib.stock_briefing.demo import sources_demo,research_demo,schedule_demo,end_to_end
+            from stockman.briefing.demo import run
+            from stockman.stock_briefing.demo import sources_demo,research_demo,schedule_demo,end_to_end
             with tempfile.TemporaryDirectory() as directory:
                 if args.scenario=='pipeline':result=run('pipeline',directory)
                 elif args.scenario=='sources':result=sources_demo(directory)
@@ -35,7 +34,7 @@ def main(argv=None):
                 else:result=end_to_end(directory)
         else:
             if args.status:os.environ['STOCKMAN_OFFLINE']='1'
-            from lib.stock_briefing.cli import live
+            from stockman.stock_briefing.cli import live
             result=live(args)
         print(json.dumps(result,ensure_ascii=False,indent=2))
         return 2 if result.get('status') in ('failed','unknown') else 0

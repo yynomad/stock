@@ -6,10 +6,10 @@ from pathlib import Path
 import tempfile
 import unittest
 from unittest.mock import Mock,patch
-from lib.storage import Store
-from lib.briefing.config import BriefingConfig
-from lib.stock_briefing.cli import execute,status
-from lib.stock_briefing.demo import end_to_end
+from stockman.storage import Store
+from stockman.briefing.config import BriefingConfig
+from stockman.stock_briefing.cli import execute,status
+from stockman.stock_briefing.demo import end_to_end
 
 class BriefingCLITest(unittest.TestCase):
     def setUp(self):
@@ -39,7 +39,7 @@ class BriefingCLITest(unittest.TestCase):
         self.assertEqual(result['unconfirmed_delivery'],'unknown');self.assertEqual(result['relationship_hops'],1)
     def test_shared_modules_do_not_import_stock_domain(self):
         import ast
-        base=Path(__file__).resolve().parents[1]/'lib'/'briefing'
+        base=Path(__file__).resolve().parents[1]/'src'/'stockman'/'briefing'
         for path in base.glob('*.py'):
             for node in ast.walk(ast.parse(path.read_text())):
                 if isinstance(node,ast.ImportFrom):self.assertNotIn((node.module or '').split('.')[0],('stock_briefing','portfolio','ibkr','research'))

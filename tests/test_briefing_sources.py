@@ -3,11 +3,11 @@ from pathlib import Path
 import tempfile
 import unittest
 from unittest.mock import patch
-from lib.storage import Store
-from lib.briefing.models import SourcePolicy,Evidence
-from lib.briefing.pipeline import collect
-from lib.stock_briefing.sources import SECSource,RSSSource,PublicHTTP,configured_sources
-from lib.stock_briefing.relations import Relations,scope,relevant
+from stockman.storage import Store
+from stockman.briefing.models import SourcePolicy,Evidence
+from stockman.briefing.pipeline import collect
+from stockman.stock_briefing.sources import SECSource,RSSSource,PublicHTTP,configured_sources
+from stockman.stock_briefing.relations import Relations,scope,relevant
 
 POLICY=SourcePolicy('rss','https://example.com/policy',True,True,True,False,True)
 class HTTP:
@@ -69,9 +69,9 @@ class BriefingSourcesTest(unittest.TestCase):
         self.assertNotIn('SECRET',str(result));self.assertNotIn('99',str(result));self.assertTrue(result['stale'])
 
     def test_sec_pacing_gate_is_shared_with_existing_research(self):
-        from lib.sec_access import RateGate,SEC_GATE
-        from lib import research
-        from lib.stock_briefing import sources
+        from stockman.sec_access import RateGate,SEC_GATE
+        from stockman import research
+        from stockman.stock_briefing import sources
         self.assertIs(research.SEC_GATE,SEC_GATE);self.assertIs(sources.SEC_GATE,SEC_GATE)
         clock=[100.0];starts=[]
         def sleep(seconds):clock[0]+=seconds

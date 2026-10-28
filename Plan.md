@@ -5,7 +5,7 @@
 本轮延续 `/Users/yao/personal/stock/`，基线 `6169eaf`；用户明确要求修复双路线并存并推送 GitHub，覆盖下文历史里程碑中“旧 bot.py 兼容入口”的条目。
 
 1. `bot.py`（313 行）改为转发别名：只把参数原样交给 `service.py` 的入口，删除其中已不可达的直连 Gemini 聊天、watchlist 对话工具、Telegram 轮询／发送辅助和 PA 分析调度。
-2. 删除只被上述死代码引用的 `lib/monitor.py`（PriceMonitor）；现行价格监控 `lib/monitoring.py` 不动。保留仍在使用的 `lib/application.py`（BackendService 继承、本地 CLI 与离线演示共用）、`lib/watchlist.py` 与 `lib/output.py`（`premarket_grid_calculator.py` 仍引用）。
+2. 删除只被上述死代码引用的 `lib/monitor.py`（PriceMonitor）；现行价格监控 `src/stockman/monitoring.py` 不动。保留仍在使用的 `src/stockman/application.py`（BackendService 继承、本地 CLI 与离线演示共用）、`src/stockman/watchlist.py` 与 `src/stockman/output.py`（`premarket_grid_calculator.py` 仍引用）。
 3. 测试同步：`tests/test_telegram_workflow.py` 改为测别名转发、WatchlistManager 本体与简报消息格式；`tests/test_imports.py` 的两处旧聊天断言改为别名导入纯净性断言；新增 `tests/test_removed_legacy_bot.py` 锁定旧聊天表面不可达、`lib.monitor` 已删除而 `lib.monitoring` 仍在。
 4. 文档同步：README、AGENTS.md、Product.md 只改当前行为描述，历史记录保留并注明以本节为准。
 5. 验证：`venv/bin/python scripts/validate.py` 及原六场景、日报六场景、服务五场景与 Telegram dry-run 应全部退出 0；随后创建语义化提交并按用户本轮明确要求推送。不启动真实服务、不发送真实消息。
@@ -91,7 +91,7 @@ Product.md 的常规默认与样例一并评审。数据源处理能力逐源记
 
 前置：N0 确认。可观察结果：同一条合成新闻从来源、去重、报告到假发送，状态可查；重启仍保留。
 
-- 创建 `lib/briefing/` 的条目／证据／来源处理能力／投递契约，复用现有 SQLite 并增加必要表；不得导入股票策略或 IBKR。
+- 创建 `src/stockman/briefing/` 的条目／证据／来源处理能力／投递契约，复用现有 SQLite 并增加必要表；不得导入股票策略或 IBKR。
 - 创建统一入口 `scripts/briefing.py`，默认预览，离线模式不读凭据或连接网络。第一阶段创建下列演示接口，不提前声称已存在。
 - 覆盖正常条目、非法时间／链接、来源能力未知、任务失败、SQL 并发及重启；原入口和回归保持。
 - 验收命令：C1—C3；`venv/bin/python scripts/briefing.py --offline --scenario pipeline`，应显示合成标记、来源、任务和一次假投递，无真实请求。
@@ -100,7 +100,7 @@ Product.md 的常规默认与样例一并评审。数据源处理能力逐源记
 
 前置：N1。可观察结果：按持仓关注范围取得条目与直接关联；每条有来源和时间，失败、未知及旧关系可见。
 
-- 创建 `lib/stock_briefing/`，复用 IBKR／图片和缓存的作用域，不合并来源，不需要券商密码或真实账户就能离线验收。
+- 创建 `src/stockman/stock_briefing/`，复用 IBKR／图片和缓存的作用域，不合并来源，不需要券商密码或真实账户就能离线验收。
 - 实现预配置官方公告／SEC／RSS 适配，记录健康状态、访问及处理限制。具体来源在接入时查官方资料，不经 Google 接地收集爬取链接；不绕过付费墙。
 - 关系从实际材料提取、核验和保存，不用模型记忆冒充来源，不做多层递归。无法确认的关系／ETF 资料说明缺失。
 - 覆盖限流、超时、错误 XML／JSON、无时间、同名实体、无关系证据、资产不适用、来源不允许处理、部分来源故障。
@@ -185,7 +185,7 @@ N4 实际验收：93 项全量测试通过；schedule 与 Telegram dry-run 通�
 
 ### R2：券商选择经适配器产生统一、作用域明确的持仓（已完成）
 
-依赖 R1。创建 lib/brokers/ 的只读同步／健康／快照契约和注册映射，包装现有 lib/ibkr.py；PortfolioService 从注入提供者加载单账户，保留旧构造方式的兼容测试。
+依赖 R1。创建 src/stockman/brokers/ 的只读同步／健康／快照契约和注册映射，包装现有 src/stockman/ibkr.py；PortfolioService 从注入提供者加载单账户，保留旧构造方式的兼容测试。
 
 - 规范 provider／account scope／contract／asof／shares／avg_cost／currency；禁止不完整快照或混用其他账户。串行化同账户并发同步，保护 IBKR client id。
 - 保留同账户缓存与超过 24 小时标旧；未同步与真实空持仓分开。图片仍是独立会话快照，不作为未声明的券商回退。
@@ -194,7 +194,7 @@ N4 实际验收：93 项全量测试通过；schedule 与 Telegram dry-run 通�
 
 ### R3：推送与主动交互经通道契约接入（已完成）
 
-依赖 R1、R2。创建 lib/channels/ 的报告发送、标准入站事件及能力声明，包装现有 Telegram 发送／文字／图片能力；保持原 lib/telegram.py 的兼容接口。业务处理只消费规范事件／报告。
+依赖 R1、R2。创建 src/stockman/channels/ 的报告发送、标准入站事件及能力声明，包装现有 Telegram 发送／文字／图片能力；保持原 src/stockman/telegram.py 的兼容接口。业务处理只消费规范事件／报告。
 
 - 保留本人权限、重复消息认领、原文监控授权、图片只识别一次、会话来源隔离、分段、临时 Google 新闻 HTML 附件与发送 unknown。
 - 发送目标只来自配置；文本或外部材料不能改目标。仅发送的未来通道不自动声明支持图片／问答；本轮只实现 Telegram。
@@ -222,7 +222,7 @@ N4 实际验收：93 项全量测试通过；schedule 与 Telegram dry-run 通�
 
 ### 新命令与当前验证的准确状态
 
-service.py、stock.conf.example、lib/brokers/、lib/channels/ 已创建并验收。新 --check 和 --status、config／broker／channel／service／end-to-end 五离线场景已实现；--status 只读，可与运行中的实例并行。scripts/validate.py 最终通过 129 项离线测试、AST、文档结构／链接及 pip check。
+service.py、stock.conf.example、src/stockman/brokers/、src/stockman/channels/ 已创建并验收。新 --check 和 --status、config／broker／channel／service／end-to-end 五离线场景已实现；--status 只读，可与运行中的实例并行。scripts/validate.py 最终通过 129 项离线测试、AST、文档结构／链接及 pip check。
 
 用户确认本整合方案后，按 R1—R5 连续执行，不重问已选栈、单账户或保留辅助交互；重大新技术／范围变化才逐项询问。
 
@@ -241,3 +241,12 @@ R4 实测：120 项测试与统一检查通过，service 演示通过；真实�
 - --check 的无网络／模型／运行文件副作用、--status 的只读及敏感信息隔离、线程真实关闭、接收异常下自动工作持续、并发图片／后台隔离、显式 SDK 凭据与角色、错误／乱序／未来快照及 unknown 皆有回归。
 - R1 9893315；R2 9ac4574；R3 604c2bd；R4 af7498e；R5 为包含本记录的提交。未 push、未启动真实服务、未改 .env、未填真实 stock.conf、未发消息。
 - 新启动与恢复说明见 README.md，结构与合成练习见 Learning.md。实际认证／网络／数据覆盖／模型效果和费用、本人 IM 仍待用户验收，正式许可证与发布另行确认。
+
+## K1 打包改造
+
+- 状态：已完成并通过离线验收；纯结构调整，无行为变化。现有物理目录 `/Users/yao/personal/stock/`，前置清理按用户要求还原 7 个冲突文件，保留 `main@eaf5b8f` 的既有文档提交及其父 `6d8d4ea`。
+- 依赖与范围：git mv lib/ 至 src/stockman/，迁移所有 Python 导入及测试子进程模块名；CLI 实现原样移入 stockman.cli，根 service.py 懒加载转发及未安装兜底。scripts 删除路径补丁；校正四处仓库根推算及测试扫描路径。
+- 包装：pyproject.toml 声明指定直接依赖下限和 stockman 命令；requirements.txt 不变；不写 license；同步六份文档和构建忽略项。新增三项打包守卫，原有测试不得删弱。
+- 验收：新建 `/private/tmp/stockman-packaging-validation-20261028` venv；依次运行该 venv 的 `python -m pip install -r requirements.txt`、`python -m pip install -e .`、`python -m pip check`、`python scripts/validate.py`，预期均退出 0，测试预期 140 项。
+- 场景：该 venv 的 Python 分别执行 scripts/demo.py 六场景 routing/persistence/portfolio/research/monitor/end-to-end、scripts/briefing.py 六场景 pipeline/sources/research/budget/schedule/end-to-end、service.py 五场景 config/broker/channel/service/end-to-end（均加 --offline --scenario）；再执行 `scripts/smoke.py --service telegram --dry-run`、`scripts/chat.py --offline "研究 QQQ"`，共 19 条。仓库外运行该 venv 的 `stockman --offline --scenario end-to-end`，预期退出 0。全部禁用真实网络连接、清空凭据；chat 数据放临时目录。
+- 验证结果：全新临时 venv 的锁定依赖安装、editable 安装、pip check 均退出 0；scripts/validate.py 退出 0，140 项测试、AST、文档结构／链接和依赖检查全部通过；19 条离线场景及仓库外 stockman 命令全部退出 0。44 个业务模块和原 CLI 逐文件比较，仅有授权的导入／路径变化。日志位于 /private/tmp/stockman-acceptance-k1。K1 为包含本记录的提交，随后执行 K2；推送按用户本轮要求执行，全部验收通过后 `git push origin main`。全程不启动真实服务、不发送真实消息、不改 .env／真实 stock.conf。

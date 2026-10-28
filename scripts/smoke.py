@@ -5,7 +5,6 @@ import json
 import subprocess
 from pathlib import Path
 import sys
-sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
 
 def main():
     parser=argparse.ArgumentParser()
@@ -24,18 +23,18 @@ def main():
     try:
         if args.service=='ibkr':
             if not args.read_only:raise ValueError('IBKR probe requires --read-only')
-            import lib.config
-            from lib.ibkr import fetch_ibkr_positions
+            import stockman.config
+            from stockman.ibkr import fetch_ibkr_positions
             positions=fetch_ibkr_positions()
             print(json.dumps({'status':'read_verified','position_count':len(positions),
                               'limitations':'用户仍需核对持仓、Gateway只读开关和手机并发登录；程序不验证此UI设置'},ensure_ascii=False))
         elif args.service=='gemini':
-            from lib.research import GoogleNews,valid_symbol
+            from stockman.research import GoogleNews,valid_symbol
             bundle=GoogleNews().fetch(valid_symbol(args.symbol))
             print(json.dumps({'status':'grounding_verified','sources':bundle['sources'],'usage':bundle['usage'],'queries':len(bundle['queries'])},ensure_ascii=False))
         else:
             if not args.dry_run:raise ValueError('Telegram probe requires --dry-run; actual delivery is user-tested')
-            from lib.telegram import message_chunks
+            from stockman.telegram import message_chunks
             chunks=message_chunks('<Synthetic report> & evidence '*300)
             assert chunks and all(len(c)>0 for c in chunks)
             print(json.dumps({'status':'dry_run_passed','chunks':len(chunks),'sent':False}))

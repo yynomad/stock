@@ -6,9 +6,9 @@ import sys
 import tempfile
 import unittest
 from unittest.mock import patch
-from lib.agents import OfflineModel
-from lib.application import Application
-from lib.briefing.config import BriefingConfig
+from stockman.agents import OfflineModel
+from stockman.application import Application
+from stockman.briefing.config import BriefingConfig
 
 ROOT=Path(__file__).resolve().parents[1]
 

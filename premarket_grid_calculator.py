@@ -1,14 +1,14 @@
 """
 盘前 Price Action 策略计算器
 ─────────────────────────────────────────────────────────────
-入口文件：仅负责串联流程，业务逻辑都在 lib/ 模块下。
+入口文件：仅负责串联流程，业务逻辑都在 src/stockman/ 模块下。
 
 模块结构：
-  lib/config.py       配置与监控标的
-  lib/format_utils.py 价格/百分比格式化
-  lib/yahoo_data.py   Yahoo Finance 数据抓取
-  lib/pa_strategy.py  Price Action 分析引擎
-  lib/output.py       控制台表格 + Telegram 推送
+  src/stockman/config.py       配置与监控标的
+  src/stockman/format_utils.py 价格/百分比格式化
+  src/stockman/yahoo_data.py   Yahoo Finance 数据抓取
+  src/stockman/pa_strategy.py  Price Action 分析引擎
+  src/stockman/output.py       控制台表格 + Telegram 推送
 
 运行：python premarket_grid_calculator.py
 """
@@ -17,13 +17,13 @@ import sys
 import time
 import logging
 
-from lib.config import YF_REQUEST_DELAY, LIMIT_ENTRY_PCT
-from lib.format_utils import fmt_price
-from lib.yahoo_data import fetch_yahoo_bars, fetch_premarket_price
-from lib.pa_strategy import analyze_pa
-from lib.position_decision import build_position_decision
-from lib.output import build_console_table, build_telegram_message, send_telegram
-from lib.watchlist import WatchlistManager
+from stockman.config import YF_REQUEST_DELAY, LIMIT_ENTRY_PCT
+from stockman.format_utils import fmt_price
+from stockman.yahoo_data import fetch_yahoo_bars, fetch_premarket_price
+from stockman.pa_strategy import analyze_pa
+from stockman.position_decision import build_position_decision
+from stockman.output import build_console_table, build_telegram_message, send_telegram
+from stockman.watchlist import WatchlistManager
 
 
 
@@ -201,7 +201,7 @@ def run_calculator(symbols: dict = None) -> tuple:
 
 
 if __name__ == "__main__":
-    from lib.config import configure_logging
+    from stockman.config import configure_logging
     import argparse
     parser = argparse.ArgumentParser(description="盘前 Price Action 策略计算器")
     args = parser.parse_args()

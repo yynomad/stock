@@ -4,11 +4,11 @@ import tempfile
 import unittest
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
-from lib.storage import Store
-from lib.briefing.models import SourcePolicy,Evidence,canonical_url
-from lib.briefing.history import History
-from lib.briefing.pipeline import collect,preview
-from lib.briefing.demo import SyntheticSource
+from stockman.storage import Store
+from stockman.briefing.models import SourcePolicy,Evidence,canonical_url
+from stockman.briefing.history import History
+from stockman.briefing.pipeline import collect,preview
+from stockman.briefing.demo import SyntheticSource
 
 class BriefingCoreTest(unittest.TestCase):
     def test_url_time_and_source_permissions(self):

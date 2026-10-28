@@ -6,10 +6,10 @@ import threading
 import time
 import unittest
 from unittest.mock import Mock
-from lib.storage import Store
-from lib.brokers import BrokerSnapshot,BrokerError,BrokerService,create_broker
-from lib.service_demo import fixture
-from lib.portfolio import PortfolioService
+from stockman.storage import Store
+from stockman.brokers import BrokerSnapshot,BrokerError,BrokerService,create_broker
+from stockman.service_demo import fixture
+from stockman.portfolio import PortfolioService
 
 class ServiceBrokerTest(unittest.TestCase):
     def setUp(self):

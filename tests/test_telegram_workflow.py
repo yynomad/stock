@@ -3,8 +3,8 @@ import unittest
 from unittest.mock import patch
 from pathlib import Path
 import bot
-from lib.watchlist import WatchlistManager
-from lib.output import build_brief_telegram_message
+from stockman.watchlist import WatchlistManager
+from stockman.output import build_brief_telegram_message
 
 
 class TelegramWorkflowTest(unittest.TestCase):

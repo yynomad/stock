@@ -1,0 +1,30 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "stockman"
+version = "0.1.0"
+requires-python = ">=3.10"
+readme = "README.md"
+dependencies = [
+    "langchain>=1.4.7",
+    "langchain-core>=1.6.13",
+    "langchain-google-genai>=4.4.2",
+    "langgraph>=1.2.16",
+    "langgraph-checkpoint-sqlite>=3.1.2",
+    "langsmith>=0.14.12",
+    "google-genai>=2.32.0",
+    "ibapi>=9.81.1.post1",
+    "yfinance>=1.4.1",
+    "exchange-calendars>=4.13.2",
+    "pandas>=2.3.3",
+    "requests>=2.34.2",
+    "python-dotenv>=1.2.2",
+]
+
+[project.scripts]
+stockman = "stockman.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]

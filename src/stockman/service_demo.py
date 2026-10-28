@@ -6,7 +6,7 @@ from .service_config import load_config
 ENV={'IBKR_ACCOUNT':'U1234567','GEMINI_API_KEY':'synthetic-model-key','TG_BOT_TOKEN':'synthetic-bot-token','TG_CHAT_ID':'123'}
 
 def fixture(directory):
-    root=Path(__file__).resolve().parents[1]
+    root=Path(__file__).resolve().parents[2]
     path=Path(directory)/'stock.conf'
     text=(root/'stock.conf.example').read_text().replace('file = briefing.sources.json','file = '+str(root/'briefing.sources.json'))
     path.write_text(text)

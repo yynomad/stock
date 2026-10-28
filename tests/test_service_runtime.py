@@ -5,8 +5,8 @@ import tempfile
 import time
 import unittest
 from unittest.mock import patch
-from lib.service_demo import fixture,build_synthetic,service_demo
-from lib.channels.telegram import decode
+from stockman.service_demo import fixture,build_synthetic,service_demo
+from stockman.channels.telegram import decode
 
 class ServiceRuntimeTest(unittest.TestCase):
     def setUp(self):
@@ -51,7 +51,7 @@ class ServiceRuntimeTest(unittest.TestCase):
         finally:app.close()
 
     def test_read_only_status_does_not_create_or_lock_runtime(self):
-        from lib.service import read_status
+        from stockman.service import read_status
         self.assertEqual(read_status(self.config)['status'],'not_started');self.assertFalse(self.config.directory.exists())
         app=build_synthetic(self.config)
         try:
@@ -86,7 +86,7 @@ class ServiceRuntimeTest(unittest.TestCase):
 
     def test_worker_keeps_running_when_real_receive_loop_fails(self):
         import threading
-        from lib.service import read_status
+        from stockman.service import read_status
         app=build_synthetic(self.config);received=threading.Event()
         def receive(offset):received.set();raise TimeoutError('private-network-detail')
         app.transport.receive=receive

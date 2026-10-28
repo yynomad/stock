@@ -40,3 +40,8 @@ runtime/
 # Actual standalone service configuration
 stock.conf
 *.private.conf
+
+# Python packaging artifacts
+*.egg-info/
+build/
+dist/

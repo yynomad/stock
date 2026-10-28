@@ -3,8 +3,8 @@ from pathlib import Path
 import tempfile
 import unittest
 from unittest.mock import patch
-from lib.service_config import load_config,ConfigError
-from lib.service_demo import fixture,ENV
+from stockman.service_config import load_config,ConfigError
+from stockman.service_demo import fixture,ENV
 
 class ServiceConfigTest(unittest.TestCase):
     def setUp(self):
@@ -44,6 +44,6 @@ class ServiceConfigTest(unittest.TestCase):
     def test_explicit_service_import_ignores_invalid_legacy_environment(self):
         import subprocess,sys
         root=Path(__file__).resolve().parents[1]
-        env=dict(os.environ,STOCKMAN_EXPLICIT_CONFIG='1',STOCKMAN_OFFLINE='1',PYTHONDONTWRITEBYTECODE='1',PYTHONPATH=str(root),MONITOR_INTERVAL='invalid-legacy-value',YF_REQUEST_DELAY='nan')
-        result=subprocess.run([sys.executable,'-B','-c','import lib.service; from lib import config; assert config.MONITOR_INTERVAL==5; assert config.YF_REQUEST_DELAY==5'],cwd=self.temp.name,env=env,capture_output=True,text=True,timeout=15)
+        env=dict(os.environ,STOCKMAN_EXPLICIT_CONFIG='1',STOCKMAN_OFFLINE='1',PYTHONDONTWRITEBYTECODE='1',PYTHONPATH=str(root/'src'),MONITOR_INTERVAL='invalid-legacy-value',YF_REQUEST_DELAY='nan')
+        result=subprocess.run([sys.executable,'-B','-c','import stockman.service; from stockman import config; assert config.MONITOR_INTERVAL==5; assert config.YF_REQUEST_DELAY==5'],cwd=self.temp.name,env=env,capture_output=True,text=True,timeout=15)
         self.assertEqual(result.returncode,0,result.stderr)

@@ -4,10 +4,10 @@ from pathlib import Path
 import tempfile
 import unittest
 from unittest.mock import patch
-from lib.agents import AgentRuntime,OfflineModel
-from lib.storage import Store
-from lib.portfolio import PortfolioService,normalize_positions
-from lib.ibkr import fetch_ibkr_positions,IBKRUnavailable
+from stockman.agents import AgentRuntime,OfflineModel
+from stockman.storage import Store
+from stockman.portfolio import PortfolioService,normalize_positions
+from stockman.ibkr import fetch_ibkr_positions,IBKRUnavailable
 from premarket_grid_calculator import _build_symbols
 
 

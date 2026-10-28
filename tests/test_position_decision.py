@@ -1,6 +1,6 @@
 import unittest
 
-from lib.position_decision import build_position_decision
+from stockman.position_decision import build_position_decision
 
 
 class PositionDecisionTest(unittest.TestCase):

@@ -5,8 +5,7 @@ import json
 from pathlib import Path
 import sqlite3
 import sys
-sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
-from lib.storage import redact
+from stockman.storage import redact
 
 def main():
     parser=argparse.ArgumentParser()

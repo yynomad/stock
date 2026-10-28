@@ -3,9 +3,9 @@ import tempfile
 import unittest
 from unittest.mock import Mock,patch
 from dataclasses import replace
-from lib.channels import create_channel
-from lib.channels.telegram import decode
-from lib.service_demo import fixture
+from stockman.channels import create_channel
+from stockman.channels.telegram import decode
+from stockman.service_demo import fixture
 
 class ServiceChannelsTest(unittest.TestCase):
     def test_normalized_text_unsupported_media_and_invalid_events(self):
@@ -24,7 +24,7 @@ class ServiceChannelsTest(unittest.TestCase):
     def test_transport_keeps_escape_partial_and_unknown_outcomes(self):
         with tempfile.TemporaryDirectory() as d:channel=create_channel(fixture(d).channel)
         responses=[Mock(status_code=200,json=lambda:{'ok':True}),Mock(status_code=500)]
-        with patch('lib.telegram.requests.post',side_effect=responses) as post:
+        with patch('stockman.telegram.requests.post',side_effect=responses) as post:
             self.assertEqual(channel.deliver({'text':'<script>'*250}),'unknown')
             self.assertEqual(post.call_args_list[0].kwargs['json']['chat_id'],123)
             self.assertIn('&lt;script&gt;',post.call_args_list[0].kwargs['json']['text'])

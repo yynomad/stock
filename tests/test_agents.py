@@ -3,7 +3,7 @@ import os
 import tempfile
 import unittest
 from unittest.mock import patch
-from lib.agents import AgentRuntime,OfflineModel,CallLimit
+from stockman.agents import AgentRuntime,OfflineModel,CallLimit
 
 class AgentTest(unittest.TestCase):
     def test_real_langchain_tool_loop_and_routing(self):
@@ -78,7 +78,7 @@ class AgentTest(unittest.TestCase):
 
     def test_text_resume_works_with_absent_or_empty_legacy_context(self):
         from types import SimpleNamespace
-        from lib.agents import CURRENT
+        from stockman.agents import CURRENT
         for legacy_table in (False,True):
             with self.subTest(legacy_table=legacy_table),tempfile.TemporaryDirectory() as d:
                 runtime=AgentRuntime(d,OfflineModel());observed=[]
@@ -98,7 +98,7 @@ class AgentTest(unittest.TestCase):
 
     def test_parallel_sessions_keep_context_and_all_writes(self):
         from concurrent.futures import ThreadPoolExecutor
-        from lib.agents import CURRENT
+        from stockman.agents import CURRENT
         def collect(request: str):return 'session='+CURRENT.get().session
         with tempfile.TemporaryDirectory() as d:
             runtime=AgentRuntime(d,OfflineModel(),{'research':collect})

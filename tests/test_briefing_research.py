@@ -7,12 +7,12 @@ import unittest
 from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.messages import AIMessage
 from langchain_core.outputs import ChatGeneration,ChatResult
-from lib.storage import Store
-from lib.briefing.budget import Budget,BudgetExceeded
-from lib.briefing.config import BriefingConfig
-from lib.stock_briefing.agent import validate_output,ResearchAgent
-from lib.stock_briefing.demo import StockSource,BrokenSource
-from lib.stock_briefing.service import StockBriefing,event_groups
+from stockman.storage import Store
+from stockman.briefing.budget import Budget,BudgetExceeded
+from stockman.briefing.config import BriefingConfig
+from stockman.stock_briefing.agent import validate_output,ResearchAgent
+from stockman.stock_briefing.demo import StockSource,BrokenSource
+from stockman.stock_briefing.service import StockBriefing,event_groups
 
 class BriefModel(BaseChatModel):
     bad:bool=False

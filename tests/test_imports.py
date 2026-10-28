@@ -13,7 +13,7 @@ class ImportSafetyTest(unittest.TestCase):
                    GEMINI_API_KEY="", TG_BOT_TOKEN="", TG_CHAT_ID="")
         env.update(settings)
         with tempfile.TemporaryDirectory() as directory:
-            process = subprocess.run([sys.executable,"-B","-c", f"import sys; sys.path.insert(0,{str(ROOT)!r});"+code],
+            process = subprocess.run([sys.executable,"-B","-c", f"import sys; sys.path.insert(0,{str(ROOT)!r}); sys.path.insert(0,{str(ROOT/'src')!r});"+code],
                                      cwd=directory,env=env,capture_output=True,text=True)
             self.assertEqual(list(Path(directory).iterdir()), [])
         return process
@@ -24,7 +24,7 @@ class ImportSafetyTest(unittest.TestCase):
 
     def test_invalid_operational_config_is_rejected(self):
         for name,value in [("MONITOR_INTERVAL","0"),("YF_REQUEST_DELAY","nan"),("MONITOR_BUFFER_PCT","-1")]:
-            p = self.run_child("import lib.config",**{name:value})
+            p = self.run_child("import stockman.config",**{name:value})
             self.assertNotEqual(p.returncode,0)
             self.assertIn(name,p.stderr)
 
