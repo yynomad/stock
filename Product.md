@@ -14,6 +14,10 @@
 
 此次没有批准 JD／Delta 候选功能、RAG、Embedding、MCP、新模型／存储／部署方案；相关对比资料继续只保存在仓库外。下文 M／N／R 方案及测试数量保留为历史记录，当前行为以本节和本轮验收为准。
 
+## 2026-10-28 当前范围调整：单一启动路线
+
+用户明确要求清理新旧双启动路线并存的历史包袱。唯一启动入口为配置驱动的 `service.py`；`bot.py` 降为转发别名，不再有独立的 .env 机器人行为，其原有的直连 Gemini 聊天、watchlist 对话工具和只被旧代码引用的 `lib/monitor.py` 一并删除。下文涉及旧 bot.py 独立入口的描述保留为历史记录，当前行为以本节为准。`scripts/chat.py` 本地单次任务、`scripts/briefing.py` 预览／手动发送、`premarket_grid_calculator.py` 单次计算入口不变。
+
 更新：2026-10-26，Asia/Shanghai。
 状态：原 M/N 版本保留，用户批准的 R1—R5 配置驱动后台重构已离线完成。新 service.py、stock.conf.example、券商／IM 适配层和问答／截图辅助均已实现；真实 IBKR、Gemini 和本人 IM 尚需验收。未自动部署或发送。
 

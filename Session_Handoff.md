@@ -1,5 +1,13 @@
 # StockMan 会话交接
 
+## 2026-10-28 清理双启动路线（用户明确要求并要求推送）
+
+- 触发：用户指出新 `service.py`（stock.conf）与旧 `bot.py`（.env）两条启动路线并存、旧文件留有走不到的老代码，要求修复并推送。基线 `main@6169eaf`。
+- 已实施：`bot.py` 改为约 30 行的转发别名（参数原样转发 `service.main`）；删除其直连 Gemini 聊天、watchlist 对话工具、Telegram 轮询辅助、PA 调度死代码及只被死代码引用的 `lib/monitor.py`。
+- 明确保留：`lib/application.py`（`BackendService` 继承它，`scripts/chat.py`／离线演示共用）、`lib/watchlist.py`、`lib/output.py`（`premarket_grid_calculator.py` 仍引用）、`scripts/chat.py`、`scripts/briefing.py`。现行价格监控为 `lib/monitoring.py`，与被删的 `lib/monitor.py` 不是同一模块。
+- 测试同步：重写 `tests/test_telegram_workflow.py`（别名转发／WatchlistManager 本体／简报消息格式）、更新 `tests/test_imports.py` 两处断言、新增 `tests/test_removed_legacy_bot.py`。
+- 验证结果：`scripts/validate.py` 退出 0，137 项离线测试全过；原六场景、日报六场景、服务五场景、Telegram dry-run 及经别名的 `bot.py --offline --scenario config` 共 19 个命令全部退出 0（详见 Plan.md J1）。本轮不启动真实服务、不发真实消息。推送按用户本轮明确要求执行，不同于此前各轮“不推送”的默认；推送结果以 Git 远端为准，本地提交号见 `git log`。
+
 ## 2026-10-28 本轮最新交接（实施中）
 
 - 用户希望沿现有项目练手，并明确要求删除持仓截图的发送及解析功能。当前先执行明确删除；JD／Delta 候选清单仍在仓库外，不是实施授权。

@@ -1,5 +1,17 @@
 # StockMan 实施计划
 
+## J1：清理双启动路线（用户已明确授权，验证后推送）
+
+本轮延续 `/Users/yao/personal/stock/`，基线 `6169eaf`；用户明确要求修复双路线并存并推送 GitHub，覆盖下文历史里程碑中“旧 bot.py 兼容入口”的条目。
+
+1. `bot.py`（313 行）改为转发别名：只把参数原样交给 `service.py` 的入口，删除其中已不可达的直连 Gemini 聊天、watchlist 对话工具、Telegram 轮询／发送辅助和 PA 分析调度。
+2. 删除只被上述死代码引用的 `lib/monitor.py`（PriceMonitor）；现行价格监控 `lib/monitoring.py` 不动。保留仍在使用的 `lib/application.py`（BackendService 继承、本地 CLI 与离线演示共用）、`lib/watchlist.py` 与 `lib/output.py`（`premarket_grid_calculator.py` 仍引用）。
+3. 测试同步：`tests/test_telegram_workflow.py` 改为测别名转发、WatchlistManager 本体与简报消息格式；`tests/test_imports.py` 的两处旧聊天断言改为别名导入纯净性断言；新增 `tests/test_removed_legacy_bot.py` 锁定旧聊天表面不可达、`lib.monitor` 已删除而 `lib.monitoring` 仍在。
+4. 文档同步：README、AGENTS.md、Product.md 只改当前行为描述，历史记录保留并注明以本节为准。
+5. 验证：`venv/bin/python scripts/validate.py` 及原六场景、日报六场景、服务五场景与 Telegram dry-run 应全部退出 0；随后创建语义化提交并按用户本轮明确要求推送。不启动真实服务、不发送真实消息。
+
+实际结果：`venv/bin/python scripts/validate.py` 退出 0（137 项离线测试全过、AST、文档结构／链接、pip check 通过）；原六场景、日报六场景、服务五场景、Telegram dry-run 及 `bot.py --offline --scenario config`（验证别名转发）共 19 个命令全部退出 0。云端 Linux／Python 3.12 验证环境中，默认代理变量曾使 1 项与 SDK 构造有关的既有测试因 httpx 解析代理地址失败，清除代理变量后通过，与本轮改动无关；在项目锁定的 macOS／Python 3.10 环境以同一命令为准。
+
 ## I1：移除持仓截图及相关入口（用户已明确授权，实施中）
 
 本轮延续 `/Users/yao/personal/stock/`，无新项目或技术选型；本节覆盖历史里程碑中保留图片的条目。

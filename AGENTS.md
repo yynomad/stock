@@ -1,6 +1,10 @@
 # StockMan 项目工作规则
 
-## 2026-10-28 最新授权：移除持仓截图功能
+## 2026-10-28 最新授权：清理双启动路线，推送 GitHub
+
+用户明确要求修复“新 service.py／旧 bot.py 两条启动路线并存、旧入口留死代码”的历史包袱，并推送代码。唯一启动路线为配置驱动的 `service.py`；`bot.py` 只保留为转发到 `service.py` 的废弃别名，不得再实现独立行为。旧 bot.py 中已不可达的直连 Gemini 聊天、watchlist 对话工具、Telegram 轮询辅助及只被其引用的 `lib/monitor.py`（PriceMonitor）一并删除；现行价格监控是 `lib/monitoring.py`，不得混淆。`lib/application.py` 不是旧路线残留：`BackendService` 继承它、`scripts/chat.py` 与离线演示仍使用它，保留。`lib/watchlist.py`、`lib/output.py` 仍被保留入口 `premarket_grid_calculator.py` 使用，不得随手删除。本轮按用户明确要求在验证后提交并推送；不启动真实服务、不发送真实消息。
+
+## 2026-10-28 授权：移除持仓截图功能
 
 用户明确要求删除“持仓截图发送然后解析”代码，覆盖此前保留截图的决定；已授权直接实施，无新增技术选型。现有项目仍在 `/Users/yao/personal/stock/`，不新建、迁移或重写。
 
@@ -67,7 +71,7 @@ venv/bin/python scripts/tasks.py --data-dir runtime/offline
 
 `requirements.txt` 已锁定实际虚拟环境依赖。统一检查禁止网络、清空凭据、在临时目录运行，并检查 AST 与文档。没有配置 lint、静态类型检查或构建，不编造检查结果。完整 C1—C3、D1—D6、L1—L3 见 Plan.md。
 
-新服务由用户自行准备 stock.conf 和进程环境后运行 service.py --config stock.conf，--check 先验证；同一配置 --status 可只读查看。旧兼容真实入口：`venv/bin/python scripts/chat.py "研究 AAPL"`、`venv/bin/python bot.py`；后者由用户显式启动。截图专用脚本、图片 CLI 参数及识图模块已不在当前产品范围。配置和运行限制见 README.md，学习流程见 Learning.md。同一数据目录只允许一个运行中的应用进程；本地任务 CLI 不与 Bot 同时操作同一目录。
+新服务由用户自行准备 stock.conf 和进程环境后运行 service.py --config stock.conf，--check 先验证；同一配置 --status 可只读查看。这是唯一真实启动入口；`venv/bin/python bot.py` 仅为转发别名。本地单次任务入口 `venv/bin/python scripts/chat.py "研究 AAPL"` 保留。截图专用脚本、图片 CLI 参数及识图模块已不在当前产品范围。配置和运行限制见 README.md，学习流程见 Learning.md。同一数据目录只允许一个运行中的应用进程；本地任务 CLI 不与 Bot 同时操作同一目录。
 
 ## 测试与 Stop-and-Fix
 
@@ -75,7 +79,7 @@ venv/bin/python scripts/tasks.py --data-dir runtime/offline
 - 覆盖正常路径、关键边界、失败及重启。离线测试使用合成持仓、假模型、假 Gateway、假时钟和假发送器，不依赖本机凭据或真实账户状态。
 - 测试、依赖、语法、已配置 lint／类型／构建检查失败时先修复并重跑；不得删除测试、弱化断言或关闭检查制造成功。
 - 前一阶段失败时不得推进依赖它的阶段。外部连接阻塞可继续独立的离线工作，但真实验收必须保留未验证／阻塞及恢复步骤。
-- 真实 IBKR 仅查询指定联名账户；真实 Gemini smoke 使用公开股票代码并记录用量；Telegram 默认 dry-run，实际交互由用户在本人 Bot 中验收。不要自动启动旧 Bot 导致 webhook、消息或 offset 发生变化。
+- 真实 IBKR 仅查询指定联名账户；真实 Gemini smoke 使用公开股票代码并记录用量；Telegram 默认 dry-run，实际交互由用户在本人 Bot 中验收。不要自动启动服务导致 webhook、消息或 offset 发生变化。
 
 ## 数据与运行约束
 

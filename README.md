@@ -27,7 +27,7 @@ venv/bin/python service.py --config stock.conf
 
 默认引用 `IBKR_ACCOUNT`、`GEMINI_API_KEY`、`TG_BOT_TOKEN`、`TG_CHAT_ID`，可在 .conf 中改为其他环境变量名；`TG_ALLOWED_USERS` 可选，私聊默认允许目标本人，`SEC_USER_AGENT` 缺少时 SEC 来源会报告失败。新服务不自动读取 .env；需要通过启动进程的环境提供这些值，不能只在旧 .env 中填写后假定会生效。不要把实际值贴入问题或提交 Git。
 
-IBKR 用户名与二次认证仍在 Gateway 完成，.conf 只描述连接和指定只读账户。模板 `[briefing] enabled=true` 表示用户启动该服务后按计划自动推送；安装、检查和离线演示均不启动常驻服务。旧 bot.py 的 .env 默认行为保持兼容。
+IBKR 用户名与二次认证仍在 Gateway 完成，.conf 只描述连接和指定只读账户。模板 `[briefing] enabled=true` 表示用户启动该服务后按计划自动推送；安装、检查和离线演示均不启动常驻服务。`bot.py` 已于 2026-10-28 废弃为转发别名，不再有独立的 .env 启动路线；运行 `bot.py` 等同于运行 `service.py`。
 
 服务启动尝试同步指定账户，随后每 900 秒同步（可配）；到点自动研究和推送不依赖 IM 来消息。报价轮询、日报和同步独立运行；IM 辅助接收文字，可配置 interactive=false 只推送。图片消息被忽略，不下载、保存或调用识图模型。同账户请求共享同步结果，失败只使用该账户缓存并显示时间／过期，不能把未同步当成空持仓。
 
@@ -37,13 +37,13 @@ IBKR 用户名与二次认证仍在 Gateway 完成，.conf 只描述连接和指
 venv/bin/python service.py --config stock.conf --status
 ```
 
-输出最近记录的同步、任务与投递状态，须核对记录时间，不能据旧记录判断进程仍存活。`unknown` 需到 Telegram 人工核实，不自动重发。Ctrl+C 停止服务；关闭时等待有界退出，不在工作线程仍使用数据库时关闭连接。Bot 与其他写入 CLI 不能同时占用相同 runtime；只读状态可并行。
+输出最近记录的同步、任务与投递状态，须核对记录时间，不能据旧记录判断进程仍存活。`unknown` 需到 Telegram 人工核实，不自动重发。Ctrl+C 停止服务；关闭时等待有界退出，不在工作线程仍使用数据库时关闭连接。服务与其他写入 CLI 不能同时占用相同 runtime；只读状态可并行。
 
 新目录 `lib/brokers/` 为只读券商及统一快照契约，`lib/channels/` 为报告发送与入站事件契约，`lib/service.py` 为后台组装与生命周期。依赖、模型、价格规则和日报来源沿用既有方案；配置驱动不意味着所有券商和 IM 已接入，也不意味着已有完整行业新闻覆盖。
 
 ## 每天上班前需要知道什么
 
-围绕持仓筛选官方素材，按“发生了什么、为何相关、可能影响、未知、后续观察、来源”生成中文日报。默认北京时间 08:00，自然日含周末；服务恢复后只补当天一份。旧 Bot 的自动发送默认关闭；新服务按 .conf 的显式开关运行。安装、检查或预览不会自动启动。
+围绕持仓筛选官方素材，按“发生了什么、为何相关、可能影响、未知、后续观察、来源”生成中文日报。默认北京时间 08:00，自然日含周末；服务恢复后只补当天一份。自动发送只由新服务的 .conf 显式开关控制；下文 .env 的 `BRIEFING_ENABLED` 只影响 `scripts/briefing.py` 的预览／手动发送流程。安装、检查或预览不会自动启动。
 
 先看完整合成演示，无凭据、不联网、不发送：
 
@@ -66,7 +66,7 @@ venv/bin/python scripts/briefing.py --status --data-dir runtime
 
 | 可配置项 | 默认及说明 |
 | --- | --- |
-| `BRIEFING_ENABLED` | `false`；用户改为 `true` 并启动 Bot 才自动运行 |
+| `BRIEFING_ENABLED` | `false`；仅影响 `scripts/briefing.py` 流程；自动日报请用新服务 .conf 的 `briefing.enabled` 并启动 `service.py` |
 | `BRIEFING_TIME` / `BRIEFING_TIMEZONE` | `08:00` / `Asia/Shanghai`；更改后按所配本地自然日计日报和预算 |
 | `BRIEFING_DAILY_BUDGET_USD` | `0.20`；可任意调小调大，`0` 关闭日报模型并保留来源简报；非有限／负值拒绝 |
 | `BRIEFING_MAX_MODEL_CALLS` | `8`；每天跨所有预览及发送共同累计，显式重试也占一次 |
@@ -90,9 +90,9 @@ venv/bin/python scripts/briefing.py --status --data-dir runtime
 
 ### 启用与恢复
 
-填好已有 `.env` 所需字段及 `SEC_USER_AGENT`，先预览核对来源、持仓时点和成本，再自行设置 `BRIEFING_ENABLED=true` 并运行 `venv/bin/python bot.py`。本轮没有修改用户 `.env`、启动 Bot 或真实发送。
+填好已有 `.env` 所需字段及 `SEC_USER_AGENT`，先预览核对来源、持仓时点和成本；自动日报在 `stock.conf` 里设置 `briefing.enabled=true` 并启动 `venv/bin/python service.py --config stock.conf`。本轮没有修改用户 `.env`、启动服务或真实发送。
 
-用户确需手动发送今天一份时，先停止同目录 Bot，再显式运行：
+用户确需手动发送今天一份时，先停止同目录运行中的服务，再显式运行：
 
 ```sh
 venv/bin/python scripts/briefing.py --send
@@ -100,7 +100,7 @@ venv/bin/python scripts/briefing.py --send
 
 只允许 `TG_CHAT_ID` 对应的正数本人私聊和授权用户，不向群发日报；同一天已确认发送则返回现有状态。手动发送不需要打开自动调度；公开标的预览不能直接转为发送。没有删除 webhook 或修改轮询 offset 的行为。
 
-`--status` 只读显示 `brief_daily/brief_reports`；`unknown` 先在 Telegram 人工核实，程序不自动重发。生成前失败可在当天每 15 分钟重试、最多三次；发送失败或可能部分发送后停止自动重试。保留错误类型，不记录带密钥的原始异常。运行目录有进程锁；预览／发送要先停止同目录 Bot。
+`--status` 只读显示 `brief_daily/brief_reports`；`unknown` 先在 Telegram 人工核实，程序不自动重发。生成前失败可在当天每 15 分钟重试、最多三次；发送失败或可能部分发送后停止自动重试。保留错误类型，不记录带密钥的原始异常。运行目录有进程锁；预览／发送要先停止同目录运行中的服务。
 
 业务表：`brief_evidence` 保存许可内元数据与指纹，`brief_reports/brief_report_items` 保存报告／引用，`brief_relations` 保存已核对原句，`brief_budget` 保存估算及未知用量，`brief_daily` 保存计划和投递状态。它们在已有本机 SQLite 中，Git 忽略；不是公开数据或云端服务。报告历史默认清理三十天，财务账本和日投递索引保留用于审计。
 
@@ -169,11 +169,13 @@ venv/bin/python scripts/tasks.py --task <任务编号>
 
 真实研究结果中的 `news` 是原文、来源和关联搜索建议的临时展示包；本地 CLI 输出其原始结构，Telegram 则发送 HTML 附件。新闻不进入持久化对话或新闻缓存库；来源中的发布日期不可取得时保持未知。请在 Telegram 客户端下载／打开附件确认内容和建议显示正常。
 
-启动 Telegram Bot（会连接外部服务；请自己执行）：
+启动后台服务（唯一启动入口，会连接外部服务；请自己执行）：
 
 ```sh
-venv/bin/python bot.py
+venv/bin/python service.py --config stock.conf
 ```
+
+`venv/bin/python bot.py` 只是转发到上面这条命令的废弃别名，不要再用它区分两套行为。
 
 在本人会话发送以下自然语言：
 
@@ -189,7 +191,7 @@ venv/bin/python bot.py
 
 代码对监控变更有额外授权检查：本次用户原文明确要求开始／停止才写规则，工具结果中的指令不能替代授权。一次只研究一个明确股票代码。持仓复盘始终使用已配置的券商账户及其同账户缓存。
 
-同一数据目录只运行一个应用进程。先停止 Bot，再用本地 CLI 操作其数据目录，避免多个进程同时轮询或恢复任务。`Ctrl+C` 停止 Bot。不会自动删除已有 webhook；若 Bot 的 getUpdates 与 webhook 冲突，先检查自己的 Telegram 配置。
+同一数据目录只运行一个应用进程。先停止服务，再用本地 CLI 操作其数据目录，避免多个进程同时轮询或恢复任务。`Ctrl+C` 停止服务。不会自动删除已有 webhook；若服务的 getUpdates 与 webhook 冲突，先检查自己的 Telegram 配置。
 
 旧版按观察列表进行的单次计算入口继续保留：
 

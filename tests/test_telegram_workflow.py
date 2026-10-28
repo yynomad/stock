@@ -1,6 +1,5 @@
 import tempfile
 import unittest
-from types import SimpleNamespace
 from unittest.mock import patch
 from pathlib import Path
 import bot
@@ -9,20 +8,21 @@ from lib.output import build_brief_telegram_message
 
 
 class TelegramWorkflowTest(unittest.TestCase):
-    def test_missing_key_returns_configuration_message(self):
-        with patch.object(bot, "GEMINI_API_KEY", ""), patch("requests.post") as send:
-            self.assertIn("未配置", bot._chat_with_gemini("检查持仓"))
-            send.assert_not_called()
+    def test_bot_entry_forwards_to_service(self):
+        # bot.py 已废弃为别名：唯一启动路线是 service.py，参数与返回值原样转发。
+        with patch("service.main", return_value=0) as service_main:
+            self.assertEqual(bot.main(["--config", "stock.conf", "--check"]), 0)
+        service_main.assert_called_once_with(["--config", "stock.conf", "--check"])
 
-    def test_watchlist_tool_add_list_remove(self):
+    def test_watchlist_manager_add_list_remove(self):
+        # WatchlistManager 仍由 premarket_grid_calculator 使用，直接测管理器本身。
         with tempfile.TemporaryDirectory() as directory:
             manager = WatchlistManager(str(Path(directory)/"watchlist.json"))
-            with patch.object(bot, "watchlist", manager):
-                result = bot._execute_function(SimpleNamespace(name="add_to_watchlist", args={"symbol":"nvda"}))
-                self.assertIn("NVDA", result)
-                self.assertIn("NVDA", bot._execute_function(SimpleNamespace(name="list_watchlist", args={})))
-                bot._execute_function(SimpleNamespace(name="remove_from_watchlist", args={"symbol":"NVDA"}))
-                self.assertEqual(len(manager), 0)
+            info = manager.add("nvda")
+            self.assertEqual(info.get("display_name", "NVDA"), "NVDA")
+            self.assertIn("NVDA", manager.get_all())
+            self.assertTrue(manager.remove("NVDA"))
+            self.assertEqual(len(manager), 0)
 
     def test_brief_message_keeps_position_decision(self):
         message = build_brief_telegram_message([{
@@ -33,6 +33,3 @@ class TelegramWorkflowTest(unittest.TestCase):
         self.assertIn("止盈 20.0% 当前仓位", message)
         self.assertIn("价格：$145.20", message)
         self.assertIn("风控线 $132.50", message)
-
-    def test_tools_are_lazy_and_buildable(self):
-        self.assertEqual(len(bot._watchlist_tools()[0].function_declarations), 3)
