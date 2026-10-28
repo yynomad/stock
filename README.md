@@ -27,7 +27,7 @@ venv/bin/python service.py --config stock.conf
 
 默认引用 `IBKR_ACCOUNT`、`GEMINI_API_KEY`、`TG_BOT_TOKEN`、`TG_CHAT_ID`，可在 .conf 中改为其他环境变量名；`TG_ALLOWED_USERS` 可选，私聊默认允许目标本人，`SEC_USER_AGENT` 缺少时 SEC 来源会报告失败。新服务不自动读取 .env；需要通过启动进程的环境提供这些值，不能只在旧 .env 中填写后假定会生效。不要把实际值贴入问题或提交 Git。
 
-IBKR 用户名与二次认证仍在 Gateway 完成，.conf 只描述连接和指定只读账户。模板 `[briefing] enabled=true` 表示用户启动该服务后按计划自动推送；安装、检查和离线演示均不启动常驻服务。`bot.py` 已于 2026-10-28 废弃为转发别名，不再有独立的 .env 启动路线；运行 `bot.py` 等同于运行 `service.py`。
+IBKR 用户名与二次认证仍在 Gateway 完成，.conf 只描述连接和指定只读账户。模板 `[briefing] enabled=true` 表示用户启动该服务后按计划自动推送；安装、检查和离线演示均不启动常驻服务。`bot.py` 已删除，不再保留别名；后台入口为根 `service.py` 与安装后的 `stockman` 命令，两者共用 `stockman.cli.main`。
 
 服务启动尝试同步指定账户，随后每 900 秒同步（可配）；到点自动研究和推送不依赖 IM 来消息。报价轮询、日报和同步独立运行；IM 辅助接收文字，可配置 interactive=false 只推送。图片消息被忽略，不下载、保存或调用识图模型。同账户请求共享同步结果，失败只使用该账户缓存并显示时间／过期，不能把未同步当成空持仓。
 
@@ -178,7 +178,7 @@ venv/bin/python scripts/tasks.py --task <任务编号>
 venv/bin/python service.py --config stock.conf
 ```
 
-`venv/bin/python bot.py` 只是转发到上面这条命令的废弃别名，不要再用它区分两套行为。
+`bot.py` 已删除。安装后也可用 `venv/bin/stockman --config stock.conf`，与上面的根 `service.py` 使用相同参数和实现。
 
 在本人会话发送以下自然语言：
 

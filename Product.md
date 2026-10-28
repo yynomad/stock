@@ -4,7 +4,7 @@
 
 用户已明确选择 setuptools>=61／setuptools.build_meta、Python>=3.10、src/stockman 布局及 stockman.cli:main 命令入口，版本 0.1.0。pyproject.toml 只声明用户给定的直接依赖下限；requirements.txt 仍保留精确的全量锁定，两者用途不同。无新增许可证、技术栈或业务能力。
 
-K1 原样迁移业务包及根 service.py 的 CLI 实现，根 service.py 保留懒加载转发和未安装时的 src 路径兜底；scripts 通过已安装包导入。K2 随后删除 bot.py，只保留根 service.py 与 stockman 命令作为后台启动入口。参数、配置、持仓、模型、调度、投递和数据路径均保持原行为；下文旧入口记录保留历史语境，以本节及最新交接为准。两项均已获直接实施及验收后推送授权。
+K1 原样迁移业务包及根 service.py 的 CLI 实现，根 service.py 保留懒加载转发和未安装时的 src 路径兜底；scripts 通过已安装包导入。K2 删除 bot.py，不保留别名，只保留根 service.py 与 stockman 命令作为后台启动入口。参数、配置、持仓、模型、调度、投递和数据路径均保持原行为；下文旧入口记录保留历史语境，以本节及最新交接为准。两项均已获直接实施及验收后推送授权。
 
 ## 2026-10-28 当前范围调整：持仓以券商为唯一业务来源
 
@@ -22,7 +22,7 @@ K1 原样迁移业务包及根 service.py 的 CLI 实现，根 service.py 保留
 
 ## 2026-10-28 当前范围调整：单一启动路线
 
-用户明确要求清理新旧双启动路线并存的历史包袱。唯一启动入口为配置驱动的 `service.py`；`bot.py` 降为转发别名，不再有独立的 .env 机器人行为，其原有的直连 Gemini 聊天、watchlist 对话工具和只被旧代码引用的 `lib/monitor.py` 一并删除。下文涉及旧 bot.py 独立入口的描述保留为历史记录，当前行为以本节为准。`scripts/chat.py` 本地单次任务、`scripts/briefing.py` 预览／手动发送、`premarket_grid_calculator.py` 单次计算入口不变。
+用户明确要求清理新旧双启动路线并存的历史包袱。后台启动入口为配置驱动的根 `service.py` 与 `stockman` 命令；`bot.py` 已删除，不保留别名或独立的 .env 机器人行为，其原有的直连 Gemini 聊天、watchlist 对话工具和只被旧代码引用的 `lib/monitor.py` 一并删除。下文涉及旧 bot.py 独立入口的描述保留为历史记录，当前行为以本节为准。`scripts/chat.py` 本地单次任务、`scripts/briefing.py` 预览／手动发送、`premarket_grid_calculator.py` 单次计算入口不变。
 
 更新：2026-10-26，Asia/Shanghai。
 状态：原 M/N 版本保留，用户批准的 R1—R5 配置驱动后台重构已离线完成。新 service.py、stock.conf.example、券商／IM 适配层和问答／截图辅助均已实现；真实 IBKR、Gemini 和本人 IM 尚需验收。未自动部署或发送。
@@ -276,7 +276,7 @@ src/stockman/briefing/ 继续提供通用条目、历史、预算和调度；src
 | budget | 日报默认估算目标 0.20 美元、最多 8 次、2048 输出 token；零禁用日报模型，账本与按需任务分开 |
 | sources | 指向现有 briefing.sources.json，不顺便扩充付费新闻或改变来源处理权限 |
 
-新服务配置为显式指定的 .conf；进程环境用于引用密钥，首版不额外隐式读取当前目录 .env 作为新服务的覆盖来源。旧 bot.py、本地脚本及 env.template 的兼容入口仍可按旧行为读取 .env。新服务配置对象必须注入业务依赖，不能被旧模块导入时的全局常量悄悄覆盖；所有现有入口共用运行目录锁。拟提供 stock.conf.example，实际 stock.conf 加入忽略规则。
+新服务配置为显式指定的 .conf；进程环境用于引用密钥，首版不额外隐式读取当前目录 .env 作为新服务的覆盖来源。bot.py 已删除；本地脚本及 env.template 的兼容流程仍可按旧行为读取 .env。新服务配置对象必须注入业务依赖，不能被旧模块导入时的全局常量悄悄覆盖；所有现有入口共用运行目录锁。拟提供 stock.conf.example，实际 stock.conf 加入忽略规则。
 
 ### 交付及 Done when
 

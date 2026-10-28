@@ -2,17 +2,17 @@ import tempfile
 import unittest
 from unittest.mock import patch
 from pathlib import Path
-import bot
+import service
 from stockman.watchlist import WatchlistManager
 from stockman.output import build_brief_telegram_message
 
 
 class TelegramWorkflowTest(unittest.TestCase):
-    def test_bot_entry_forwards_to_service(self):
-        # bot.py 已废弃为别名：唯一启动路线是 service.py，参数与返回值原样转发。
-        with patch("service.main", return_value=0) as service_main:
-            self.assertEqual(bot.main(["--config", "stock.conf", "--check"]), 0)
-        service_main.assert_called_once_with(["--config", "stock.conf", "--check"])
+    def test_service_entry_forwards_to_stockman_cli(self):
+        # service.py 与 stockman 命令共用 CLI，参数与返回值原样转发。
+        with patch("stockman.cli.main", return_value=0) as cli_main:
+            self.assertEqual(service.main(["--config", "stock.conf", "--check"]), 0)
+        cli_main.assert_called_once_with(["--config", "stock.conf", "--check"])
 
     def test_watchlist_manager_add_list_remove(self):
         # WatchlistManager 仍由 premarket_grid_calculator 使用，直接测管理器本身。

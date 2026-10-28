@@ -250,3 +250,10 @@ R4 实测：120 项测试与统一检查通过，service 演示通过；真实�
 - 验收：新建 `/private/tmp/stockman-packaging-validation-20261028` venv；依次运行该 venv 的 `python -m pip install -r requirements.txt`、`python -m pip install -e .`、`python -m pip check`、`python scripts/validate.py`，预期均退出 0，测试预期 140 项。
 - 场景：该 venv 的 Python 分别执行 scripts/demo.py 六场景 routing/persistence/portfolio/research/monitor/end-to-end、scripts/briefing.py 六场景 pipeline/sources/research/budget/schedule/end-to-end、service.py 五场景 config/broker/channel/service/end-to-end（均加 --offline --scenario）；再执行 `scripts/smoke.py --service telegram --dry-run`、`scripts/chat.py --offline "研究 QQQ"`，共 19 条。仓库外运行该 venv 的 `stockman --offline --scenario end-to-end`，预期退出 0。全部禁用真实网络连接、清空凭据；chat 数据放临时目录。
 - 验证结果：全新临时 venv 的锁定依赖安装、editable 安装、pip check 均退出 0；scripts/validate.py 退出 0，140 项测试、AST、文档结构／链接和依赖检查全部通过；19 条离线场景及仓库外 stockman 命令全部退出 0。44 个业务模块和原 CLI 逐文件比较，仅有授权的导入／路径变化。日志位于 /private/tmp/stockman-acceptance-k1。K1 为包含本记录的提交，随后执行 K2；推送按用户本轮要求执行，全部验收通过后 `git push origin main`。全程不启动真实服务、不发送真实消息、不改 .env／真实 stock.conf。
+
+## K2 删除 bot.py
+
+- 状态：已完成并通过离线验收；依赖 K1 `55b4fe6`，纯结构调整，无行为变化，物理目录不变。
+- 范围：git rm 根 bot.py，不留别名；后台入口仅根 service.py 与 stockman 命令。改测 service.main 转发 stockman.cli.main、导入纯净性、bot.py 不存在及 stockman.monitor 已删除／stockman.monitoring 保留；同步现行文档，历史删除记录保留。
+- 验收：复用 K1 全新临时 venv，执行其 `python scripts/validate.py`（预期 140 项测试及 AST／文档／pip check 全过），重复 K1 的 19 条离线场景及仓库外 stockman 命令，全部预期退出 0。requirements.txt、业务代码与真实配置不变。
+- 验证结果：scripts/validate.py 退出 0，140 项测试、AST、文档结构／链接及 pip check 全通过；19 条离线场景和仓库外 stockman 命令全部退出 0，业务代码相对 K1 无改动。日志位于 /private/tmp/stockman-acceptance-k2。相关提交为包含本记录的提交。推送按用户本轮要求执行，全部通过后 git push origin main，不启动真实服务、不发送真实消息。

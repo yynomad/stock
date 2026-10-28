@@ -1,5 +1,12 @@
 # StockMan 会话交接
 
+## 2026-10-28 K2 删除 bot.py 交接（已完成）
+
+- K1 已提交 `55b4fe6`；新 venv 安装／pip check、140 项测试、19 条离线场景及仓库外 stockman 均通过。现继续同一物理目录 `/Users/yao/personal/stock/` 的 K2。
+- 用户明确授权：删除根 bot.py，不保留别名；只调整入口与对应测试／文档，无行为变化。根 service.py 与 stockman 命令共用 stockman.cli.main。
+- 验证结果：scripts/validate.py 退出 0，140 项测试、AST、文档结构／链接及 pip check 全通过；19 条离线场景和仓库外 stockman 命令全部退出 0，业务代码相对 K1 无改动。日志位于 /private/tmp/stockman-acceptance-k2；复用 `/private/tmp/stockman-packaging-validation-20261028`，完整复验 140 项测试、19 条场景及仓库外命令，准确分组见 Plan.md K1／K2。相关提交：包含本记录的提交。
+- 推送按用户本轮要求执行，全部验收通过后 git push origin main；保留原 eaf5b8f 文档提交。不启动真实服务、不发送真实消息、不改 .env 和真实 stock.conf。下一步：创建指定 K2 提交，执行 git push origin main 并核对远端；推送成功以实际 Git 结果为准。真实服务联调仍由用户准备外部条件后验收。
+
 ## 2026-10-28 K1 打包改造交接（已完成）
 
 - 位置：`/Users/yao/personal/stock/`，现有项目原物理目录，未移动或创建新项目。先读 AGENTS.md、Product.md、Plan.md、Session_Handoff.md。
@@ -70,7 +77,7 @@ Product.md 已把可配置参数集中列为用户已批准的可调建议默认
 
 1. 用户补有效 SEC_USER_AGENT，重新运行 README 的公开预览；美联储 RSS 本轮已真实连接，窗口内没有材料，正确地没有调用模型。预览 partial 的配置／覆盖缺失不能说成全部通过。
 2. 用户新 IBKR 用户名获批并登录 Gateway 后，按原 L1 核对联名账户、只读开关及手机并发；券商尚未就绪时使用离线演示或明确标为非实际持仓的公开代码预览；图片已移除，不能作为持仓替代来源。
-3. 用户本人核查真实简报质量、Gemini 用量／费率、Telegram 分段与 unknown 处理，再核对 stock.conf 并自行启动 service.py；bot.py 只是参数转发别名。不替用户启用真实服务或发送，不将代码推送授权扩展为部署授权。
+3. 用户本人核查真实简报质量、Gemini 用量／费率、Telegram 分段与 unknown 处理，再核对 stock.conf 并自行启动 service.py 或 stockman 命令；bot.py 已删除，不保留别名。不替用户启用真实服务或发送，不将代码推送授权扩展为部署授权。
 4. 功能代码已交付，不再重复原技术或文档批准。若要扩大丰富公司新闻、ETF 成分或关系识别，先明确下一范围；当前默认 SEC 只取元数据，严格关系语法会漏报。
 
 ## 原有实现与提交

@@ -1,14 +1,18 @@
 # StockMan 项目工作规则
 
+## 2026-10-28 本轮授权 K2：删除 bot.py
+
+用户明确要求 git rm 根 bot.py，不保留别名；后台仅由根 service.py 与 stockman 命令进入同一个 stockman.cli.main。K1 已提交为 `55b4fe6`；K2 仅调整入口、对应回归及现行文档，无行为变化，不修改业务实现。验证结果：scripts/validate.py 退出 0，140 项测试、AST、文档结构／链接及 pip check 全通过；19 条离线场景和仓库外 stockman 命令全部退出 0，业务代码相对 K1 无改动。推送按用户本轮要求执行，K2 完整验收通过后 git push origin main；不启动真实服务、不发真实消息、不改 .env 和真实 stock.conf。
+
 ## 2026-10-28 本轮授权 K1：打包改造
 
 用户明确授权在现有物理目录 `/Users/yao/personal/stock/` 完成 src 布局、stockman 包及命令行入口，再以独立 K2 删除 bot.py；均为纯结构调整，无行为变化。先按顺序读取四份文档，K1／K2 分别验证、记录并提交，推送按用户本轮要求执行：全部验收通过后 `git push origin main`。不启动真实服务、不发送真实消息、不改 .env 和真实 stock.conf；requirements.txt 保持原样，不新增许可证。
 
-前置检查发现 7 个带冲突标记的未提交文件，已按用户随后明确要求还原至 HEAD；工作区干净。保留本地已有文档提交 `eaf5b8f`（其父提交为用户指定的 `6d8d4ea`），不重置提交历史。K1 验证结果：全新临时 venv 的锁定依赖安装、editable 安装、pip check 均退出 0；scripts/validate.py 退出 0，140 项测试、AST、文档结构／链接和依赖检查全部通过；19 条离线场景及仓库外 stockman 命令全部退出 0。44 个业务模块和原 CLI 逐文件比较，仅有授权的导入／路径变化。K2 尚待执行；推送按本轮要求在两项全部验收后进行。
+前置检查发现 7 个带冲突标记的未提交文件，已按用户随后明确要求还原至 HEAD；工作区干净。保留本地已有文档提交 `eaf5b8f`（其父提交为用户指定的 `6d8d4ea`），不重置提交历史。K1 验证结果：全新临时 venv 的锁定依赖安装、editable 安装、pip check 均退出 0；scripts/validate.py 退出 0，140 项测试、AST、文档结构／链接和依赖检查全部通过；19 条离线场景及仓库外 stockman 命令全部退出 0。44 个业务模块和原 CLI 逐文件比较，仅有授权的导入／路径变化。K2 验收结果见文首；推送按本轮要求在两项全部验收后进行。
 
-## 2026-10-28 最新授权：清理双启动路线，推送 GitHub
+## 2026-10-28 历史授权：清理双启动路线，推送 GitHub（现行入口以 K2 为准）
 
-用户明确要求修复“新 service.py／旧 bot.py 两条启动路线并存、旧入口留死代码”的历史包袱，并推送代码。唯一启动路线为配置驱动的 `service.py`；`bot.py` 只保留为转发到 `service.py` 的废弃别名，不得再实现独立行为。旧 bot.py 中已不可达的直连 Gemini 聊天、watchlist 对话工具、Telegram 轮询辅助及只被其引用的 `lib/monitor.py`（PriceMonitor）一并删除；现行价格监控是 `src/stockman/monitoring.py`，不得混淆。`src/stockman/application.py` 不是旧路线残留：`BackendService` 继承它、`scripts/chat.py` 与离线演示仍使用它，保留。`src/stockman/watchlist.py`、`src/stockman/output.py` 仍被保留入口 `premarket_grid_calculator.py` 使用，不得随手删除。本轮按用户明确要求在验证后提交并推送；不启动真实服务、不发送真实消息。
+用户明确要求修复“新 service.py／旧 bot.py 两条启动路线并存、旧入口留死代码”的历史包袱，并推送代码。现行后台入口为配置驱动的根 `service.py` 与 `stockman` 命令；`bot.py` 已按 K2 删除，不保留别名。旧 bot.py 中已不可达的直连 Gemini 聊天、watchlist 对话工具、Telegram 轮询辅助及只被其引用的 `lib/monitor.py`（PriceMonitor）一并删除；现行价格监控是 `src/stockman/monitoring.py`，不得混淆。`src/stockman/application.py` 不是旧路线残留：`BackendService` 继承它、`scripts/chat.py` 与离线演示仍使用它，保留。`src/stockman/watchlist.py`、`src/stockman/output.py` 仍被保留入口 `premarket_grid_calculator.py` 使用，不得随手删除。本轮按用户明确要求在验证后提交并推送；不启动真实服务、不发送真实消息。
 
 ## 2026-10-28 授权：移除持仓截图功能
 
@@ -78,7 +82,7 @@ venv/bin/python scripts/tasks.py --data-dir runtime/offline
 
 `requirements.txt` 已锁定实际虚拟环境依赖。统一检查禁止网络、清空凭据、在临时目录运行，并检查 AST 与文档。没有配置 lint、静态类型检查或构建，不编造检查结果。完整 C1—C3、D1—D6、L1—L3 见 Plan.md。
 
-新服务由用户自行准备 stock.conf 和进程环境后运行 service.py --config stock.conf，--check 先验证；同一配置 --status 可只读查看。这是唯一真实启动入口；`venv/bin/python bot.py` 仅为转发别名。本地单次任务入口 `venv/bin/python scripts/chat.py "研究 AAPL"` 保留。截图专用脚本、图片 CLI 参数及识图模块已不在当前产品范围。配置和运行限制见 README.md，学习流程见 Learning.md。同一数据目录只允许一个运行中的应用进程；本地任务 CLI 不与 Bot 同时操作同一目录。
+新服务由用户自行准备 stock.conf 和进程环境后运行 service.py --config stock.conf，--check 先验证；同一配置 --status 可只读查看。根 service.py 与安装后的 stockman 命令为后台入口，参数与实现相同；bot.py 已删除，不保留别名。本地单次任务入口 `venv/bin/python scripts/chat.py "研究 AAPL"` 保留。截图专用脚本、图片 CLI 参数及识图模块已不在当前产品范围。配置和运行限制见 README.md，学习流程见 Learning.md。同一数据目录只允许一个运行中的应用进程；本地任务 CLI 不与 Bot 同时操作同一目录。
 
 ## 测试与 Stop-and-Fix
 

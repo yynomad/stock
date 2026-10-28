@@ -12,6 +12,7 @@ ROOT = Path(__file__).resolve().parents[1]
 class PackagingTest(unittest.TestCase):
     def test_src_layout_and_scripts_need_no_path_patches(self):
         self.assertFalse((ROOT / "lib").exists())
+        self.assertFalse((ROOT / "bot.py").exists())
         self.assertTrue((ROOT / "src/stockman/__init__.py").is_file())
         for directory in (ROOT / "src", ROOT / "scripts"):
             paths = list(directory.rglob("*.py"))
