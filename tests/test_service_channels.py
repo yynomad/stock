@@ -8,18 +8,18 @@ from lib.channels.telegram import decode
 from lib.service_demo import fixture
 
 class ServiceChannelsTest(unittest.TestCase):
-    def test_normalized_text_image_and_invalid_events(self):
+    def test_normalized_text_unsupported_media_and_invalid_events(self):
         event=decode({'update_id':1,'message':{'from':{'id':123},'chat':{'id':123},'text':'  研究 AAPL  '}})
         self.assertEqual(event.text,'研究 AAPL');self.assertEqual(event.channel,'telegram')
         event=decode({'update_id':2,'message':{'photo':[{'file_id':'small'},{'file_id':'large'}]}})
-        self.assertEqual(event.image_id,'large')
+        self.assertEqual(event.text,'');self.assertFalse(hasattr(event,'image_id'))
         for identity in [True,-1,'1',None]:
             with self.assertRaises(ValueError):decode({'update_id':identity})
     def test_configured_channel_uses_only_explicit_destination_and_capabilities(self):
         with tempfile.TemporaryDirectory() as d:
             cfg=fixture(d);channel=create_channel(cfg.channel)
         self.assertEqual(channel.chat,123);self.assertIsNone(channel.proxies)
-        self.assertEqual(channel.capabilities,frozenset({'send','text','image'}))
+        self.assertEqual(channel.capabilities,frozenset({'send','text'}))
         with self.assertRaises(ValueError):create_channel(replace(cfg.channel,provider='unsupported'))
     def test_transport_keeps_escape_partial_and_unknown_outcomes(self):
         with tempfile.TemporaryDirectory() as d:channel=create_channel(fixture(d).channel)

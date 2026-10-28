@@ -1,9 +1,8 @@
 """
 StockMan Telegram Bot
 ─────────────────────────────────────────────────────────────
-长驻 Telegram Bot，两种功能：
-  1. 持仓截图 → Gemini 识图 → PA 分析 → 返回报告 → 自动启动价格监控
-  2. 普通消息 → Gemini 聊天回复（支持对话添加/删除监控标的）
+长驻 Telegram Bot：主动文字问答、只读券商持仓复盘与价格监控。
+配置驱动的自动同步及日报请优先使用 service.py。
 
 运行：python bot.py
 """
@@ -21,10 +20,9 @@ import requests
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from lib.config import TG_BOT_TOKEN, TG_CHAT_ID, YF_PROXY, GEMINI_API_KEY, GEMINI_MODEL
-from lib.positions import fetch_positions_from_image
 from lib.monitor import PriceMonitor
 from lib.watchlist import WatchlistManager
-from premarket_grid_calculator import run_calculator, _build_symbols
+from premarket_grid_calculator import run_calculator
 
 # ── 全局实例 ──────────────────────────────────────────────────────────
 watchlist = WatchlistManager()
@@ -100,7 +98,7 @@ def _execute_function(fc: gemini_types.FunctionCall) -> str:
     elif name == "list_watchlist":
         stocks = watchlist.get_all()
         if not stocks:
-            return "📭 监控列表为空，你可以发送持仓截图或告诉我股票代码来添加"
+            return "📭 监控列表为空，你可以告诉我股票代码来添加"
         lines = [f"📋 监控列表（共 {len(stocks)} 只）"]
         for sym, info in stocks.items():
             lines.append(f"  · {sym} ({info.get('display_name', sym)})")
@@ -263,98 +261,6 @@ def tg_send_message(chat_id: int, text: str, reply_to: int = None) -> bool:
     except Exception as e:
         logger.error(f"sendMessage 失败: {e}")
         return False
-
-
-def tg_download_file(file_id: str) -> bytes | None:
-    """下载 Telegram 服务器上的文件。"""
-    try:
-        # 获取文件路径
-        resp = requests.get(
-            f"{API_BASE}/getFile",
-            params={"file_id": file_id},
-            timeout=10,
-            proxies=PROXIES,
-        )
-        resp.raise_for_status()
-        file_path = resp.json().get("result", {}).get("file_path")
-        if not file_path:
-            logger.error(f"getFile 未返回 file_path")
-            return None
-
-        # 下载文件内容
-        download_url = f"https://api.telegram.org/file/bot{TG_BOT_TOKEN}/{file_path}"
-        resp = requests.get(download_url, timeout=30, proxies=PROXIES)
-        resp.raise_for_status()
-        return resp.content
-    except Exception as e:
-        logger.error(f"文件下载失败: {e}")
-        return None
-
-
-# ── 持仓截图处理 ──────────────────────────────────────────────────────
-
-SCREENSHOTS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "screenshots")
-
-
-def _add_positions_to_watchlist(positions: dict) -> None:
-    """将截图识别的持仓自动加入监控列表。"""
-    added = []
-    for symbol, pos in positions.items():
-        display_name = pos.get("display_name", symbol)
-        watchlist.add(symbol, display_name=display_name)
-        added.append(symbol)
-    if added:
-        logger.info(f"已自动加入监控列表: {', '.join(added)}")
-
-
-def handle_screenshot(chat_id: int, file_id: str, message_id: int,
-                      monitor: PriceMonitor = None) -> None:
-    """处理持仓截图：下载 → Gemini 识别 → 加入监控 → PA 分析 → 返回报告。"""
-    # 发送处理中提示
-    tg_send_message(chat_id, "🖼️ 收到持仓截图，正在识别分析...", reply_to=message_id)
-
-    # 确保截图目录存在
-    os.makedirs(SCREENSHOTS_DIR, exist_ok=True)
-
-    # 下载图片
-    logger.info("正在下载截图...")
-    img_data = tg_download_file(file_id)
-    if not img_data:
-        tg_send_message(chat_id, "❌ 截图下载失败，请重试")
-        return
-
-    # 保存到本地
-    timestamp = time.strftime("%Y%m%d_%H%M%S")
-    img_path = os.path.join(SCREENSHOTS_DIR, f"positions_{timestamp}.jpg")
-    with open(img_path, "wb") as f:
-        f.write(img_data)
-    logger.info(f"截图已保存: {img_path}")
-
-    # Gemini 识别持仓
-    logger.info("正在通过 Gemini 识别持仓...")
-    positions = fetch_positions_from_image(img_path)
-    if not positions:
-        tg_send_message(chat_id, "⚠️ 未能从截图中识别到持仓，请确认截图包含持仓信息")
-        return
-
-    symbols_str = ", ".join(positions.keys())
-    logger.info(f"识别到持仓: {symbols_str}")
-    tg_send_message(chat_id, f"✅ 识别到 {len(positions)} 个持仓：{symbols_str}\n⏳ 正在拉取K线并进行PA分析...")
-
-    # 自动加入监控列表
-    _add_positions_to_watchlist(positions)
-
-    # 构建 symbols 字典传给 run_calculator
-    symbols = _build_symbols(positions=positions)
-
-    # 在后台线程执行分析，不阻塞主循环
-    threading.Thread(
-        target=_run_analysis,
-        args=(chat_id, symbols, monitor),
-        daemon=True,
-    ).start()
-
-
 
 
 def _run_analysis(chat_id: int, symbols: dict = None,

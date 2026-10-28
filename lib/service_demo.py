@@ -41,9 +41,9 @@ def channel_demo():
     with tempfile.TemporaryDirectory() as d:
         channel=create_channel(fixture(d).channel)
         text=decode({'update_id':1,'message':{'from':{'id':123},'chat':{'id':123},'text':'研究 AAPL'}})
-        image=decode({'update_id':2,'message':{'photo':[{'file_id':'synthetic-image'}]}})
-        assert text.text=='研究 AAPL' and image.image_id=='synthetic-image' and channel.chat==123
-        return {'synthetic':True,'scenario':'channel','normalized_text_and_image':'passed','real_messages_sent':0}
+        unsupported=decode({'update_id':2,'message':{'photo':[{'file_id':'synthetic'}],'caption':'检查持仓'}})
+        assert text.text=='研究 AAPL' and not unsupported.text and channel.chat==123
+        return {'synthetic':True,'scenario':'channel','normalized_text_and_unsupported_media':'passed','real_messages_sent':0}
 
 class FakeBroker:
     provider='ibkr'
@@ -56,7 +56,7 @@ class FakeBroker:
         return BrokerSnapshot('ibkr',self.account,time.time(),{'AAPL':{'shares':0.5,'avg_cost':100}})
 
 class FakeChannel:
-    provider='telegram';capabilities=frozenset({'send','text','image'})
+    provider='telegram';capabilities=frozenset({'send','text'})
     def __init__(self):self.chat=123;self.sent=[];self.outcome='sent';self.events=[];self.fail_receive=False;self.after_send=None
     def deliver(self,result):
         self.sent.append(result)
@@ -65,7 +65,6 @@ class FakeChannel:
     def receive(self,offset):
         if self.fail_receive:raise TimeoutError('synthetic-private-error')
         return iter(e for e in self.events if e.identity>=offset)
-    def photo(self,identity):return b'synthetic-image'
 
 def build_synthetic(config,channel=None):
     import json
@@ -89,7 +88,7 @@ def build_synthetic(config,channel=None):
         def fetch(self,now):return [replace(super().fetch(now)[0],entities=('AAPL',))]
     market=SyntheticMarket()
     app=BackendService(config,OfflineModel(),BriefModel(),FakeBroker(config.broker.account),channel or FakeChannel(),market,
-        ResearchService(market,SyntheticSEC(),SyntheticNews()),image=lambda path:{'NVDA':{'shares':2}},sources=[Source()])
+        ResearchService(market,SyntheticSEC(),SyntheticNews()),sources=[Source()])
     app.monitor.in_session=lambda now:True
     return app
 
@@ -107,11 +106,11 @@ def service_demo(scenario):
             text=decode({'update_id':1,'message':{'from':{'id':123},'chat':{'id':123},'text':'研究 AAPL'}})
             assert app.handle_event(text)=='sent' and 'AAPL' in channel.sent[-1]['text']
             image=decode({'update_id':2,'message':{'from':{'id':123},'chat':{'id':123},'photo':[{'file_id':'SYNTHETIC'}]}})
-            assert app.handle_event(image)=='sent' and 'NVDA' in channel.sent[-1]['text']
+            assert app.handle_event(image)=='ignored' and len(channel.sent)==2
             assert app.handle_event(image)=='duplicate'
             assert set(app.broker.load()['positions'])=={'AAPL'}
             app.close();app=build_synthetic(config,channel)
-            assert app.tick(now+2)['status']=='sent' and len(channel.sent)==3
+            assert app.tick(now+2)['status']=='sent' and len(channel.sent)==2
             unknown='not_exercised'
             if scenario=='end-to-end':
                 from unittest.mock import patch
@@ -121,6 +120,6 @@ def service_demo(scenario):
                     count=len(channel.sent)
                     assert app.tick(now+86401)['status']=='unknown' and len(channel.sent)==count
                 unknown='retained_without_replay'
-            return {'synthetic':True,'scenario':scenario,'automatic_reports_without_input':1,'on_demand_responses':2,
-                'image_and_broker_isolation':'passed','restart_dedup':'passed','unconfirmed_delivery':unknown,'broker':'ibkr (synthetic)','channel':'telegram (synthetic)','real_messages_sent':0}
+            return {'synthetic':True,'scenario':scenario,'automatic_reports_without_input':1,'on_demand_responses':1,
+                'unsupported_media_ignored':'passed','restart_dedup':'passed','unconfirmed_delivery':unknown,'broker':'ibkr (synthetic)','channel':'telegram (synthetic)','real_messages_sent':0}
         finally:app.close()

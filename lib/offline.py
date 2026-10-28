@@ -37,7 +37,7 @@ def create_offline_app(directory,transport=None):
     market=SyntheticMarket()
     def portfolio(store):
         return PortfolioService(store,ibkr=lambda account:{'AAPL':{'shares':0.5,'avg_cost':100}},
-                                image=lambda path:{'NVDA':{'shares':2,'avg_cost':None}},bars=demo_bars)
+                                bars=demo_bars)
     app=Application(directory,OfflineModel(),portfolio_factory=portfolio,
                     research=ResearchService(market,SyntheticSEC(),SyntheticNews()),market=market,transport=transport)
     app.monitor.in_session=lambda now:True
@@ -51,8 +51,6 @@ def end_to_end(directory):
     try:
         result=app.handle('检查持仓','demo');results.append(result)
         assert 'ibkr' in result['text'] and 'AAPL' in result['text']
-        result=app.handle('检查截图持仓','demo',image_path='SYNTHETIC');results.append(result)
-        assert 'image' in result['text'] and 'NVDA' in result['text'] and 'AAPL' not in result['text']
         for symbol in ('AAPL','QQQ'):
             result=app.handle('研究 '+symbol,'demo');results.append(result)
             assert result['news'] and 'SYNTHETIC NEWS' not in result['text']
@@ -74,6 +72,6 @@ def end_to_end(directory):
         assert app.runtime.store.execute('SELECT enabled FROM rules')[0]['enabled']==0
         assert len(sent)==1
         return {'synthetic':True,'tasks':len(results)+len(sent),'deliveries':len(sent),
-                'sources':['ibkr (synthetic)','image (synthetic)'],'restart_and_dedup':'passed',
+                'sources':['ibkr (synthetic)'],'restart_and_dedup':'passed',
                 'database':str(app.directory/'stockman.sqlite')}
     finally:app.runtime.close()

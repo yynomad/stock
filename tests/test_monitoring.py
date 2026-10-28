@@ -92,15 +92,15 @@ class TelegramTest(unittest.TestCase):
             transport=Telegram(token='synthetic',chat='123')
             self.assertEqual(transport.deliver({'text':'synthetic'}),'unknown')
 
-    def test_authorized_image_ingests_once_and_duplicate_is_not_replayed(self):
+    def test_authorized_text_runs_once_and_duplicate_is_not_replayed(self):
         with tempfile.TemporaryDirectory() as d:
-            transport=Mock();transport.chat=123;transport.photo.return_value=b'synthetic';transport.deliver.return_value='sent'
+            transport=Mock();transport.chat=123;transport.deliver.return_value='sent'
             app=Application(d,OfflineModel(),transport=transport);app.allowed={123}
-            app.portfolio.image=Mock(return_value={'AAPL':{'shares':2,'avg_cost':100}})
-            app.portfolio.bars=lambda symbol:[]
-            update={'update_id':2,'message':{'from':{'id':123},'chat':{'id':123},'photo':[{'file_id':'synthetic'}]}}
-            self.assertEqual(app.handle_update(update),'sent')
-            self.assertEqual(app.handle_update(update),'duplicate')
-            app.portfolio.image.assert_called_once();transport.photo.assert_called_once()
-            self.assertIn('image',transport.deliver.call_args[0][0]['text'])
-            app.runtime.close()
+            update={'update_id':2,'message':{'from':{'id':123},'chat':{'id':123},'text':'研究 AAPL'}}
+            try:
+                with patch.object(app.runtime,'run',return_value={'text':'AAPL evidence'}) as run:
+                    self.assertEqual(app.handle_update(update),'sent')
+                    self.assertEqual(app.handle_update(update),'duplicate')
+                    run.assert_called_once_with('研究 AAPL','123')
+                transport.deliver.assert_called_once();transport.photo.assert_not_called()
+            finally:app.runtime.close()

@@ -32,7 +32,7 @@ class BriefingResearchTest(unittest.TestCase):
             with self.assertRaises(ValueError):BriefingConfig.load({'BRIEFING_DAILY_BUDGET_USD':value})
         with self.assertRaises(ValueError):BriefingConfig.load({'BRIEFING_TIME':'25:00'})
         service=StockBriefing(self.store,BriefingConfig(budget=0),registry={'issuers':{},'rss':[]})
-        result=service.generate('local',{'source':'image','asof':2000000000,'positions':{'AAA':{'shares':2,'avg_cost':99}}},2000000000,sources=[StockSource()])
+        result=service.generate('local',{'source':'ibkr','asof':2000000000,'positions':{'AAA':{'shares':2,'avg_cost':99}}},2000000000,sources=[StockSource()])
         self.assertIn('model_disabled',result['text']);self.assertFalse(self.store.execute('SELECT * FROM brief_budget'))
     def test_atomic_budget_across_connections_days_and_unknown_usage(self):
         config=BriefingConfig(budget=0.006,max_calls=8,max_output=2048)
@@ -55,7 +55,7 @@ class BriefingResearchTest(unittest.TestCase):
         self.assertEqual(len(validate_output(json.dumps({'events':[row]}),[item],5)),1)
     def test_real_langchain_daily_role_keeps_evidence_and_failures_visible(self):
         service=StockBriefing(self.store,BriefingConfig(),model=BriefModel(),registry={'issuers':{'AAA':{'name':'Alpha Corp'},'BBB':{'name':'Beta Corp'}},'rss':[]})
-        result=service.generate('local',{'source':'image','asof':2000000000,'positions':{'AAA':{'shares':2,'avg_cost':99}}},2000000000,sources=[StockSource(),BrokenSource()])
+        result=service.generate('local',{'source':'ibkr','asof':2000000000,'positions':{'AAA':{'shares':2,'avg_cost':99}}},2000000000,sources=[StockSource(),BrokenSource()])
         self.assertIn('事实原文摘录',result['text']);self.assertIn('来源异常',result['text'])
         self.assertNotIn('avg_cost',str(self.store.traces(result['task_id'])))
         self.assertEqual(result['meta']['budget']['calls'],1)
@@ -88,7 +88,7 @@ class BriefingResearchTest(unittest.TestCase):
                 item=super().fetch(now)[0]
                 return [item,replace(item,body='New factual update 42',published=now-5)]
         service=StockBriefing(self.store,BriefingConfig(budget=0),registry={'issuers':{},'rss':[]})
-        snapshot={'source':'image','asof':2000000000,'positions':{'AAA':{'shares':2}}}
+        snapshot={'source':'ibkr','asof':2000000000,'positions':{'AAA':{'shares':2}}}
         result=service.generate('local',snapshot,2000000000,sources=[Updates()])
         self.assertIn('New factual update 42',result['text']);self.assertIn('Beta Corp supplies Alpha Corp.',result['text'])
         self.assertEqual(len(self.store.execute('SELECT * FROM brief_report_items')),2)
@@ -110,7 +110,7 @@ class BriefingResearchTest(unittest.TestCase):
         class Empty(StockSource):
             def fetch(self,now):return []
         service=StockBriefing(self.store,BriefingConfig(),registry={'issuers':{},'rss':[]})
-        snapshot={'source':'image','asof':2000000000,'positions':{'AAA':{'shares':1}}}
+        snapshot={'source':'ibkr','asof':2000000000,'positions':{'AAA':{'shares':1}}}
         empty=service.generate('local',snapshot,2000000000,sources=[Empty()])
         failed=service.generate('local',snapshot,2000000000,sources=[BrokenSource()])
         self.assertEqual(empty['status'],'completed');self.assertEqual(failed['status'],'partial')

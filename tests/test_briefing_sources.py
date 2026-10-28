@@ -65,7 +65,7 @@ class BriefingSourcesTest(unittest.TestCase):
             self.assertTrue(relevant([item],['AAA'],relations.direct(['AAA'],1000)))
             store.close()
     def test_holdings_scope_does_not_expose_account_or_costs(self):
-        result=scope({'source':'image','asof':1000,'account':'SECRET','positions':{'AAPL':{'shares':2,'avg_cost':99}}},100000)
+        result=scope({'source':'ibkr','asof':1000,'account':'SECRET','positions':{'AAPL':{'shares':2,'avg_cost':99}}},100000)
         self.assertNotIn('SECRET',str(result));self.assertNotIn('99',str(result));self.assertTrue(result['stale'])
 
     def test_sec_pacing_gate_is_shared_with_existing_research(self):

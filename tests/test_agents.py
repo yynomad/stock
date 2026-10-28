@@ -59,22 +59,42 @@ class AgentTest(unittest.TestCase):
             runtime.run('研究 AAPL');runtime.close()
         self.assertEqual(observed,[False])
 
-    def test_resume_keeps_image_source_and_session_scope(self):
-        from types import SimpleNamespace
-        from lib.agents import CURRENT
-        observed=[]
+    def test_legacy_image_task_cannot_resume_as_broker_task(self):
         with tempfile.TemporaryDirectory() as d:
             runtime=AgentRuntime(d,OfflineModel())
             task=runtime.store.create_task('owner','检查截图持仓')
-            runtime.store.execute('INSERT INTO task_context VALUES(?,?)',(task,'image-snapshot-id'))
-            runtime.store.finish(task,'interrupted')
-            def invoke(payload,config):
-                scope=CURRENT.get();observed.append((scope.session,scope.snapshot))
-                return {'messages':[SimpleNamespace(content='恢复截图来源')]}
-            with patch.object(runtime.agent,'get_state',return_value=SimpleNamespace(next=('tools',))),patch.object(runtime.agent,'invoke',side_effect=invoke):
-                self.assertEqual(runtime.resume(task)['status'],'completed')
-            self.assertEqual(observed,[('owner','image-snapshot-id')])
-            runtime.close()
+            runtime.store.execute('CREATE TABLE task_context(task_id TEXT PRIMARY KEY,snapshot TEXT)')
+            snapshot=runtime.store.snapshot('image','owner',{'NVDA':{'shares':2}})
+            runtime.store.execute('INSERT INTO task_context VALUES(?,?)',(task,snapshot))
+            runtime.store.finish(task,'interrupted');runtime.close()
+            runtime=AgentRuntime(d,OfflineModel())
+            try:
+                with patch.object(runtime.agent,'get_state') as state,patch.object(runtime.agent,'invoke') as invoke:
+                    with self.assertRaisesRegex(ValueError,'截图任务功能已移除'):runtime.resume(task)
+                    state.assert_not_called();invoke.assert_not_called()
+                self.assertEqual(runtime.store.task(task)['status'],'interrupted')
+                self.assertEqual(set(runtime.store.get_snapshot(snapshot)['positions']),{'NVDA'})
+            finally:runtime.close()
+
+    def test_text_resume_works_with_absent_or_empty_legacy_context(self):
+        from types import SimpleNamespace
+        from lib.agents import CURRENT
+        for legacy_table in (False,True):
+            with self.subTest(legacy_table=legacy_table),tempfile.TemporaryDirectory() as d:
+                runtime=AgentRuntime(d,OfflineModel());observed=[]
+                task=runtime.store.create_task('owner','研究 AAPL')
+                if legacy_table:
+                    runtime.store.execute('CREATE TABLE task_context(task_id TEXT PRIMARY KEY,snapshot TEXT)')
+                    runtime.store.execute('INSERT INTO task_context VALUES(?,NULL)',(task,))
+                runtime.store.finish(task,'interrupted')
+                def invoke(payload,config):
+                    scope=CURRENT.get();observed.append((scope.session,scope.request))
+                    return {'messages':[SimpleNamespace(content='恢复文字任务')]}
+                try:
+                    with patch.object(runtime.agent,'get_state',return_value=SimpleNamespace(next=('tools',))),patch.object(runtime.agent,'invoke',side_effect=invoke):
+                        self.assertEqual(runtime.resume(task)['status'],'completed')
+                    self.assertEqual(observed,[('owner','研究 AAPL')])
+                finally:runtime.close()
 
     def test_parallel_sessions_keep_context_and_all_writes(self):
         from concurrent.futures import ThreadPoolExecutor

@@ -37,14 +37,16 @@ class ServiceBrokerTest(unittest.TestCase):
         self.assertNotIn('SECRET',str(service.health()));self.assertEqual(service.health()['status'],'failed')
         other=BrokerService(self.store,create_broker(replace(self.cfg.broker,account='U9999999'),reader))
         with self.assertRaises(BrokerError):other.load()
-    def test_image_query_does_not_replace_broker_snapshot(self):
-        broker=BrokerService(self.store,create_broker(self.cfg.broker,Mock(return_value={'AAPL':{'shares':1}})))
-        portfolio=PortfolioService(self.store,broker=broker,image=lambda path:{'NVDA':{'shares':2}})
-        self.assertEqual(set(portfolio.load()['positions']),{'AAPL'})
-        image=portfolio.import_image('synthetic','123')
-        self.assertEqual(set(portfolio.load('123',image)['positions']),{'NVDA'})
+    def test_legacy_image_records_are_never_used_as_broker_cache(self):
+        legacy=self.store.snapshot('image','123',{'NVDA':{'shares':2}})
+        reader=Mock(side_effect=TimeoutError('private'))
+        broker=BrokerService(self.store,create_broker(self.cfg.broker,reader))
+        portfolio=PortfolioService(self.store,broker=broker)
+        with self.assertRaises(BrokerError):portfolio.load('123')
+        self.assertEqual(set(self.store.get_snapshot(legacy)['positions']),{'NVDA'})
+        reader.side_effect=None;reader.return_value={'AAPL':{'shares':1}}
+        broker.load(force=True)  # Explicit retry after the failed-sync backoff.
         self.assertEqual(set(portfolio.load('123')['positions']),{'AAPL'})
-        with self.assertRaises(ValueError):portfolio.load('other',image)
 
     def test_out_of_order_and_future_cache_never_replace_valid_snapshot(self):
         class Adapter:

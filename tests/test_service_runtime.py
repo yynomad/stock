@@ -13,9 +13,9 @@ class ServiceRuntimeTest(unittest.TestCase):
         self.temp=tempfile.TemporaryDirectory();cfg=fixture(self.temp.name)
         self.config=replace(cfg,briefing=replace(cfg.briefing,at='00:00'))
     def tearDown(self):self.temp.cleanup()
-    def test_automatic_report_and_on_demand_image_are_separate(self):
+    def test_automatic_report_and_on_demand_text_are_separate(self):
         with patch('socket.socket.connect',side_effect=AssertionError('network')):result=service_demo('service')
-        self.assertEqual(result['automatic_reports_without_input'],1);self.assertEqual(result['on_demand_responses'],2)
+        self.assertEqual(result['automatic_reports_without_input'],1);self.assertEqual(result['on_demand_responses'],1)
     def test_config_overrides_legacy_environment_limits(self):
         with patch.dict(os.environ,{'STOCKMAN_MAX_MODEL_CALLS':'1','BRIEFING_ENABLED':'false','IBKR_ACCOUNT':'U9999999'}):app=build_synthetic(self.config)
         try:
@@ -23,7 +23,7 @@ class ServiceRuntimeTest(unittest.TestCase):
             self.assertGreater(result['model_calls'],1);self.assertEqual(app.broker.adapter.account,self.config.broker.account)
             self.assertTrue(app.briefing_config.enabled)
         finally:app.close()
-    def test_broker_failure_is_visible_and_recovery_does_not_use_empty_or_image(self):
+    def test_broker_failure_is_visible_and_recovery_does_not_use_empty_positions(self):
         app=build_synthetic(self.config);app.broker.adapter.fail=True;now=time.time()
         try:
             result=app.tick(now);self.assertEqual(result['status'],'failed');self.assertFalse(app.transport.sent)
@@ -60,7 +60,7 @@ class ServiceRuntimeTest(unittest.TestCase):
             self.assertEqual(status['broker'][0]['status'],'ok')
             self.assertNotIn(self.config.broker.account,str(status));self.assertNotIn(self.config.model.key,str(status))
         finally:app.close()
-    def test_concurrent_automatic_and_image_tasks_do_not_mix_snapshots(self):
+    def test_concurrent_automatic_report_ignores_photo_update(self):
         import json
         from concurrent.futures import ThreadPoolExecutor
         app=build_synthetic(self.config)
@@ -68,7 +68,7 @@ class ServiceRuntimeTest(unittest.TestCase):
         try:
             with ThreadPoolExecutor(max_workers=2) as pool:
                 auto=pool.submit(app.tick);image=pool.submit(app.handle_event,event)
-                self.assertEqual(auto.result()['status'],'sent');self.assertEqual(image.result(),'sent')
+                self.assertEqual(auto.result()['status'],'sent');self.assertEqual(image.result(),'ignored')
             report=app.runtime.store.execute('SELECT meta FROM brief_reports')[0]
             self.assertEqual(json.loads(report['meta'])['holdings']['symbols'],['AAPL'])
             self.assertEqual(set(app.broker.load()['positions']),{'AAPL'})
@@ -101,21 +101,29 @@ class ServiceRuntimeTest(unittest.TestCase):
             self.assertEqual(incoming['status'],'failed');self.assertEqual(len(app.transport.sent),1)
             self.assertNotIn('private-network-detail',str(status));self.assertTrue(app.closed)
         finally:app.close()
-    def test_image_sdk_receives_explicit_config_credentials_and_model(self):
-        from unittest.mock import MagicMock
-        from lib.service import BackendService
-        from lib.service_demo import FakeBroker,FakeChannel
-        from lib.agents import OfflineModel
-        from lib.offline import SyntheticMarket,SyntheticSEC,SyntheticNews
-        from lib.research import ResearchService
-        market=SyntheticMarket();client=MagicMock()
-        client.models.generate_content.return_value.text='{"positions":[{"symbol":"NVDA","shares":2,"avg_cost":null}]}'
-        app=BackendService(self.config,OfflineModel(),broker=FakeBroker(self.config.broker.account),channel=FakeChannel(),market=market,research=ResearchService(market,SyntheticSEC(),SyntheticNews()),sources=[])
+    def test_photo_rejection_does_not_affect_following_text_request(self):
+        app=build_synthetic(self.config)
         try:
-            event=decode({'update_id':1,'message':{'from':{'id':123},'chat':{'id':123},'photo':[{'file_id':'synthetic'}]}})
-            with patch('lib.positions.GEMINI_API_KEY','legacy-key'),patch('lib.positions.GEMINI_MODEL','legacy-model'),patch('google.genai.Client',return_value=client) as create:
-                self.assertEqual(app.handle_event(event),'sent')
-            self.assertEqual(create.call_args.kwargs['api_key'],self.config.model.key)
-            self.assertEqual(client.models.generate_content.call_args.kwargs['model'],self.config.model.name)
-            self.assertEqual(client.models.generate_content.call_count,1)
+            media=decode({'update_id':1,'message':{'from':{'id':123},'chat':{'id':123},'photo':[{'file_id':'synthetic'}]}})
+            text=decode({'update_id':2,'message':{'from':{'id':123},'chat':{'id':123},'text':'检查持仓'}})
+            with patch('google.genai.Client') as model:
+                self.assertEqual(app.handle_event(media),'ignored');model.assert_not_called()
+            self.assertFalse(app.runtime.store.execute('SELECT * FROM tasks'))
+            self.assertEqual(app.handle_event(text),'sent')
+            self.assertIn('AAPL',app.transport.sent[-1]['text'])
+            self.assertNotIn('NVDA',app.transport.sent[-1]['text'])
+        finally:app.close()
+
+    def test_concurrent_text_and_automatic_report_share_broker_scope(self):
+        import json
+        from concurrent.futures import ThreadPoolExecutor
+        app=build_synthetic(self.config)
+        event=decode({'update_id':3,'message':{'from':{'id':123},'chat':{'id':123},'text':'检查持仓'}})
+        try:
+            with ThreadPoolExecutor(max_workers=2) as pool:
+                auto=pool.submit(app.tick);text=pool.submit(app.handle_event,event)
+                self.assertEqual(auto.result()['status'],'sent');self.assertEqual(text.result(),'sent')
+            report=app.runtime.store.execute('SELECT meta FROM brief_reports')[0]
+            self.assertEqual(json.loads(report['meta'])['holdings']['symbols'],['AAPL'])
+            self.assertEqual(len(app.transport.sent),2)
         finally:app.close()

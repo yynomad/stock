@@ -1,5 +1,18 @@
 # StockMan 实施计划
 
+## I1：移除持仓截图及相关入口（用户已明确授权，实施中）
+
+本轮延续 `/Users/yao/personal/stock/`，无新项目或技术选型；本节覆盖历史里程碑中保留图片的条目。
+
+1. 已完成：核对物理目录、Git 基线 `cf09953`、工作区和影响范围；同步最新产品／规则／计划。
+2. 待完成：删除识图模块、Telegram 下载及图片任务、CLI 图片参数、图片日报配置与上下文；保留通用快照及文字业务。
+3. 待完成：替换图片功能测试为忽略／拒绝旧入口／保护历史数据的回归，验证券商故障不会读取图片快照、旧任务不会错误恢复。
+4. 待完成：全量离线检查与原六场景、日报六场景、服务五场景及 Telegram dry-run；更新结果，创建本地语义化提交，不推送。
+
+验证命令：`venv/bin/python scripts/validate.py`；`venv/bin/python scripts/demo.py --offline --scenario <routing|persistence|portfolio|research|monitor|end-to-end>`；`venv/bin/python scripts/briefing.py --offline --scenario <pipeline|sources|research|budget|schedule|end-to-end>`；`venv/bin/python service.py --offline --scenario <config|broker|channel|service|end-to-end>`；`venv/bin/python scripts/smoke.py --service telegram --dry-run`。占位符代表分别执行各场景，不是单条可直接复制的命令。
+
+预期：全部退出 0；图片更新 ignored、重复更新 duplicate；旧 --image／--snapshot 参数在调用外部服务前拒绝；旧图片来源配置明确报错；旧中断图片任务保留记录并拒绝恢复；真实外部服务不启动。实际测试数与命令结果验收后记录。
+
 状态：原 M/N 及用户已确认的 R1—R5 均完成离线实现和验收；R5 交付新后台入口、配置、只读状态与学习说明。真实服务验收仍有待办，未自动部署或发送。
 
 物理目录 `/Users/yao/personal/stock/`，现有项目扩展，未搬移。需求依据 [Product.md](Product.md)，工作规则见 [AGENTS.md](AGENTS.md)，当前状态见 [Session_Handoff.md](Session_Handoff.md)。

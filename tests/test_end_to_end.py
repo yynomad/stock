@@ -17,31 +17,47 @@ class EndToEndTest(unittest.TestCase):
             self.assertTrue(result['synthetic']);self.assertEqual(result['deliveries'],1)
             self.assertTrue((Path(d)/'stockman.sqlite').is_file())
 
-    def test_failed_image_is_a_failed_traceable_task(self):
-        with tempfile.TemporaryDirectory() as d:
+    def test_photos_and_image_documents_never_download_invoke_or_write(self):
+        for media in ({'photo':[{'file_id':'synthetic'}]}, {'document':{'file_id':'synthetic','mime_type':'image/png'}}):
+            with self.subTest(media=media),tempfile.TemporaryDirectory() as d:
+                transport=Mock();transport.chat=123
+                app=create_offline_app(d,transport);app.allowed={123}
+                update={'update_id':2,'message':{'from':{'id':123},'chat':{'id':123},'caption':'检查持仓',**media}}
+                before={p.relative_to(d) for p in Path(d).rglob('*')}
+                try:
+                    with patch.object(app.runtime,'run') as run,patch('lib.telegram.requests.get') as get,patch('google.genai.Client') as model:
+                        self.assertEqual(app.handle_update(update),'ignored')
+                        self.assertEqual(app.handle_update(update),'duplicate')
+                        run.assert_not_called();get.assert_not_called();model.assert_not_called()
+                    transport.assert_not_called();transport.deliver.assert_not_called();transport.photo.assert_not_called()
+                    self.assertEqual(app.runtime.store.execute('SELECT status FROM updates')[0]['status'],'ignored')
+                    self.assertEqual(app.runtime.store.execute('SELECT * FROM tasks'),[])
+                    self.assertEqual(app.runtime.store.execute('SELECT * FROM snapshots'),[])
+                    self.assertEqual({p.relative_to(d) for p in Path(d).rglob('*')},before)
+                finally:app.runtime.close()
+
+    def test_text_task_model_budget_still_applies(self):
+        from lib.agents import CallLimit
+        with tempfile.TemporaryDirectory() as d,patch.dict('os.environ',{'STOCKMAN_MAX_MODEL_CALLS':'1'}):
             app=create_offline_app(d)
-            app.portfolio.image=lambda path:None
             try:
-                with self.assertRaises(ValueError):app.handle('检查截图持仓',image_path='synthetic.png')
+                with self.assertRaises(CallLimit):app.handle('研究 AAPL')
                 task=app.runtime.store.execute('SELECT * FROM tasks')[0]
                 self.assertEqual(task['status'],'failed')
-                self.assertTrue(any(t['tool']=='image_ingest' and t['phase']=='failed' for t in app.runtime.store.traces(task['id'])))
             finally:app.runtime.close()
 
-    def test_image_generation_counts_towards_shared_model_budget(self):
-        from lib.agents import CURRENT,Invocation,CallLimit
-        from lib.positions import fetch_positions_from_image
-        client=Mock();client.__enter__=Mock(return_value=client);client.__exit__=Mock(return_value=False)
-        client.models.generate_content.return_value.text='{"positions":[{"symbol":"AAPL","shares":0.5,"avg_cost":null}]}'
-        with tempfile.TemporaryDirectory() as d,patch('lib.positions.GEMINI_API_KEY','synthetic'),patch('google.genai.Client',return_value=client),patch.dict('os.environ',{'STOCKMAN_MAX_MODEL_CALLS':'1'}):
-            path=Path(d)/'synthetic.png';path.write_bytes(b'synthetic')
-            invocation=Invocation('task','local');token=CURRENT.set(invocation)
+    def test_start_monitoring_all_broker_holdings_without_an_explicit_symbol(self):
+        import json
+        with tempfile.TemporaryDirectory() as d:
+            app=create_offline_app(d)
+            app.runtime.store.snapshot('image','owner',{'NVDA':{'shares':99}})
             try:
-                self.assertEqual(fetch_positions_from_image(str(path))['AAPL']['shares'],0.5)
-                self.assertEqual(invocation.models,1)
-                with self.assertRaises(CallLimit):fetch_positions_from_image(str(path))
-                client.models.generate_content.assert_called_once()
-            finally:CURRENT.reset(token)
+                result=app.handle('开始监控持仓','owner')
+                self.assertEqual(result['status'],'completed',result)
+                rules=app.runtime.store.execute('SELECT symbol,spec FROM rules')
+                self.assertEqual([r['symbol'] for r in rules],['AAPL'])
+                self.assertEqual(json.loads(rules[0]['spec'])['source'],'ibkr')
+            finally:app.runtime.close()
 
     def test_unsupported_update_is_not_left_processing(self):
         with tempfile.TemporaryDirectory() as d:

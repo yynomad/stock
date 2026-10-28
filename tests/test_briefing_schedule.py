@@ -65,24 +65,26 @@ class BriefingScheduleTest(unittest.TestCase):
         finally:first.close()
         DirectoryLock(self.temp.name).close()
 
-    def test_application_image_scope_and_constructor_never_sends(self):
+    def test_application_uses_broker_and_constructor_never_sends(self):
         import os
         from unittest.mock import patch,Mock
         from lib.application import Application
         from lib.agents import OfflineModel
+        from lib.portfolio import PortfolioService
         transport=Mock(chat=123)
-        with patch.dict(os.environ,{'BRIEFING_ENABLED':'true','BRIEFING_PORTFOLIO_SOURCE':'image','TG_ALLOWED_USERS':'123'}):
-            app=Application(Path(self.temp.name)/'app',OfflineModel(),transport=transport)
+        factory=lambda store:PortfolioService(store,ibkr=lambda account:{'AAPL':{'shares':1}})
+        with patch.dict(os.environ,{'BRIEFING_ENABLED':'true','TG_ALLOWED_USERS':'123'}):
+            app=Application(Path(self.temp.name)/'app',OfflineModel(),portfolio_factory=factory,transport=transport)
         try:
             transport.deliver.assert_not_called()
-            app.runtime.store.snapshot('image','other',{'AAPL':{'shares':1}},asof=1000)
-            with self.assertRaises(ValueError):app.build_daily('123',1000,'day')
-            app.runtime.store.snapshot('image','123',{'MSFT':{'shares':1}},asof=1000)
+            app.runtime.store.snapshot('image','123',{'MSFT':{'shares':99}},asof=1000)
             app.briefing.generate=Mock(return_value={'text':'synthetic'})
             app.build_daily('123',1001,'day')
             snapshot=app.briefing.generate.call_args.args[1]
-            self.assertEqual(set(snapshot['positions']),{'MSFT'})
+            self.assertEqual(snapshot['source'],'ibkr')
+            self.assertEqual(set(snapshot['positions']),{'AAPL'})
         finally:app.runtime.close()
+
     def test_configured_timezone_uses_its_own_calendar_day(self):
         from dataclasses import replace
         config=replace(self.config,timezone='America/New_York')

@@ -1,14 +1,12 @@
-"""Validated, separate IBKR/image snapshots and deterministic PA reports."""
+"""Validated broker snapshots and deterministic PA reports."""
 import json
 import math
 import os
 import re
 import time
-from .agents import CURRENT
 from .ibkr import fetch_ibkr_positions
 from .pa_strategy import analyze_pa
 from .position_decision import build_position_decision
-from .positions import fetch_positions_from_image
 from .yahoo_data import fetch_yahoo_bars
 
 
@@ -42,20 +40,10 @@ def normalize_positions(positions):
 
 
 class PortfolioService:
-    def __init__(self, store, ibkr=fetch_ibkr_positions, image=fetch_positions_from_image, bars=fetch_yahoo_bars,broker=None):
-        self.store=store;self.ibkr=ibkr;self.image=image;self.bars=bars;self.broker=broker
+    def __init__(self, store, ibkr=fetch_ibkr_positions, bars=fetch_yahoo_bars,broker=None):
+        self.store=store;self.ibkr=ibkr;self.bars=bars;self.broker=broker
 
-    def import_image(self, path, session='local'):
-        positions=self.image(path)
-        if not positions:raise ValueError('截图未识别到持仓，请补充清晰截图；未改用其他持仓')
-        clean=normalize_positions(positions)
-        return self.store.snapshot('image',session,clean)
-
-    def load(self, session='local', snapshot=None):
-        if snapshot:
-            row=self.store.get_snapshot(snapshot)
-            if not row or row['source']!='image' or row['scope']!=session:raise ValueError('截图快照不存在或不属于本会话')
-            row['cached']=False;return row
+    def load(self, session='local'):
         if self.broker is not None:return self.broker.load()
         account=os.getenv('IBKR_ACCOUNT','')
         try:
@@ -64,15 +52,14 @@ class PortfolioService:
             row=self.store.latest('ibkr',account);row['cached']=False
         except Exception as exc:
             row=self.store.latest('ibkr',account)
-            if not row:raise RuntimeError('IBKR 持仓未同步，且没有此账户的缓存；可发送持仓截图') from None
+            if not row:raise RuntimeError('IBKR 持仓未同步，且没有此账户的缓存；请检查 Gateway 登录与账户配置') from None
             row['cached']=True;row['sync_error']=type(exc).__name__
         row['age_seconds']=max(0,time.time()-row['asof'])
         row['stale']=row['age_seconds']>86400
         return row
 
     def report(self, request: str):
-        context=CURRENT.get()
-        snapshot=self.load(context.session if context else 'local',context.snapshot if context else None)
+        snapshot=self.load()
         rows=[]
         for symbol,position in snapshot['positions'].items():
             row={'symbol':symbol,'currency_sign':'$','shares':position.get('shares'),'avg_cost':position.get('avg_cost')}

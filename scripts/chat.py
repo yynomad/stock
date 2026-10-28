@@ -11,7 +11,6 @@ def main():
     parser=argparse.ArgumentParser()
     parser.add_argument('query',nargs='?',default='检查持仓')
     parser.add_argument('--offline',action='store_true')
-    parser.add_argument('--image')
     parser.add_argument('--session',default='local')
     parser.add_argument('--data-dir')
     parser.add_argument('--resume-task')
@@ -23,7 +22,7 @@ def main():
     app=None
     try:
         app=create_offline_app(directory) if args.offline else Application(directory)
-        result=app.runtime.resume(args.resume_task) if args.resume_task else app.handle(args.query,args.session,args.image)
+        result=app.runtime.resume(args.resume_task) if args.resume_task else app.handle(args.query,args.session)
         print(json.dumps(result,ensure_ascii=False,indent=2))
         return 0
     except Exception as exc:

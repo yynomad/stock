@@ -4,7 +4,6 @@ import os
 from pathlib import Path
 import threading
 import time
-import uuid
 from .config import TG_CHAT_ID,MONITOR_INTERVAL,configure_logging
 from .agents import AgentRuntime
 from .portfolio import PortfolioService
@@ -43,9 +42,8 @@ class Application:
                 self.daily.recover()
             except BaseException:self.runtime.close();raise
 
-    def handle(self,text,session='local',image_path=None):
-        prepare=(lambda:self.portfolio.import_image(image_path,session)) if image_path else None
-        return self.runtime.run(text,session,prepare=prepare)
+    def handle(self,text,session='local'):
+        return self.runtime.run(text,session)
 
     def handle_update(self,update):
         from .channels.telegram import decode
@@ -59,12 +57,7 @@ class Application:
         if user not in self.allowed or chat!=self.transport.chat:
             self.runtime.store.execute("UPDATE updates SET status='ignored' WHERE id=?",(identity,));return 'unauthorized'
         try:
-            if event.image_id:
-                data=self.transport.photo(event.image_id)
-                folder=self.directory/'screenshots';folder.mkdir(exist_ok=True)
-                path=folder/(uuid.uuid4().hex+'.jpg');path.write_bytes(data)
-                result=self.handle('请检查这张截图中的持仓',str(chat),str(path))
-            elif event.text:
+            if event.text:
                 result=self.handle(event.text,str(chat))
             else:
                 self.runtime.store.execute("UPDATE updates SET status='ignored' WHERE id=?",(identity,))
@@ -78,11 +71,7 @@ class Application:
             return 'failed'
 
     def build_daily(self,owner,now,day):
-        if self.briefing_config.portfolio_source=='image':
-            snapshot=self.runtime.store.latest('image',owner)
-            if not snapshot:raise ValueError('no image snapshot for daily owner; upload a screenshot first')
-            snapshot['cached']=True
-        else:snapshot=self.portfolio.load(owner)
+        snapshot=self.portfolio.load(owner)
         return self.briefing.generate(owner,snapshot,now,day)
 
     def poll_daily(self):

@@ -7,7 +7,6 @@
   lib/config.py       配置与监控标的
   lib/format_utils.py 价格/百分比格式化
   lib/yahoo_data.py   Yahoo Finance 数据抓取
-  lib/positions.py    持仓获取（IBKR + Vision + 静态降级）
   lib/pa_strategy.py  Price Action 分析引擎
   lib/output.py       控制台表格 + Telegram 推送
 
@@ -22,7 +21,6 @@ from lib.config import YF_REQUEST_DELAY, LIMIT_ENTRY_PCT
 from lib.format_utils import fmt_price
 from lib.yahoo_data import fetch_yahoo_bars, fetch_premarket_price
 from lib.pa_strategy import analyze_pa
-from lib.positions import fetch_positions
 from lib.position_decision import build_position_decision
 from lib.output import build_console_table, build_telegram_message, send_telegram
 from lib.watchlist import WatchlistManager
@@ -77,14 +75,12 @@ def _format_display_fields(pa_result: dict, currency_sign: str) -> None:
         pa_result[f"{key}_fmt"] = fmt_price(val, currency_sign) if val is not None else "N/A"
 
 
-def _build_symbols(image_path: str = None, positions: dict = None) -> dict:
+def _build_symbols(positions: dict = None) -> dict:
     """确定分析标的列表。返回 {symbol: cfg} 字典。"""
     wm = WatchlistManager()
-    if image_path or positions is not None:
-        if positions is None:
-            positions = fetch_positions(image_path)
+    if positions is not None:
         if not positions:
-            print("⚠️  未从截图识别到持仓，停止分析")
+            print("⚠️  没有提供持仓，停止分析")
             return {}
         symbols = {}
         for sym, pos in positions.items():
@@ -167,12 +163,11 @@ def _analyze_symbols(symbols: dict) -> list:
     return results
 
 
-def run_calculator(image_path: str = None, symbols: dict = None) -> tuple:
+def run_calculator(symbols: dict = None) -> tuple:
     """主流程：确定标的 → 分析 → 输出 → 返回 (results, report)。
 
     参数：
-      image_path: 持仓截图路径（与 symbols 二选一）
-      symbols:    预构建的 {symbol: cfg} 字典（优先级高于 image_path）
+      symbols: 预构建的 {symbol: cfg} 字典；未指定时读取旧版观察列表
     返回：
       (results, report_text)
     """
@@ -183,7 +178,7 @@ def run_calculator(image_path: str = None, symbols: dict = None) -> tuple:
         sys.exit(1)
 
     if symbols is None:
-        symbols = _build_symbols(image_path)
+        symbols = _build_symbols()
 
     results = _analyze_symbols(symbols)
 
@@ -207,10 +202,9 @@ def run_calculator(image_path: str = None, symbols: dict = None) -> tuple:
 
 if __name__ == "__main__":
     from lib.config import configure_logging
-    configure_logging()
     import argparse
     parser = argparse.ArgumentParser(description="盘前 Price Action 策略计算器")
-    parser.add_argument("--image", type=str, help="持仓截图路径（Gemini Vision 识别）")
     args = parser.parse_args()
-    results, report = run_calculator(image_path=args.image)
+    configure_logging()
+    results, report = run_calculator()
     send_telegram(report)

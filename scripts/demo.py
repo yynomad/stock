@@ -49,14 +49,13 @@ def main():
             from lib.portfolio import PortfolioService
             from tests_data import demo_bars
             service=PortfolioService(runtime.store,ibkr=lambda account:{'AAPL':{'shares':0.5,'avg_cost':100}},
-                                     image=lambda path:{'NVDA':{'shares':2,'avg_cost':None}},bars=demo_bars)
-            identity=service.import_image('synthetic','demo')
+                                     bars=demo_bars)
             runtime.close()
             runtime=AgentRuntime(directory,OfflineModel(),{'portfolio':service.report})
             # Bind service to the reopened business connection.
             service.store=runtime.store
-            result=runtime.run('检查截图持仓',session='demo',snapshot=identity)
-            assert 'NVDA' in result['text'] and 'image' in result['text']
+            result=runtime.run('检查持仓',session='demo')
+            assert 'AAPL' in result['text'] and 'ibkr' in result['text']
             print(json.dumps(result,ensure_ascii=False))
         elif args.scenario=='routing':
             for query in ['检查持仓','研究 AAPL','监控状态','你好']:

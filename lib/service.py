@@ -1,5 +1,4 @@
 """Standalone backend lifecycle. IM input is optional and independent of scheduled jobs."""
-from functools import partial
 import logging
 import threading
 import time
@@ -8,7 +7,6 @@ from .agents import AgentRuntime
 from .brokers import BrokerService,create_broker
 from .channels import create_channel
 from .portfolio import PortfolioService
-from .positions import fetch_positions_from_image
 from .research import ResearchService,SECClient,GoogleNews
 from .market import YahooMarket
 from .monitoring import MonitoringService
@@ -18,7 +16,7 @@ from .stock_briefing.sources import PublicHTTP,load_registry
 from .stock_briefing.agent import make_model
 
 class BackendService(Application):
-    def __init__(self,config,model=None,daily_model=None,broker=None,channel=None,market=None,research=None,image=None,sources=None):
+    def __init__(self,config,model=None,daily_model=None,broker=None,channel=None,market=None,research=None,sources=None):
         self.config=config;self.directory=config.directory;self.briefing_config=config.briefing
         self.logger=logging.getLogger('stockman.service');self.logger.setLevel(config.log_level)
         self.logger.propagate=False
@@ -35,8 +33,7 @@ class BackendService(Application):
             if str(self.transport.chat)!=str(config.channel.chat):raise ValueError('configured channel destination mismatch')
             if config.channel.interactive and 'text' not in self.transport.capabilities:raise ValueError('channel does not support incoming text')
             self.market=market or YahooMarket(proxy='',quote_age=config.monitor.quote_age)
-            self.portfolio=PortfolioService(store,broker=self.broker,bars=self.market.bars,
-                image=image or partial(fetch_positions_from_image,api_key=config.model.key,model_name=config.model.name))
+            self.portfolio=PortfolioService(store,broker=self.broker,bars=self.market.bars)
             self.research=research or ResearchService(self.market,SECClient(config.sec_user_agent),GoogleNews(config.model.key,dict(config.model.roles)['research']))
             self.monitor=MonitoringService(store,self.portfolio,self.market,settings=config.monitor)
             self.sources=sources

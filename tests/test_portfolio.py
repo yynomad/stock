@@ -25,17 +25,17 @@ class PortfolioTest(unittest.TestCase):
         for data in [{'AAPL':{'shares':float('nan')}},{'AAPL':{'shares':True}},{'1321.T':{'shares':1}},{'AAPL':{'currency':'JPY'}},{'AAPL':{'avg_cost':0}}]:
             with self.assertRaises(ValueError):normalize_positions(data)
 
-    def test_image_reads_once_and_does_not_replace_ibkr(self):
+    def test_broker_load_ignores_and_preserves_legacy_image_records(self):
         with tempfile.TemporaryDirectory() as d:
-            store=Store(Path(d)/'data.sqlite');calls=[]
-            def image(path):calls.append(path);return {'NVDA':{'shares':2,'avg_cost':90}}
-            service=PortfolioService(store,ibkr=lambda account:{'AAPL':{'shares':0.5,'avg_cost':100}},image=image,bars=bars)
-            with patch.dict(os.environ,{'IBKR_ACCOUNT':'U1234567'}):
-                first=service.load();snapshot=service.import_image('synthetic','chat')
-                self.assertEqual(service.load('chat',snapshot)['source'],'image')
-                self.assertEqual(store.latest('ibkr','U1234567')['positions'],first['positions'])
-                with self.assertRaises(ValueError):service.load('different-chat',snapshot)
-            self.assertEqual(calls,['synthetic']);store.close()
+            store=Store(Path(d)/'data.sqlite')
+            legacy=store.snapshot('image','chat',{'NVDA':{'shares':2,'avg_cost':90}})
+            service=PortfolioService(store,ibkr=lambda account:{'AAPL':{'shares':0.5,'avg_cost':100}},bars=bars)
+            try:
+                with patch.dict(os.environ,{'IBKR_ACCOUNT':'U1234567'}):
+                    row=service.load('chat')
+                self.assertEqual(row['source'],'ibkr');self.assertEqual(set(row['positions']),{'AAPL'})
+                self.assertEqual(set(store.get_snapshot(legacy)['positions']),{'NVDA'})
+            finally:store.close()
 
     def test_disconnect_reports_cache_and_never_another_account(self):
         with tempfile.TemporaryDirectory() as d:
@@ -56,23 +56,25 @@ class PortfolioTest(unittest.TestCase):
             self.assertEqual([r['decision']['action'] for r in result['positions']],['wait_position','unsupported_short'])
             store.close()
 
-    def test_legacy_image_failure_does_not_fallback(self):
-        with patch('premarket_grid_calculator.fetch_positions',return_value={}):
-            self.assertEqual(_build_symbols('synthetic.png'),{})
+    def test_explicit_empty_positions_do_not_fallback_to_watchlist(self):
+        with patch('premarket_grid_calculator.WatchlistManager') as watchlist:
+            watchlist.return_value.get_all.return_value={'NVDA':{'shares':99}}
+            self.assertEqual(_build_symbols(positions={}),{})
+            watchlist.return_value.get_all.assert_not_called()
         self.assertEqual(_build_symbols(positions={'AAPL':{'shares':1}})['AAPL']['shares'],1)
 
     def test_missing_account_fails_before_network(self):
         with self.assertRaises(IBKRUnavailable):fetch_ibkr_positions('')
 
-    def test_real_agent_uses_image_snapshot(self):
+    def test_real_agent_uses_broker_snapshot(self):
         with tempfile.TemporaryDirectory() as d:
             store=Store(Path(d)/'stockman.sqlite')
-            service=PortfolioService(store,image=lambda path:{'AAPL':{'shares':2,'avg_cost':100}},bars=bars)
-            snapshot=service.import_image('synthetic','owner')
+            service=PortfolioService(store,ibkr=lambda account:{'AAPL':{'shares':2,'avg_cost':100}},bars=bars)
             runtime=AgentRuntime(d,OfflineModel(),{'portfolio':service.report})
-            result=runtime.run('检查截图持仓',session='owner',snapshot=snapshot)
-            self.assertIn('image',result['text']);self.assertIn('AAPL',result['text'])
-            runtime.close();store.close()
+            try:
+                result=runtime.run('检查持仓',session='owner')
+                self.assertIn('ibkr',result['text']);self.assertIn('AAPL',result['text'])
+            finally:runtime.close();store.close()
 
 
 class IBKRProtocolTest(unittest.TestCase):

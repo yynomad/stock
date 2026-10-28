@@ -9,7 +9,6 @@ class IncomingEvent:
     sender:int | None
     target:int | None
     text:str=''
-    image_id:str | None=None
 
 class Channel(Protocol):
     provider:str

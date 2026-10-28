@@ -33,7 +33,7 @@ class MonitoringService:
         if action=='start':
             source=None
             if not symbols:
-                source=self.portfolio.load(context.session,context.snapshot)
+                source=self.portfolio.load(context.session)
                 symbols=list(source['positions'])
             rules=[];errors=[]
             for symbol in dict.fromkeys(symbols):

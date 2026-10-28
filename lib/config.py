@@ -33,7 +33,6 @@ YF_PROXY = _legacy_env("YF_PROXY", "")  # 如 http://127.0.0.1:7890
 # ── Gemini API 配置 ──────────────────────────────────────────────────
 GEMINI_API_KEY = _legacy_env("GEMINI_API_KEY", "")
 GEMINI_MODEL   = _legacy_env("GEMINI_MODEL", "gemini-3.5-flash-lite")
-POSITION_IMAGE_PATH = _legacy_env("POSITION_IMAGE_PATH", "")  # 持仓截图路径
 
 # ── 请求间隔（秒），避免触发 Yahoo 限流 ──────────────────────────────
 YF_REQUEST_DELAY = float(_legacy_env("YF_REQUEST_DELAY", "5"))

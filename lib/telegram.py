@@ -20,13 +20,6 @@ class Telegram:
     def updates(self,offset):
         response=requests.get(self.base+'/getUpdates',params={'offset':offset,'timeout':25},timeout=35,proxies=self.proxies)
         response.raise_for_status();return response.json().get('result',[])
-    def photo(self,file_id):
-        response=requests.get(self.base+'/getFile',params={'file_id':file_id},timeout=15,proxies=self.proxies)
-        response.raise_for_status();path=response.json()['result']['file_path']
-        response=requests.get(self.base.replace('/bot','/file/bot')+'/'+path,timeout=20,proxies=self.proxies)
-        response.raise_for_status()
-        if len(response.content)>10*1024*1024:raise ValueError('截图过大，请使用小于10MB的图片')
-        return response.content
     def deliver(self,result):
         delivered=False
         try:

@@ -26,11 +26,6 @@ def execute(args,store,config,service=None,portfolio=None,transport=None,now=Non
         if args.public_symbols:
             symbols=[valid_symbol(s) for s in args.public_symbols]
             snapshot={'source':'public_watchlist (not actual holdings)','asof':stamp,'positions':{s:{'shares':None} for s in symbols}}
-        elif args.snapshot:snapshot=portfolio.load(owner,args.snapshot)
-        elif config.portfolio_source=='image':
-            snapshot=store.latest('image',owner)
-            if not snapshot:raise ValueError('no image snapshot for this session; upload/import a screenshot first')
-            snapshot['cached']=True
         else:snapshot=portfolio.load(owner)
         return service.generate(owner,snapshot,stamp,day)
     if not args.send:return build(owner,now)

@@ -18,10 +18,9 @@ def main(argv=None):
     mode.add_argument('--status',action='store_true',help='local read-only delivery and coverage state')
     parser.add_argument('--data-dir')
     parser.add_argument('--session',help='preview session; send must match private TG_CHAT_ID')
-    parser.add_argument('--snapshot',help='existing same-session image snapshot ID')
     parser.add_argument('--public-symbols',nargs='+',help='public watchlist preview, no broker connection')
     args=parser.parse_args(argv)
-    if args.offline and (args.send or args.status or args.public_symbols or args.snapshot):parser.error('offline demos cannot use live inputs/send/status')
+    if args.offline and (args.send or args.status or args.public_symbols):parser.error('offline demos cannot use live inputs/send/status')
     os.environ['LANGSMITH_TRACING']='false'
     if args.offline:os.environ['STOCKMAN_OFFLINE']='1'
     try:

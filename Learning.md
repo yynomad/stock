@@ -19,11 +19,11 @@ venv/bin/python service.py --offline --scenario service
 venv/bin/python service.py --offline --scenario end-to-end
 ```
 
-新主线从 service.py 开始：读取 INI → 检查环境引用 → 创建 BackendService → 注入券商／通道／模型 → 自动同步／定时研究 → 推送。IM 接收是独立辅助路径；图片仍只绑定本次会话任务。新增同步和服务健康记录在 broker_health、service_health 中；检查点和原业务表继续复用。
+新主线从 service.py 开始：读取 INI → 检查环境引用 → 创建 BackendService → 注入券商／通道／模型 → 自动同步／定时研究 → 推送。IM 文字接收是独立辅助路径；图片消息被忽略，不进入业务任务。新增同步和服务健康记录在 broker_health、service_health 中；检查点和原业务表继续复用。
 
 lib/service_config.py 只用标准库读配置，不加载 .env。lib/brokers/base.py 负责完整快照、账户作用域、缓存和串行化；lib/channels/base.py 说明发送能力与接收能力分开。lib/service.py 用相同 PortfolioService、ResearchService、AgentRuntime 与 StockBriefing 组装后台，不重写模型框架。普通同步和轮询不调用模型。
 
-完整演示使用真实线程／SQLite／LangChain 调用循环与假外部依赖，覆盖无人提问自动发报、主动研究、图片、重启去重及未知投递。原 scripts/demo.py 和下面的旧对话学习路径仍保留。
+完整演示使用真实线程／SQLite／LangChain 调用循环与假外部依赖，覆盖无人提问自动发报、主动研究、忽略媒体输入、重启去重及未知投递。原 scripts/demo.py 和下面的旧对话学习路径仍保留。
 
 ## 一次请求经过哪里
 
@@ -50,7 +50,7 @@ venv/bin/python scripts/tasks.py --data-dir runtime/offline --task <任务编号
 
 `traces` 中的 `agent`、`tool`、`phase`、`payload` 与 `at` 表示参与者、工具、执行阶段、参数／耗时／错误和时间。这里没有模型隐藏推理。工具失败时记录类型，任务标为 `partial`；超过预算则任务失败，不继续无限调用。
 
-业务库 `stockman.sqlite` 保存 tasks、traces、snapshots、rules、events、updates 等。`checkpoints.sqlite` 是框架执行状态，不等于业务事实。账户快照按来源和账户／会话分开；图片恢复上下文保留快照 ID。新闻输出走当前请求内存，不进检查点。
+业务库 `stockman.sqlite` 保存 tasks、traces、snapshots、rules、events、updates 等。`checkpoints.sqlite` 是框架执行状态，不等于业务事实。当前账户快照按券商来源和账户分开；历史图片记录保留，但不进入持仓流程，旧图片任务明确拒绝恢复。新闻输出走当前请求内存，不进检查点。
 
 ## 看清哪些步骤无需 Agent
 
