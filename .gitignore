@@ -45,3 +45,10 @@ stock.conf
 *.egg-info/
 build/
 dist/
+
+# Local development notes (public documentation lives in README.md)
+/AGENTS.md
+/Product.md
+/Plan.md
+/Session_Handoff.md
+/Learning.md

@@ -13,7 +13,7 @@ ROOT=Path(__file__).resolve().parents[1]
 def main():
     for path in list(ROOT.glob("*.py"))+list((ROOT/"src").rglob("*.py"))+list((ROOT/"tests").rglob("*.py"))+list((ROOT/"scripts").glob("*.py")):
         ast.parse(path.read_text(),filename=str(path))
-    for name in ["Product.md","Plan.md","AGENTS.md","Session_Handoff.md","README.md","Learning.md"]:
+    for name in ["README.md"]:
         text=(ROOT/name).read_text()
         assert text.startswith("# ") and text.count("```")%2==0,name
         for target in re.findall(r"\]\(([^)]+)\)",text):

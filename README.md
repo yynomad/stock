@@ -1,186 +1,113 @@
-# StockMan 个人持仓助手
+# StockMan
 
-配置驱动、可自行运行的持仓信息后台服务。配置券商账户、模型和 IM 后，后台自动同步持仓、生成简报并推送；保留主动文字提问。使用 Python、LangChain 和本机 SQLite，首版单实例单账户，支持美股／美股 ETF。当前提供 IBKR 与 Telegram 适配器，其他平台需要对应适配实现。
+配置驱动的美股／ETF 持仓信息助手。通过 IBKR 只读同步持仓，结合公开资料生成中文日报、回答研究问题，并通过 Telegram 推送价格提醒。
 
-每日持仓信息简报和原多 Agent 离线闭环已实现（最终检查记录见 Plan.md）；真实 IBKR 尚待新用户名获批与 Gateway 登录。Gemini 搜索真实探测超过 75 秒总时限，未验证成功；Telegram 真实会话也尚待验收。不要把合成演示数据当成实际持仓或真实研究。
+后台任务独立运行，不依赖用户发消息。项目使用 Python、LangChain、Gemini 和 SQLite，面向单机、单用户、单券商账户；没有网页界面或自动交易功能。
 
-物理项目目录：`/Users/yao/personal/stock/`。完整需求见 [Product.md](Product.md)，实施与逐项验收见 [Plan.md](Plan.md)，学习示例见 [Learning.md](Learning.md)。
+## 功能
 
-## 后台服务：推荐的使用入口
+- **持仓复盘**：读取指定账户的完整快照，校验股数、成本和时间，使用确定性代码计算 PA 指标与仓位规则。
+- **每日简报**：采集配置的 SEC／RSS 来源，去重并解释重要新增，默认每天北京时间 08:00 生成；恢复后只补当天一份。
+- **按需研究**：支持单只股票或 ETF，区分已取得证据、潜在影响与缺失资料，保留原始引用。
+- **价格监控**：按交易日历检查有效报价，达到规则条件时才调用模型并推送；规则与提醒状态持久保存。
+- **本地可观察性**：SQLite 保存任务、调用记录、会话检查点、预算估算和投递状态；提供无凭据的离线演示。
 
-先运行无凭据、无网络、无真实消息的完整演示：
+项目处于开发阶段：离线流程已有自动化验收，真实 IBKR、模型、数据源及 Telegram 连接和报告质量仍需在自己的环境中核对。离线演示使用合成数据，不能证明真实持仓或研究效果。
 
-```sh
-venv/bin/python service.py --offline --scenario end-to-end
-```
+## 目录
 
-实际使用时，先在项目根目录准备配置，再检查，最后由自己启动常驻进程：
+- [快速开始](#快速开始)
+- [配置和启动](#配置和启动)
+- [日常使用](#日常使用)
+- [数据来源与费用](#数据来源与费用)
+- [运行状态与恢复](#运行状态与恢复)
+- [架构与代码导航](#架构与代码导航)
+- [开发与验证](#开发与验证)
+- [限制与许可证](#限制与许可证)
 
-```sh
-cp stock.conf.example stock.conf
-# 编辑 stock.conf；在进程环境中提供其引用的认证值
-venv/bin/python service.py --config stock.conf --check
-venv/bin/python service.py --config stock.conf
-```
+## 快速开始
 
-配置样例见 [stock.conf.example](stock.conf.example)。`.conf` 采用 INI 语法；只读取显式指定文件，路径相对配置文件所在目录解析，修改后重启生效。`--check` 检查配置／环境引用和来源 JSON，不联网、不调用模型、不发送、不创建业务库。实际 stock.conf 被 Git 忽略。
-
-默认引用 `IBKR_ACCOUNT`、`GEMINI_API_KEY`、`TG_BOT_TOKEN`、`TG_CHAT_ID`，可在 .conf 中改为其他环境变量名；`TG_ALLOWED_USERS` 可选，私聊默认允许目标本人，`SEC_USER_AGENT` 缺少时 SEC 来源会报告失败。新服务不自动读取 .env；需要通过启动进程的环境提供这些值，不能只在旧 .env 中填写后假定会生效。不要把实际值贴入问题或提交 Git。
-
-IBKR 用户名与二次认证仍在 Gateway 完成，.conf 只描述连接和指定只读账户。模板 `[briefing] enabled=true` 表示用户启动该服务后按计划自动推送；安装、检查和离线演示均不启动常驻服务。`bot.py` 已删除，不再保留别名；后台入口为根 `service.py` 与安装后的 `stockman` 命令，两者共用 `stockman.cli.main`。
-
-服务启动尝试同步指定账户，随后每 900 秒同步（可配）；到点自动研究和推送不依赖 IM 来消息。报价轮询、日报和同步独立运行；IM 辅助接收文字，可配置 interactive=false 只推送。图片消息被忽略，不下载、保存或调用识图模型。同账户请求共享同步结果，失败只使用该账户缓存并显示时间／过期，不能把未同步当成空持仓。
-
-日常只读查看状态，可在服务运行时执行：
+需要 Python 3.10+；目前安装与离线验收使用 macOS、Python 3.10.14。
 
 ```sh
-venv/bin/python service.py --config stock.conf --status
-```
-
-输出最近记录的同步、任务与投递状态，须核对记录时间，不能据旧记录判断进程仍存活。`unknown` 需到 Telegram 人工核实，不自动重发。Ctrl+C 停止服务；关闭时等待有界退出，不在工作线程仍使用数据库时关闭连接。服务与其他写入 CLI 不能同时占用相同 runtime；只读状态可并行。
-
-新目录 `src/stockman/brokers/` 为只读券商及统一快照契约，`src/stockman/channels/` 为报告发送与入站事件契约，`src/stockman/service.py` 为后台组装与生命周期。依赖、模型、价格规则和日报来源沿用既有方案；配置驱动不意味着所有券商和 IM 已接入，也不意味着已有完整行业新闻覆盖。
-
-## 每天上班前需要知道什么
-
-围绕持仓筛选官方素材，按“发生了什么、为何相关、可能影响、未知、后续观察、来源”生成中文日报。默认北京时间 08:00，自然日含周末；服务恢复后只补当天一份。自动发送只由新服务的 .conf 显式开关控制；下文 .env 的 `BRIEFING_ENABLED` 只影响 `scripts/briefing.py` 的预览／手动发送流程。安装、检查或预览不会自动启动。
-
-先看完整合成演示，无凭据、不联网、不发送：
-
-```sh
-venv/bin/python scripts/briefing.py --offline --scenario end-to-end
-venv/bin/python scripts/briefing.py --offline --scenario budget
-```
-
-真实预览默认不发送；会访问公开来源，存在新材料且预算允许时调用 Gemini。公开标的预览不读取券商：
-
-```sh
-venv/bin/python scripts/briefing.py --dry-run --public-symbols AAPL QQQ
-venv/bin/python scripts/briefing.py --dry-run
-venv/bin/python scripts/briefing.py --status --data-dir runtime
-```
-
-第二条读取配置券商账户的持仓或同账户缓存。券商尚未就绪时，可先使用明确标为非实际持仓的 `--public-symbols` 预览或离线演示。
-
-2026-10-28 起移除持仓截图功能；原 `--image`／`--snapshot` 参数会被拒绝，旧 `.env` 中的 `BRIEFING_PORTFOLIO_SOURCE=image` 会明确报错，请移除此旧配置后再运行。已有数据库和本地截图文件不清理；旧中断图片任务不再恢复，也不转换成券商任务。
-
-| 可配置项 | 默认及说明 |
-| --- | --- |
-| `BRIEFING_ENABLED` | `false`；仅影响 `scripts/briefing.py` 流程；自动日报请用新服务 .conf 的 `briefing.enabled` 并启动 `service.py` |
-| `BRIEFING_TIME` / `BRIEFING_TIMEZONE` | `08:00` / `Asia/Shanghai`；更改后按所配本地自然日计日报和预算 |
-| `BRIEFING_DAILY_BUDGET_USD` | `0.20`；可任意调小调大，`0` 关闭日报模型并保留来源简报；非有限／负值拒绝 |
-| `BRIEFING_MAX_MODEL_CALLS` | `8`；每天跨所有预览及发送共同累计，显式重试也占一次 |
-| `BRIEFING_MAX_OUTPUT_TOKENS` | `2048`；单次输出上限 |
-| `BRIEFING_MAX_EVENTS` | `5`；未展开的新增数量会注明 |
-| `BRIEFING_LOOKBACK_HOURS` / `BRIEFING_RETENTION_DAYS` | `24` / `30`；跨天休眠不补齐全部历史，报告注明缺口 |
-| `BRIEFING_INPUT_USD_PER_MILLION` / `BRIEFING_OUTPUT_USD_PER_MILLION` | `0.30` / `2.50`，按已核对的标准文本费率估算；换型号／费率需更新 |
-| `BRIEFING_SOURCES_FILE` | 空值使用 [briefing.sources.json](briefing.sources.json)；可改成本机已审核的来源配置 |
-
-日报费用按 SQLite 原子预留，SDK 每次仅一次网络尝试，最多一次应用重试且重新预留；超时保留未知用量估算，不按零元处理。输入按字节加开销保守估算，输出含思考按 SDK usage 结算；这不是供应商账单硬封顶。预览也消耗日报预算，按需聊天／Google 搜索另计。
-
-事实只展示可匹配的原文摘录；数字限在原文，解释分为推测、未知和观察点。引用 ID、原文匹配只能检查来源一致性，不能保证模型推断正确。失效模型／预算不足时回到原文与链接，来源失败不会当作无新闻。
-
-### 来源覆盖的实际范围
-
-默认配置 9 个常见美股发行人的 SEC 申报元数据和美联储货币政策 RSS。SEC 条目只确认申报类型／时间，**没有读取财报或公告正文**，无法仅凭这些判断业绩好坏。QQQ 等 ETF 不套公司财务，未配置基金材料会提示缺失；当前还没有完整的公司新闻、行业、ETF 成分或供应链覆盖。
-
-自定义官方 RSS 需逐源审核 `review_url` 及 `reviewed/analyze/store_metadata/store_body/store_analysis`。未审核拒绝采集；默认不存正文；不允许保存分析的来源仅临时显示，报告库保存限制标记。美联储保留出处；来源政策依据见 Product.md。Google 接地仍仅用于原按需展示，不进入日报库，也不用来发现爬取目标。
-
-直接关系从可信配置的完整公司名称和材料中的明确供应／购买／竞争句式抽取，保留原句、来源与核对时间，只跟一层；不把公司共现当关系。当前严格英语句式识别可能漏报复杂表述，默认没有凭空填入的关系库，180 天旧证据停止扩展。新确认的直接发行人本次即可补抓，仍受每次最多 20 来源限制。
-
-### 启用与恢复
-
-填好已有 `.env` 所需字段及 `SEC_USER_AGENT`，先预览核对来源、持仓时点和成本；自动日报在 `stock.conf` 里设置 `briefing.enabled=true` 并启动 `venv/bin/python service.py --config stock.conf`。本轮没有修改用户 `.env`、启动服务或真实发送。
-
-用户确需手动发送今天一份时，先停止同目录运行中的服务，再显式运行：
-
-```sh
-venv/bin/python scripts/briefing.py --send
-```
-
-只允许 `TG_CHAT_ID` 对应的正数本人私聊和授权用户，不向群发日报；同一天已确认发送则返回现有状态。手动发送不需要打开自动调度；公开标的预览不能直接转为发送。没有删除 webhook 或修改轮询 offset 的行为。
-
-`--status` 只读显示 `brief_daily/brief_reports`；`unknown` 先在 Telegram 人工核实，程序不自动重发。生成前失败可在当天每 15 分钟重试、最多三次；发送失败或可能部分发送后停止自动重试。保留错误类型，不记录带密钥的原始异常。运行目录有进程锁；预览／发送要先停止同目录运行中的服务。
-
-业务表：`brief_evidence` 保存许可内元数据与指纹，`brief_reports/brief_report_items` 保存报告／引用，`brief_relations` 保存已核对原句，`brief_budget` 保存估算及未知用量，`brief_daily` 保存计划和投递状态。它们在已有本机 SQLite 中，Git 忽略；不是公开数据或云端服务。报告历史默认清理三十天，财务账本和日投递索引保留用于审计。
-
-## 安装和离线体验
-
-业务代码位于 `src/stockman/`。`pyproject.toml` 声明直接依赖下限，`requirements.txt` 保留完整精确锁定；先安装锁定依赖，再安装当前项目。安装后 `stockman` 与根 `service.py` 使用同一个 CLI 实现，参数不变，例如 `stockman --offline --scenario end-to-end`；从其他目录使用配置时传入配置文件的路径。
-
-已在 Python 3.10.14 验证；使用项目虚拟环境。
-
-```sh
-cd /Users/yao/personal/stock
-# 已有 venv 时沿用；首次安装才执行下一行
+git clone https://github.com/yynomad/stock.git
+cd stock
 python3 -m venv venv
 venv/bin/python -m pip install -r requirements.txt
 venv/bin/python -m pip install -e .
-venv/bin/python scripts/validate.py
-venv/bin/python scripts/demo.py --offline --scenario end-to-end
-venv/bin/python scripts/chat.py --offline "研究 QQQ"
-venv/bin/python scripts/tasks.py --data-dir runtime/offline
+venv/bin/stockman --offline --scenario end-to-end
 ```
 
-`demo.py` 使用临时目录，退出后清理；`chat.py --offline` 使用 `runtime/offline`，适合查看检查点和跨次对话。离线模式替换模型、行情、券商、SEC 和新闻，输出明确标为合成数据；使用真实 LangChain 工具调用循环和 SQLite，并非真实模型效果验收。统一检查禁止 socket 连接，清空凭据、不读取 `.env`。
+演示无需密钥，不访问真实券商、行情或模型，也不发送消息。`synthetic: true` 表示外部依赖已替换为合成实现。
 
-## 旧入口的 .env 配置（兼容）
+`requirements.txt` 是完整的精确依赖锁定；[pyproject.toml](pyproject.toml) 声明包信息和直接依赖下限。先安装锁定依赖，再安装当前包。安装后 `stockman` 命令与根 `service.py` 共用同一个 CLI，参数一致；跨目录运行时使用虚拟环境中命令的完整路径和配置文件路径。
 
-首次可复制 `env.template` 为 `.env`；已有 `.env` 请只补所需字段，不覆盖现有值。运行依赖网络和相应服务权限。
+## 配置和启动
 
-| 配置 | 作用 |
+### 1. 准备配置与连接
+
+```sh
+cp stock.conf.example stock.conf
+```
+
+编辑 [stock.conf.example](stock.conf.example) 的本地副本。配置采用 INI，文件路径相对配置文件所在目录解析，修改后重启生效。
+
+| 配置组 | 主要内容与示例默认值 |
 | --- | --- |
-| `GEMINI_API_KEY` | 主控、业务 Agent、Google 搜索接地 |
-| `GEMINI_MODEL` | 默认 `gemini-3.5-flash-lite`，按已选方案保持一致 |
-| `IBKR_ACCOUNT` | 填持仓所在的联名账户 ID，不能用空个人账户代替 |
-| `IBKR_HOST` / `IBKR_PORT` | 本机 Gateway 地址及实际 API 端口；模板为 `127.0.0.1:4001`，需核对自己的 Gateway 设置 |
-| `IBKR_CLIENT_ID` | 默认 17，避免与其他 API 客户端冲突 |
-| `SEC_USER_AGENT` | SEC 要求的应用名与可联系邮箱，例如 `StockMan your-email@example.com` |
-| `TG_BOT_TOKEN` / `TG_CHAT_ID` | 本人 Bot 与目标会话 |
-| `TG_ALLOWED_USERS` | 允许的数字用户 ID，逗号分隔；本人私聊可默认使用正数 `TG_CHAT_ID` |
-| `YF_PROXY` | Yahoo／Telegram 使用的代理；Gemini SDK 使用标准网络代理环境变量 |
-| `STOCKMAN_DATA_DIR` | 默认 `runtime`；数据库、检查点仅保存在本机并被 Git 忽略 |
+| `[service]` | 数据目录 `runtime`、时区 `Asia/Shanghai`、日志级别 |
+| `[broker]` | `provider=ibkr`，Gateway 地址、端口、client ID、账户环境变量名；每 900 秒同步 |
+| `[model]` | Gemini 模型名、API key 环境变量名；每任务最多 8 次逻辑模型／12 次工具调用 |
+| `[notification]` | `provider=telegram`，token、chat ID、授权用户的环境变量名；`interactive=true` 接收文字提问 |
+| `[briefing]` | 日报开关、08:00、预算估算目标、调用／输出限制、资料窗口与历史保留 |
+| `[monitor]` | 300 秒检查间隔、2% 突破缓冲、每标的每天最多 5 条、报价最长 900 秒 |
+| `[sources]` | 来源配置文件及 SEC 联系身份的环境变量名 |
 
-四个 Agent 可分别用 `GEMINI_SUPERVISOR_MODEL`、`GEMINI_PORTFOLIO_MODEL`、`GEMINI_RESEARCH_MODEL`、`GEMINI_MONITOR_MODEL` 覆盖默认值；当前均沿用同一个已选型号。不要在排障时自动更换供应商或开通付费。
+默认模型为 `gemini-3.5-flash-lite`，使用前需确认自己的 API 账户支持该型号。
 
-模型会收到完成任务所需的持仓与公开资料。已移除截图接收和 Gemini 图片识别。IBKR 密码只在用户自己的 Gateway 登录流程输入，不填入项目。运行时禁用 LangSmith 云端追踪，执行记录留在本地。
+服务从**启动进程的环境**读取配置引用的值，**不自动加载 `.env`**。示例配置引用：
 
-### IBKR 准备及核对
+| 环境变量 | 用途 |
+| --- | --- |
+| `IBKR_ACCOUNT` | 实际持仓账户 ID，须能通过已登录 Gateway 访问 |
+| `GEMINI_API_KEY` | 模型及按需 Google 搜索接地 |
+| `TG_BOT_TOKEN` | Telegram Bot token |
+| `TG_CHAT_ID` | 本人目标私聊的正数数字 ID |
+| `TG_ALLOWED_USERS` | 可选，逗号分隔的授权用户 ID；本人私聊可默认使用目标 ID |
+| `SEC_USER_AGENT` | 应用名与可联系邮箱，例如 `StockMan your-email@example.com` |
 
-1. 等程序专用用户名获批，确认它能访问联名账户；核对实际读取权限，`SecondHolder` 这样的角色名本身不代表只读。
-2. 用该用户名在本机 IB Gateway 登录并完成认证。启用 Socket API、勾选 **Read-Only API**，核对端口和受信任的本地地址。
-3. 在 `.env` 填联名账户的 `IBKR_ACCOUNT`，运行只读探测。
+这些环境变量名可在 `.conf` 中调整。密钥、真实 `stock.conf`、数据库和日志不要提交 Git 或粘贴到 Issue。
 
-```sh
-venv/bin/python scripts/smoke.py --service ibkr --read-only
-```
+IBKR 认证在自己的 IB Gateway 中完成。启用 Socket API，勾选 **Read-Only API**，核对端口、可信地址及所选账户权限。程序不接收券商密码，也没有下单、撤单或资金操作工具。指定账户不可用时，只允许读取该账户的缓存；没有缓存会明确失败。
 
-程序先完成连接握手并核对可访问账户，再用 `reqPositionsMulti` 查询指定账户；没有注册下单、撤单或资金工具。成功后仍需人工对比联名持仓、分数股及成本，并确认手机主用户名与 Gateway 专用用户名能同时使用。API 无法代替你核验界面上的只读开关。
-
-未登录、账户错误、超时或快照未完整返回时，不保存伪完整结果；可用同一账户的旧快照时明确标为缓存，超过 24 小时标为过期。没有同账户缓存时明确失败，请恢复 Gateway 连接后重试。当前固定 SDK 是 PyPI `ibapi`，与实际 Gateway 版本的兼容性仍需真实联调。
-
-## 旧对话和单次入口（兼容）
-
-本地单次任务不发送 Telegram 消息：
+### 2. 检查配置
 
 ```sh
-venv/bin/python scripts/chat.py "检查持仓"
-venv/bin/python scripts/chat.py "研究 AAPL"
-venv/bin/python scripts/tasks.py
-venv/bin/python scripts/tasks.py --task <任务编号>
+venv/bin/stockman --config stock.conf --check
 ```
 
-真实研究结果中的 `news` 是原文、来源和关联搜索建议的临时展示包；本地 CLI 输出其原始结构，Telegram 则发送 HTML 附件。新闻不进入持久化对话或新闻缓存库；来源中的发布日期不可取得时保持未知。请在 Telegram 客户端下载／打开附件确认内容和建议显示正常。
+此命令检查配置、环境引用和来源 JSON，不联网、不调用模型、不发送消息、不创建业务数据库。配置通过不代表外部连接已验证。
 
-启动后台服务（唯一启动入口，会连接外部服务；请自己执行）：
+### 3. 启动与停止
 
 ```sh
-venv/bin/python service.py --config stock.conf
+venv/bin/stockman --config stock.conf
 ```
 
-`bot.py` 已删除。安装后也可用 `venv/bin/stockman --config stock.conf`，与上面的根 `service.py` 使用相同参数和实现。
+启动时尝试同步持仓，随后独立运行同步、日报、价格监控和可选文字接收。示例配置的 `briefing.enabled=true` 会在服务启动后按计划生成并推送；需要关闭自动日报时，将其设为 `false`。安装、检查与离线演示不会启动真实服务。
 
-在本人会话发送以下自然语言：
+用 `Ctrl+C` 停止。一个数据目录只允许一个应用写入进程；运行本地问答或日报预览前，先停止使用同一目录的服务。只读状态查询可以并行：
+
+```sh
+venv/bin/stockman --config stock.conf --status
+```
+
+状态显示已记录的同步、任务与投递结果，需核对记录时间；它不证明进程仍存活。
+
+## 日常使用
+
+### Telegram 文字问答
+
+在授权的本人会话中输入：
 
 ```text
 检查持仓
@@ -192,56 +119,130 @@ venv/bin/python service.py --config stock.conf
 停止监控
 ```
 
-代码对监控变更有额外授权检查：本次用户原文明确要求开始／停止才写规则，工具结果中的指令不能替代授权。一次只研究一个明确股票代码。持仓复盘始终使用已配置的券商账户及其同账户缓存。
+一次研究一个明确股票代码。监控规则只有在本次用户文字明确要求开始或停止时才变更，工具结果和新闻中的指令不构成授权。配置 `interactive=false` 可只推送、不接收提问。图片消息被忽略，不下载、保存或调用识图模型。
 
-同一数据目录只运行一个应用进程。先停止服务，再用本地 CLI 操作其数据目录，避免多个进程同时轮询或恢复任务。`Ctrl+C` 停止服务。不会自动删除已有 webhook；若服务的 getUpdates 与 webhook 冲突，先检查自己的 Telegram 配置。
-
-旧版按观察列表进行的单次计算入口继续保留：
+### 本地问答与任务记录
 
 ```sh
-venv/bin/python premarket_grid_calculator.py
+venv/bin/python scripts/chat.py --offline "研究 QQQ"
+venv/bin/python scripts/tasks.py --data-dir runtime/offline
 ```
 
-这些是旧版直接计算入口，不经过新主控；部分旧入口按既有配置可能推送 Telegram，不能用作离线测试。旧 `/test`、`/analyze`、`watchlist.json` 已不作为新 Agent 入口的指令协议或监控配置来源。新规则在 SQLite 中。
+`chat.py --offline` 使用合成依赖及 `runtime/offline`，输出 `task_id`、模型／工具调用次数和任务状态。用 `scripts/tasks.py --data-dir runtime/offline --task <任务编号>` 查看对应的 `traces`；它记录角色、工具、耗时和错误，不包含模型隐藏推理。
 
-## 监控、成本及恢复
+去掉 `--offline` 可进行真实本地问答，结果打印到终端，不发送 Telegram。单次脚本沿用环境配置：可将 [env.template](env.template) 复制为 `.env`，已有文件只补必要字段。它与后台 `.conf` 的加载方式不同；代理、模型角色覆盖和日报参数以模板为准。
 
-普通 Python 每 5 分钟检查一次，仅在美股常规交易时段接受有时间戳、未过期的常规报价。按 XNYS 交易日历处理节假日、夏令时和提早收盘；价格超出支撑／阻力 2% 缓冲才产生事件。每标的纽约自然日最多 5 条提醒，状态与事件 ID 持久去重。参数见模板。
-
-关键位取自创建规则时的 Yahoo 日 K 线，保存 `created_at` 和 `bars_asof`，持续沿用直至再次发送“开始监控 AAPL”重算；本版没有自动每日刷新规则。PA 使用调整后日线收盘价，报告注明 K 线日期，与报价事件时间分开。Yahoo 可能延迟、限流或缺数据；默认超过 15 分钟不提醒，休眠后不补发伪实时事件。
-
-正常轮询不用模型；有效事件才进入主控分析。每任务默认最多 8 次逻辑模型调用、12 次 LangChain 工具调用；Google 搜索计入模型次数，SDK 内部重试不当作新的逻辑调用。暂时性失败最多重试 2 次，发送超时／部分发送标记 `unknown`，不盲目重发。这些预算不构成供应商费用硬上限。
-
-任务状态是 `running`、`completed`、`partial`、`failed`、`interrupted`；任务执行和消息投递分开记录。`completed` 不代表外部数据均已取得，须阅读报告缺失项。进程重启会标出中断任务；仅当确有待执行检查点且没有后续会话任务时可手动恢复：
+### 日报预览与手动发送
 
 ```sh
-venv/bin/python scripts/chat.py --resume-task <任务编号>
+# 仅使用公开标的，不读取实际持仓；真实来源和模型可能产生费用
+venv/bin/python scripts/briefing.py --dry-run --public-symbols AAPL QQQ
+# 读取指定账户持仓或同账户缓存；不发送消息
+venv/bin/python scripts/briefing.py --dry-run
+# 只读日报状态
+venv/bin/python scripts/briefing.py --status --data-dir runtime
 ```
 
-没有可恢复检查点时明确失败，不能保证任意网络中断下的绝对一次投递；未知结果先查看 Telegram 与本地记录，再决定是否重新发起请求。原始新闻不保存，因此恢复后的输出不保证包含中断前的新闻附件。
+日报说明持仓来源／时点、资料截止、事实、与持仓的关系、可能影响、未知、观察点及来源。没有重要新增时简短说明；来源失败或覆盖不足单独列出，不当作“没有新闻”。
 
-## 验收及尚待完成
+需要手动发送当天一份时，显式执行 `venv/bin/python scripts/briefing.py --send`。它只向已授权的本人正数私聊 ID 投递，不向群发日报；已确认发送的当天报告不再重发，公开标的预览不能直接转为发送。自动日报由后台 `.conf` 控制，脚本的 `.env` 参数不覆盖后台配置。
+
+旧版 `premarket_grid_calculator.py` 仍可作单次观察列表计算，按配置可能发送消息，不能作为离线验收入口。`bot.py`、截图识别和旧图片 CLI 参数已移除，历史图片任务不能恢复为券商任务；已有本地数据不会自动清理。
+
+## 数据来源与费用
+
+默认来源见 [briefing.sources.json](briefing.sources.json)：9 个美股发行人的 SEC 申报元数据及美联储货币政策 RSS。SEC 元数据只能确认申报类型和时间，**不包含财报／公告正文**。ETF 不套用公司财务口径，未配置的基金资料会显示缺失。
+
+自定义官方 RSS 需逐源审核 `review_url` 和 `reviewed/analyze/store_metadata/store_body/store_analysis` 权限。未审核的来源不采集；正文默认不持久保存；不允许保存分析的来源只作临时展示。可参考 [SEC 开发资料](https://www.sec.gov/about/developer-resources)、[美联储 RSS](https://www.federalreserve.gov/feeds/feeds.htm) 和[版权说明](https://www.federalreserve.gov/disclaimer.htm)。
+
+直接供应／购买／竞争关系必须有材料原句、来源及核对时间，只扩展一层；公司共现不等于存在关系。当前规则可能漏掉复杂表述，180 天旧证据停止扩展；尚无完整公司新闻、行业、ETF 成分或供应链覆盖。
+
+Yahoo 提供行情与日线；SEC 提供适用的公司财务披露。按需 Google 搜索接地作为原文、来源和关联搜索建议的临时包展示，Telegram 使用 HTML 附件，不进入日报库或持久化对话，也不用于发现爬取目标。
+
+日报的可调默认值：
+
+| `.conf` 字段（`[briefing]`） | 单次脚本环境变量 | 默认 |
+| --- | --- | --- |
+| `time`；时区见 `[service] timezone` | `BRIEFING_TIME` / `BRIEFING_TIMEZONE` | `08:00` / `Asia/Shanghai` |
+| `daily_budget_usd` | `BRIEFING_DAILY_BUDGET_USD` | `0.20`，估算目标；`0` 禁用日报模型 |
+| `max_calls` | `BRIEFING_MAX_MODEL_CALLS` | `8`，按日累计，预览与重试也计数 |
+| `max_output_tokens` | `BRIEFING_MAX_OUTPUT_TOKENS` | `2048` |
+| `max_events` | `BRIEFING_MAX_EVENTS` | `5` |
+| `lookback_hours` | `BRIEFING_LOOKBACK_HOURS` | `24` |
+| `retention_days` | `BRIEFING_RETENTION_DAYS` | `30` |
+| `input_rate` / `output_rate` | `BRIEFING_INPUT_USD_PER_MILLION` / `BRIEFING_OUTPUT_USD_PER_MILLION` | 模板中可调的每百万 token 估算费率 |
+
+预算通过 SQLite 原子预留，超时保留未知用量估算。日报模型每次 SDK 只尝试一次，最多一次应用重试且重新预留；实际用量可得时结算。费用为估算，不能硬性封顶整个供应商账户账单；按需聊天／搜索另计。模型、费率和费用以自己的供应商配置与账单核对。
+
+持仓、必要股数／成本及公开资料可能进入按需模型请求；日报模型只接收公开材料、股票标识和关系证据。账户编号和券商密码不进入模型，LangSmith 云端追踪被禁用，执行记录保存在本机。
+
+## 运行状态与恢复
+
+- **持仓故障**：不保存不完整、错账户、未来或乱序快照。只使用同账户缓存，超过 24 小时标旧；无缓存不能冒充空组合。
+- **价格监控**：依 XNYS 日历处理交易日、夏令时和提早收盘，仅接受有时间戳的有效常规时段报价；默认超过 15 分钟不提醒。每标的纽约自然日最多 5 条提醒，休眠后不补发伪实时事件。
+- **关键位**：从创建规则时的 Yahoo 调整后日线计算，记录 K 线日期；不会自动每日刷新，再次“开始监控 AAPL”可重算。普通轮询不调用模型。
+- **延迟日报**：按配置的本地自然日运行，含周末；恢复后只补当天一份。生成前失败每 15 分钟最多尝试三次，不排队补多天历史。
+- **未知投递**：超时、部分发送或重启可能留下 `unknown`，先核对 Telegram 和本地状态，程序不盲目重发。网络故障下不能保证绝对一次送达。
+- **任务恢复**：任务有 `running/completed/partial/failed/interrupted` 状态。只有确有待执行检查点、且同会话没有后续任务的 `interrupted` 任务可用 `scripts/chat.py --resume-task <任务编号>` 恢复；`completed` 仍需阅读缺失项。
+
+`stockman.sqlite` 保存任务、快照、规则、来源、日报、预算和投递状态，`checkpoints.sqlite` 保存主控会话执行状态。报告历史默认保留 30 天，预算账本与日投递索引保留审计。原始新闻不持久保存，恢复后的输出不保证带有中断前的新闻附件。
+
+## 架构与代码导航
+
+```text
+stockman / service.py → 配置校验 → BackendService
+                                  ├ 券商同步 → 持仓快照 → 业务计算
+                                  ├ 日报调度 → SEC/RSS → 去重/预算 → 研究 → 推送
+                                  ├ 价格监控 → 有效事件 → Agent 分析 → 推送
+                                  └ Telegram 文字 → 主控 → 持仓/研究/监控子 Agent
+```
+
+| 路径 | 职责 |
+| --- | --- |
+| [src/stockman/cli.py](src/stockman/cli.py) | CLI 参数及执行入口 |
+| [src/stockman/service_config.py](src/stockman/service_config.py)、[service.py](src/stockman/service.py) | INI 校验、依赖组装、后台生命周期 |
+| `src/stockman/brokers/`、`channels/` | 券商快照和消息通道契约，以及 IBKR／Telegram 适配器 |
+| [src/stockman/agents.py](src/stockman/agents.py) | LangChain 主控与三个子 Agent、调用限制、日志和会话检查点 |
+| `src/stockman/portfolio.py`、`research.py`、`monitoring.py` | 持仓、研究和监控业务 |
+| `src/stockman/briefing/` | 条目、权限、去重、预算、历史与调度 |
+| `src/stockman/stock_briefing/` | 股票来源、直接关系、证据解释与报告 |
+| `scripts/`、`tests/` | 单次操作、离线演示和自动化回归 |
+
+模型只负责按需决策和证据解释；指标、时间、权限、预算、去重及投递状态由普通代码校验。主控按需选择分支，不要求每次调用全部子 Agent；日报直接复用研究角色，没有手写 LangGraph 编排图。
+
+离线模型通过真实 LangChain 工具协议运行，可用 `scripts/demo.py --offline --scenario routing` 观察委派，用 `scripts/tasks.py` 查看记录。模型调用数限制可通过 `STOCKMAN_MAX_MODEL_CALLS=1 venv/bin/python scripts/chat.py --offline "研究 AAPL"` 练习：预期因 `CallLimit` 失败并退出 2；移除临时限制后重新发起任务。
+
+## 开发与验证
+
+从项目根目录执行：
 
 ```sh
-venv/bin/python -m pip check
-venv/bin/python -m unittest discover -s tests -v
 venv/bin/python scripts/validate.py
-venv/bin/python scripts/demo.py --offline --scenario routing
-venv/bin/python scripts/demo.py --offline --scenario persistence
-venv/bin/python scripts/demo.py --offline --scenario portfolio
-venv/bin/python scripts/demo.py --offline --scenario research
-venv/bin/python scripts/demo.py --offline --scenario monitor
-venv/bin/python scripts/demo.py --offline --scenario end-to-end
-venv/bin/python scripts/smoke.py --service telegram --dry-run
 ```
 
-真实服务显式探测：
+统一检查解析 Python AST、检查 README 结构及本地链接、在临时目录禁用网络并运行全部单元测试，最后执行 `pip check`。新拉取的仓库不需要任何本地开发计划或交接文件即可验证。
+
+可按功能运行离线场景，每个场景名分别传入 `--scenario`：
+
+| 命令 | 场景 |
+| --- | --- |
+| `venv/bin/python scripts/demo.py --offline --scenario <场景>` | `routing`、`persistence`、`portfolio`、`research`、`monitor`、`end-to-end` |
+| `venv/bin/python scripts/briefing.py --offline --scenario <场景>` | `pipeline`、`sources`、`research`、`budget`、`schedule`、`end-to-end` |
+| `venv/bin/stockman --offline --scenario <场景>` | `config`、`broker`、`channel`、`service`、`end-to-end` |
+
+Telegram 格式检查使用 `venv/bin/python scripts/smoke.py --service telegram --dry-run`，不发送消息。完整场景使用假模型、假时钟和假发送器，验证权限、来源隔离、预算、重启去重及未知投递。
+
+真实只读连接检查须在准备好自己的环境后显式执行；Gemini 探测可能产生费用，IBKR 结果仍需人工核对账户、股数与只读设置：
 
 ```sh
-venv/bin/python scripts/smoke.py --service gemini --symbol AAPL
 venv/bin/python scripts/smoke.py --service ibkr --read-only
+venv/bin/python scripts/smoke.py --service gemini --symbol AAPL
 ```
 
-Gemini 探测可能消耗额度，总时限 75 秒；未通过返回非零。当前真实 IBKR 取决于用户登录；SEC 尚缺 `SEC_USER_AGENT`；真实 Telegram 及完整研究仍待验收。真实 Gemini 搜索已出现超时，Google 根地址可达，Yahoo 根地址返回 429，这只能帮助排障，不能证明具体数据请求成功。
+提交问题时请附脱敏的复现步骤、Python／依赖版本和错误类型。修改业务前补充正常、边界及失败路径回归，再运行统一检查；不要提交真实配置、运行数据或本地开发笔记。
 
-项目计划开源，正式许可证及发布范围尚待选择；只提供规则分析与研究参考，没有自动交易功能。
+## 限制与许可证
+
+当前仅实现 IBKR、Telegram 和单账户部署，没有多账户聚合、其他通道、Web 管理台或自动交易。Yahoo 可能延迟或限流；引用匹配只验证来源一致性，不保证模型解释正确。本文中的功能描述不等于真实外部服务验收通过。
+
+项目计划开源，许可证尚未确定，当前没有声明开源许可证。只提供规则分析与研究参考，不承诺投资结论、收益或费用硬上限。
