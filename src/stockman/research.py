@@ -116,10 +116,18 @@ class GoogleNews:
             with context.lock:
                 context.models+=1
                 if context.models>(context.max_models if context.max_models is not None else int(os.getenv('STOCKMAN_MAX_MODEL_CALLS','8'))):raise CallLimit('搜索模型调用次数达到上限')
-        with genai.Client(api_key=key,http_options=types.HttpOptions(timeout=45000,retry_options=types.HttpRetryOptions(attempts=3))) as client:
-            response=client.models.generate_content(model=name,
-                contents=f'研究美股或ETF {symbol} 最近7天的重要公开事件。今天为 {date.today().isoformat()}。用中文说明事实、事件日期与发布日期，并给出来源。无法证实时明确说明，不做下单建议。',
-                config=types.GenerateContentConfig(tools=[types.Tool(google_search=types.GoogleSearch())],max_output_tokens=2048))
+        from .usage import record
+        started=time.monotonic()
+        try:
+            with genai.Client(api_key=key,http_options=types.HttpOptions(timeout=45000,retry_options=types.HttpRetryOptions(attempts=3))) as client:
+                response=client.models.generate_content(model=name,
+                    contents=f'研究美股或ETF {symbol} 最近7天的重要公开事件。今天为 {date.today().isoformat()}。用中文说明事实、事件日期与发布日期，并给出来源。无法证实时明确说明，不做下单建议。',
+                    config=types.GenerateContentConfig(tools=[types.Tool(google_search=types.GoogleSearch())],max_output_tokens=2048))
+            metadata=response.usage_metadata.model_dump(exclude_none=True) if response.usage_metadata else None
+            if context and context.store:record(context.store,context.task,'research','grounded_search',name,started,metadata,extra_unknown=True)
+        except Exception:
+            if context and context.store:record(context.store,context.task,'research','grounded_search',name,started,error=True,extra_unknown=True)
+            raise
         return parse_grounding(response)
 
 

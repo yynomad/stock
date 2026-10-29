@@ -128,7 +128,7 @@ venv/bin/python scripts/chat.py --offline "研究 QQQ"
 venv/bin/python scripts/tasks.py --data-dir runtime/offline
 ```
 
-`chat.py --offline` 使用合成依赖及 `runtime/offline`，输出 `task_id`、模型／工具调用次数和任务状态。用 `scripts/tasks.py --data-dir runtime/offline --task <任务编号>` 查看对应的 `traces`；它记录角色、工具、耗时和错误，不包含模型隐藏推理。
+`chat.py --offline` 使用合成依赖及 `runtime/offline`，输出 `task_id`、模型／工具调用次数和任务状态。用 `scripts/tasks.py --data-dir runtime/offline --task <任务编号>` 查看对应的 `traces`；它记录角色、工具、耗时和错误，不包含模型隐藏推理。 任务详情还会列出本地模型和搜索逻辑调用的用量、耗时及可计算的估算费用；未知值为 null。日报调用使用其配置费率，问答和搜索暂不估价，搜索附加费用未知。SDK 内部重试未必逐次可见，记录不是供应商账单。历史数据库没有用量表时显示空列表。
 
 去掉 `--offline` 可进行真实本地问答，结果打印到终端，不发送 Telegram。单次脚本沿用环境配置：可将 [env.template](env.template) 复制为 `.env`，已有文件只补必要字段。它与后台 `.conf` 的加载方式不同；代理、模型角色覆盖和日报参数以模板为准。
 

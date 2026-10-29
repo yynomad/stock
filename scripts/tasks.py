@@ -19,7 +19,11 @@ def main():
         if args.task:
             task=[dict(r) for r in conn.execute('SELECT * FROM tasks WHERE id=?',(args.task,))]
             traces=[dict(r) for r in conn.execute('SELECT * FROM traces WHERE task_id=? ORDER BY id',(args.task,))]
-            data={'task':task,'traces':traces}
+            tables=conn.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='usage_calls'").fetchone()
+            usage=[dict(r) for r in conn.execute("SELECT role,kind,provider,model,elapsed_ms,input_tokens,output_tokens,total_tokens,estimated_micro_usd,extra_cost_unknown,status,at FROM usage_calls WHERE task_id=? ORDER BY id",(args.task,))] if tables else []
+            data=redact({'task':task,'traces':traces})
+            data['usage_calls']=usage
+            data['usage_note']='逻辑调用；内部重试及搜索附加费用可能未知；估算不是供应商账单。'
         else:data=[dict(r) for r in conn.execute('SELECT id,session,status,created,updated FROM tasks ORDER BY created DESC LIMIT 20')]
-        print(json.dumps(redact(data),ensure_ascii=False,indent=2))
+        print(json.dumps(data if args.task else redact(data),ensure_ascii=False,indent=2))
 if __name__=='__main__':main()

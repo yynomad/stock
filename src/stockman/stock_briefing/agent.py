@@ -2,6 +2,7 @@
 from datetime import datetime
 import json
 import re
+import time
 from zoneinfo import ZoneInfo
 from langchain_core.messages import HumanMessage
 from langsmith.run_helpers import tracing_context
@@ -51,7 +52,9 @@ class ResearchAgent:
         # Bytes + generous message overhead: conservative token estimate, not a tokenization proof.
         upper=len((PROMPT+text).encode())+4096
         day=datetime.fromtimestamp(now,ZoneInfo(self.config.timezone)).date().isoformat()
-        try:agent=create_research_agent(self.model or (self.model_factory() if self.model_factory else make_model(self.config)),system_prompt=PROMPT)
+        try:
+            model=self.model or (self.model_factory() if self.model_factory else make_model(self.config))
+            agent=create_research_agent(model,system_prompt=PROMPT)
         except Exception as exc:
             self.store.trace(task,'research','daily_model','unconfigured',{'error_type':type(exc).__name__})
             return [],'model_unconfigured'
@@ -59,14 +62,25 @@ class ResearchAgent:
             try:reservation=budget.reserve(day,upper)
             except BudgetExceeded:return [],'budget_exhausted'
             self.store.trace(task,'research','daily_model','start',{'attempt':attempt+1,'reservation':reservation,'input_upper':upper})
+            started=time.monotonic()
+            received=False
             try:
                 with tracing_context(enabled=False):state=agent.invoke({'messages':[HumanMessage(content=text)]},config={'recursion_limit':4})
                 message=state['messages'][-1]
-                budget.settle(reservation,getattr(message,'usage_metadata',None))
+                usage=getattr(message,'usage_metadata',None)
+                budget.settle(reservation,usage)
+                from ..usage import record
+                name=getattr(model,'model',None) or getattr(model,'model_name',None)
+                record(self.store,task,'research','daily_model',name,started,usage,input_rate=self.config.input_rate,output_rate=self.config.output_rate)
+                received=True
                 output=validate_output(message.content,items,self.config.max_events)
                 self.store.trace(task,'research','daily_model','success',{'events':len(output)})
                 return output,'explained'
             except Exception as exc:
+                if not received:
+                    from ..usage import record
+                    name=getattr(model,'model',None) or getattr(model,'model_name',None)
+                    record(self.store,task,'research','daily_model',name,started,error=True)
                 budget.settle(reservation)
                 self.store.trace(task,'research','daily_model','failed',{'error_type':type(exc).__name__})
                 # Invalid output/config is not retried. Transient network failures can retry once,

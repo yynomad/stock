@@ -10,7 +10,7 @@ import time
 from typing import Any
 from langsmith.run_helpers import tracing_context
 from langchain.agents import create_agent
-from langchain.agents.middleware import before_model, wrap_tool_call
+from langchain.agents.middleware import before_model, wrap_tool_call, wrap_model_call
 from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 from langchain_core.outputs import ChatGeneration, ChatResult
@@ -35,6 +35,7 @@ class Invocation:
     tools: int = 0
     lock: Any = field(default_factory=threading.Lock)
     max_models: int | None = None
+    store: Any = None
 
 
 CURRENT=ContextVar("stockman_invocation",default=None)
@@ -127,6 +128,20 @@ class AgentRuntime:
                 current.models+=1
                 if current.models>self.max_models:raise CallLimit('模型调用次数达到上限')
             self.store.trace(current.task,agent,'model','start',{'call':current.models})
+        @wrap_model_call
+        def account_model(request, handler):
+            from .usage import record
+            current=CURRENT.get()
+            started=time.monotonic()
+            name=getattr(request.model,'model',None) or getattr(request.model,'model_name',None)
+            try:
+                response=handler(request)
+                message=next((m for m in reversed(response.result) if isinstance(m,AIMessage)),None)
+                record(self.store,current.task,agent,'model',name,started,getattr(message,'usage_metadata',None))
+                return response
+            except Exception:
+                record(self.store,current.task,agent,'model',name,started,error=True)
+                raise
         @wrap_tool_call
         def trace_tool(request, handler):
             current=CURRENT.get()
@@ -145,7 +160,7 @@ class AgentRuntime:
                 # Raw provider exceptions may contain URLs or credentials: record type only.
                 self.store.trace(current.task,agent,name,'failed',{'error_type':type(exc).__name__})
                 return ToolMessage(content=json.dumps({'error':type(exc).__name__,'detail':'工具调用失败，数据未验证；不要宣称成功'},ensure_ascii=False),tool_call_id=request.tool_call['id'])
-        return [count_model,trace_tool]
+        return [count_model,account_model,trace_tool]
 
     def run(self, text, session='local'):
         with self.lock:session_lock=self.session_locks.setdefault(session,threading.RLock())
@@ -155,7 +170,7 @@ class AgentRuntime:
 
     def _invoke(self, task, session, payload):
         original = payload["messages"][0].content if payload else json.loads(self.store.task(task)["input"])
-        token=CURRENT.set(Invocation(task,session,request=str(original),max_models=self.max_models))
+        token=CURRENT.set(Invocation(task,session,request=str(original),max_models=self.max_models,store=self.store))
         try:
             # User chose local execution records; inherited LangSmith settings must not upload holdings.
             with tracing_context(enabled=False):

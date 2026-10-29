@@ -30,6 +30,8 @@ class Store:
         self.conn.executescript("""
         CREATE TABLE IF NOT EXISTS tasks(id TEXT PRIMARY KEY,session TEXT,input TEXT,status TEXT,result TEXT,error TEXT,created REAL,updated REAL);
         CREATE TABLE IF NOT EXISTS traces(id INTEGER PRIMARY KEY,task_id TEXT,agent TEXT,tool TEXT,phase TEXT,payload TEXT,at REAL);
+        CREATE TABLE IF NOT EXISTS usage_calls(id INTEGER PRIMARY KEY,task_id TEXT,role TEXT,kind TEXT,provider TEXT,model TEXT,elapsed_ms INTEGER,input_tokens INTEGER,output_tokens INTEGER,total_tokens INTEGER,estimated_micro_usd INTEGER,extra_cost_unknown INTEGER NOT NULL,status TEXT,at REAL);
+
         CREATE TABLE IF NOT EXISTS snapshots(id TEXT PRIMARY KEY,source TEXT,scope TEXT,asof REAL,payload TEXT);
         CREATE TABLE IF NOT EXISTS rules(symbol TEXT PRIMARY KEY,spec TEXT,state TEXT DEFAULT 'normal',last_time REAL DEFAULT 0,enabled INTEGER DEFAULT 1);
         CREATE TABLE IF NOT EXISTS events(id TEXT PRIMARY KEY,symbol TEXT,day TEXT,status TEXT,payload TEXT,at REAL);
