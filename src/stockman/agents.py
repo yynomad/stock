@@ -1,7 +1,10 @@
 """LangChain supervisor and three agents. No hand-written StateGraph."""
 from contextvars import ContextVar
+from contextlib import nullcontext
+from decimal import Decimal
 from dataclasses import dataclass, field
 import json
+import math
 import os
 from pathlib import Path
 import sqlite3
@@ -23,6 +26,9 @@ from .storage import Store, redact
 class CallLimit(RuntimeError):
     pass
 
+class TaskBudgetExceeded(CallLimit):
+    pass
+
 
 @dataclass
 class Invocation:
@@ -36,6 +42,10 @@ class Invocation:
     lock: Any = field(default_factory=threading.Lock)
     max_models: int | None = None
     store: Any = None
+    budget_micro: int | None = None
+    price_model: str | None = None
+    input_rate: float | None = None
+    output_rate: float | None = None
 
 
 CURRENT=ContextVar("stockman_invocation",default=None)
@@ -92,6 +102,23 @@ class AgentRuntime:
         self.session_locks={};self.lock=threading.Lock()
         self.max_models=settings.max_calls if settings else int(os.getenv('STOCKMAN_MAX_MODEL_CALLS','8'))
         self.max_tools=settings.max_tools if settings else int(os.getenv('STOCKMAN_MAX_TOOL_CALLS','12'))
+        def optional_number(name, minimum, maximum):
+            value=os.getenv(name,'').strip()
+            if not value:return None
+            try: result=float(value)
+            except ValueError:raise ValueError('invalid '+name) from None
+            if not math.isfinite(result) or not minimum<=result<=maximum:raise ValueError('invalid '+name)
+            return result
+        if settings:
+            self.task_budget=settings.task_budget_usd
+            self.price_model=settings.price_model
+            self.input_rate=settings.input_rate;self.output_rate=settings.output_rate
+        else:
+            self.task_budget=optional_number('STOCKMAN_TASK_BUDGET_USD',0.000001,1000000)
+            self.input_rate=optional_number('STOCKMAN_TASK_INPUT_RATE',0,10000)
+            self.output_rate=optional_number('STOCKMAN_TASK_OUTPUT_RATE',0,10000)
+            if (self.input_rate is None)!=(self.output_rate is None):raise ValueError('task input/output rates must be configured together')
+            self.price_model=os.getenv('STOCKMAN_TASK_PRICE_MODEL',GEMINI_MODEL) if self.input_rate is not None else None
         if model is None:
             key=settings.key if settings else GEMINI_API_KEY
             if not key:raise ValueError('GEMINI_API_KEY 未配置；离线演示请显式使用 OfflineModel')
@@ -130,18 +157,27 @@ class AgentRuntime:
             self.store.trace(current.task,agent,'model','start',{'call':current.models})
         @wrap_model_call
         def account_model(request, handler):
-            from .usage import record
+            from .usage import calls, price_for, record, summary
             current=CURRENT.get()
-            started=time.monotonic()
             name=getattr(request.model,'model',None) or getattr(request.model,'model_name',None)
-            try:
-                response=handler(request)
-                message=next((m for m in reversed(response.result) if isinstance(m,AIMessage)),None)
-                record(self.store,current.task,agent,'model',name,started,getattr(message,'usage_metadata',None))
-                return response
-            except Exception:
-                record(self.store,current.task,agent,'model',name,started,error=True)
-                raise
+            input_rate,output_rate=price_for(name,current.price_model,current.input_rate,current.output_rate)
+            # Serialize checks and calls within a task so parallel agents cannot both pass
+            # an already-exhausted threshold. One call may exceed it before usage is known.
+            with current.lock if current.budget_micro is not None and input_rate is not None else nullcontext():
+                bill=summary(calls(self.store,current.task))
+                if current.budget_micro is not None and input_rate is not None and bill['known_estimated_micro_usd']>=current.budget_micro:
+                    self.store.trace(current.task,agent,'model','budget_exhausted',{'reason':'known_cost_threshold'})
+                    raise TaskBudgetExceeded('任务已知费用达到阈值，剩余调查未完成')
+                started=time.monotonic()
+                try:
+                    response=handler(request)
+                    message=next((m for m in reversed(response.result) if isinstance(m,AIMessage)),None)
+                    record(self.store,current.task,agent,'model',name,started,getattr(message,'usage_metadata',None),
+                           input_rate=input_rate,output_rate=output_rate,extra_unknown=(getattr(request.model,'max_retries',1) or 1)>1)
+                    return response
+                except Exception:
+                    record(self.store,current.task,agent,'model',name,started,error=True,extra_unknown=True)
+                    raise
         @wrap_tool_call
         def trace_tool(request, handler):
             current=CURRENT.get()
@@ -170,7 +206,13 @@ class AgentRuntime:
 
     def _invoke(self, task, session, payload):
         original = payload["messages"][0].content if payload else json.loads(self.store.task(task)["input"])
-        token=CURRENT.set(Invocation(task,session,request=str(original),max_models=self.max_models,store=self.store))
+        if self.task_budget is not None:
+            self.store.execute('INSERT OR IGNORE INTO task_budget_limits(task_id,limit_micro_usd) VALUES(?,?)',(task,int(Decimal(str(self.task_budget))*1000000)))
+            persisted=self.store.execute('SELECT limit_micro_usd FROM task_budget_limits WHERE task_id=?',(task,))[0]['limit_micro_usd']
+        else:
+            limits=self.store.execute('SELECT limit_micro_usd FROM task_budget_limits WHERE task_id=?',(task,))
+            persisted=limits[0]['limit_micro_usd'] if limits else None
+        token=CURRENT.set(Invocation(task,session,request=str(original),max_models=self.max_models,store=self.store,budget_micro=persisted,price_model=self.price_model,input_rate=self.input_rate,output_rate=self.output_rate))
         try:
             # User chose local execution records; inherited LangSmith settings must not upload holdings.
             with tracing_context(enabled=False):
@@ -180,6 +222,14 @@ class AgentRuntime:
             result={'task_id':task,'text':redact(text),'model_calls':CURRENT.get().models,'tool_calls':CURRENT.get().tools}
             result['status']='partial' if CURRENT.get().failures else 'completed'
             result['failures']=CURRENT.get().failures
+            from .usage import calls, summary
+            result['usage_summary']=summary(calls(self.store,task))
+            if persisted is not None:
+                known=result['usage_summary']['known_estimated_micro_usd']
+                unknown=result['usage_summary']['cost_unknown_calls']
+                result['usage_summary']['limit_micro_usd']=persisted
+                result['usage_summary']['limit_reached']=known>=persisted
+                result['text']+=f'\n费用提示：已知估算 ${known/1000000:.6f}，任务阈值 ${persisted/1000000:.6f}；{unknown} 次调用费用部分或全部未知。阈值不是账单硬上限。'
             self.store.finish(task,result['status'],result)
             result['news']=CURRENT.get().news
             return result

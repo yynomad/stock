@@ -172,7 +172,11 @@ Yahoo 提供行情与日线；SEC 提供适用的公司财务披露。按需 Goo
 | `retention_days` | `BRIEFING_RETENTION_DAYS` | `30` |
 | `input_rate` / `output_rate` | `BRIEFING_INPUT_USD_PER_MILLION` / `BRIEFING_OUTPUT_USD_PER_MILLION` | 模板中可调的每百万 token 估算费率 |
 
-预算通过 SQLite 原子预留，超时保留未知用量估算。日报模型每次 SDK 只尝试一次，最多一次应用重试且重新预留；实际用量可得时结算。费用为估算，不能硬性封顶整个供应商账户账单；按需聊天／搜索另计。模型、费率和费用以自己的供应商配置与账单核对。
+预算通过 SQLite 原子预留，超时保留未知用量估算。日报模型每次 SDK 只尝试一次，最多一次应用重试且重新预留；实际用量可得时结算。
+
+**主动问答任务费用阈值（可选）**：在 stock.conf 的 [model] 中设置 task_budget_usd，并按需一起设置 input_rate 和 output_rate（单位：每百万 Token 美元）。price_model 指定费率适用的精确模型名，省略时使用 [model] 的 name；其他模型和未配置费率的调用显示未知。首次调用结束后按返回用量估算，达到阈值后阻止后续可估价模型调用并提示未完成。无法估算的调用及搜索附加费用仍可继续并标记未知；单次调用可能超过阈值，内部重试可能不可见，不能保证账单封顶。任务内可估价模型调用串行检查；搜索附加费不计入已知金额。默认不启用该阈值。
+
+本地 scripts/chat.py 使用环境变量 STOCKMAN_TASK_BUDGET_USD、STOCKMAN_TASK_PRICE_MODEL、STOCKMAN_TASK_INPUT_RATE 和 STOCKMAN_TASK_OUTPUT_RATE；输入与输出费率须同时设置。任务详情中的 usage_summary 汇总已知费用和费用未知调用；旧任务没有记录时不代表免费。日报继续使用独立的 [briefing] 配置。费用为估算，不能硬性封顶整个供应商账户账单；按需聊天／搜索另计。模型、费率和费用以自己的供应商配置与账单核对。
 
 持仓、必要股数／成本及公开资料可能进入按需模型请求；日报模型只接收公开材料、股票标识和关系证据。账户编号和券商密码不进入模型，LangSmith 云端追踪被禁用，执行记录保存在本机。
 

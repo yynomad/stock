@@ -67,7 +67,9 @@ class Application:
             return status
         except Exception as exc:
             self.runtime.store.execute("UPDATE updates SET status='failed' WHERE id=?",(identity,))
-            self.transport.deliver({'text':'本次任务未完成：'+type(exc).__name__+'。请检查本机配置与任务记录。'})
+            from .agents import TaskBudgetExceeded
+            text='本次任务已达到已知费用阈值，剩余调查未完成；未知费用仍可能产生。' if isinstance(exc,TaskBudgetExceeded) else '本次任务未完成：'+type(exc).__name__+'。请检查本机配置与任务记录。'
+            self.transport.deliver({'text':text})
             return 'failed'
 
     def build_daily(self,owner,now,day):

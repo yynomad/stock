@@ -47,3 +47,14 @@ class ServiceConfigTest(unittest.TestCase):
         env=dict(os.environ,STOCKMAN_EXPLICIT_CONFIG='1',STOCKMAN_OFFLINE='1',PYTHONDONTWRITEBYTECODE='1',PYTHONPATH=str(root/'src'),MONITOR_INTERVAL='invalid-legacy-value',YF_REQUEST_DELAY='nan')
         result=subprocess.run([sys.executable,'-B','-c','import stockman.service; from stockman import config; assert config.MONITOR_INTERVAL==5; assert config.YF_REQUEST_DELAY==5'],cwd=self.temp.name,env=env,capture_output=True,text=True,timeout=15)
         self.assertEqual(result.returncode,0,result.stderr)
+
+
+    def test_task_budget_configuration_is_optional_and_rates_are_paired(self):
+        config=load_config(self.path,ENV)
+        self.assertIsNone(config.model.task_budget_usd)
+        self.path.write_text(self.original.replace("max_tools = 12","max_tools = 12\ntask_budget_usd = 0.05\ninput_rate = 1.5\noutput_rate = 2.5\nprice_model = gemini-test"))
+        config=load_config(self.path,ENV)
+        self.assertEqual((config.model.task_budget_usd,config.model.price_model,config.model.input_rate,config.model.output_rate),(0.05,"gemini-test",1.5,2.5))
+        for extra in ["task_budget_usd = nan","task_budget_usd = 0","input_rate = 1","input_rate = 1\noutput_rate = -1"]:
+            self.path.write_text(self.original.replace("max_tools = 12","max_tools = 12\n"+extra))
+            with self.assertRaises(ConfigError):load_config(self.path,ENV)

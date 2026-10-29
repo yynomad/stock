@@ -1,4 +1,5 @@
 import json
+import os
 import subprocess
 import sys
 import tempfile
@@ -7,7 +8,7 @@ import unittest
 from unittest.mock import patch
 from types import SimpleNamespace
 from pathlib import Path
-from stockman.agents import AgentRuntime, OfflineModel
+from stockman.agents import AgentRuntime, OfflineModel, TaskBudgetExceeded
 from stockman.storage import Store
 from stockman.usage import calls, record
 
@@ -84,6 +85,68 @@ class UsageTest(unittest.TestCase):
                 self.assertEqual(row["input_tokens"],10)
                 self.assertEqual(row["extra_cost_unknown"],1)
             finally: CURRENT.reset(token);store.close()
+
+    def test_known_budget_stops_next_priced_call_and_persists_explanation(self):
+        class PricedModel(OfflineModel):
+            model_name: str="gemini-synthetic"
+            def _generate(self,*args,**kwargs):
+                response=super()._generate(*args,**kwargs)
+                response.generations[0].message.usage_metadata={"input_tokens":12,"output_tokens":8,"total_tokens":20}
+                return response
+        env={"STOCKMAN_TASK_BUDGET_USD":"0.000010","STOCKMAN_TASK_INPUT_RATE":"1","STOCKMAN_TASK_OUTPUT_RATE":"1","STOCKMAN_TASK_PRICE_MODEL":"gemini-synthetic"}
+        with tempfile.TemporaryDirectory() as d, patch.dict(os.environ,env):
+            runtime=AgentRuntime(d,PricedModel())
+            try:
+                with self.assertRaises(TaskBudgetExceeded):runtime.run("研究 AAPL")
+                task=runtime.store.execute("SELECT * FROM tasks")[0]
+                self.assertEqual(task["status"],"failed")
+                self.assertEqual(len(calls(runtime.store,task["id"])),1)
+                self.assertTrue(any(x["phase"]=="budget_exhausted" for x in runtime.store.traces(task["id"])))
+                out=subprocess.check_output([sys.executable,str(Path(__file__).resolve().parents[1]/"scripts/tasks.py"),"--data-dir",d,"--task",task["id"]],text=True)
+                summary=json.loads(out)["usage_summary"]
+                self.assertTrue(summary["limit_reached"])
+                self.assertEqual(summary["known_estimated_micro_usd"],20)
+            finally:runtime.close()
+
+    def test_unknown_model_cost_continues_and_is_reported(self):
+        env={"STOCKMAN_TASK_BUDGET_USD":"0.000010","STOCKMAN_TASK_INPUT_RATE":"1","STOCKMAN_TASK_OUTPUT_RATE":"1","STOCKMAN_TASK_PRICE_MODEL":"different-model"}
+        with tempfile.TemporaryDirectory() as d, patch.dict(os.environ,env):
+            runtime=AgentRuntime(d,OfflineModel(),{"research":lambda request:"evidence"})
+            try:
+                result=runtime.run("研究 AAPL")
+                self.assertEqual(result["status"],"completed")
+                self.assertGreater(result["usage_summary"]["cost_unknown_calls"],0)
+                self.assertIn("费用部分或全部未知",result["text"])
+            finally:runtime.close()
+
+    def test_parallel_child_calls_share_the_same_threshold(self):
+        class PricedModel(OfflineModel):
+            model_name: str="gemini-synthetic"
+            def _generate(self,*args,**kwargs):
+                time.sleep(0.01)
+                response=super()._generate(*args,**kwargs)
+                response.generations[0].message.usage_metadata={"input_tokens":12,"output_tokens":8,"total_tokens":20}
+                return response
+        env={"STOCKMAN_TASK_BUDGET_USD":"0.000050","STOCKMAN_TASK_INPUT_RATE":"1","STOCKMAN_TASK_OUTPUT_RATE":"1","STOCKMAN_TASK_PRICE_MODEL":"gemini-synthetic"}
+        with tempfile.TemporaryDirectory() as d,patch.dict(os.environ,env):
+            runtime=AgentRuntime(d,PricedModel())
+            try:
+                with self.assertRaises(TaskBudgetExceeded): runtime.run("完整分析 AAPL")
+                task=runtime.store.execute("SELECT id FROM tasks")[0]["id"]
+                rows=calls(runtime.store,task)
+                self.assertEqual(len(rows),3)
+                self.assertEqual(sum(r["estimated_micro_usd"] for r in rows),60)
+            finally:runtime.close()
+
+    def test_configured_budget_persists_in_task_ledger(self):
+        env={"STOCKMAN_TASK_BUDGET_USD":"0.000029"}
+        with tempfile.TemporaryDirectory() as d,patch.dict(os.environ,env):
+            runtime=AgentRuntime(d,OfflineModel())
+            try:
+                result=runtime.run("hello")
+                row=runtime.store.execute("SELECT limit_micro_usd FROM task_budget_limits WHERE task_id=?",(result["task_id"],))[0]
+                self.assertEqual(row["limit_micro_usd"],29)
+            finally:runtime.close()
 
     def test_google_thought_tokens_are_included_without_inventing_missing_usage(self):
         with tempfile.TemporaryDirectory() as d:

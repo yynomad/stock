@@ -25,7 +25,8 @@ def main():
         print(json.dumps(result,ensure_ascii=False,indent=2))
         return 0
     except Exception as exc:
-        print(json.dumps({'status':'failed','error_type':type(exc).__name__,'note':'查看本地任务记录；不表示真实接入成功'},ensure_ascii=False));return 2
+        note='已知费用达到任务阈值，剩余调查未完成；未知费用仍可能产生' if type(exc).__name__=='TaskBudgetExceeded' else '查看本地任务记录；不表示真实接入成功'
+        print(json.dumps({'status':'failed','error_type':type(exc).__name__,'note':note},ensure_ascii=False));return 2
     finally:
         if app:app.runtime.close()
 if __name__=='__main__':raise SystemExit(main())

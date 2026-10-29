@@ -35,6 +35,10 @@ class ModelConfig:
     max_calls:int=8
     max_tools:int=12
     roles:tuple=()
+    task_budget_usd:float|None=None
+    price_model:str|None=None
+    input_rate:float|None=None
+    output_rate:float|None=None
 
 @dataclass(frozen=True)
 class MonitorConfig:
@@ -59,7 +63,7 @@ class ServiceConfig:
 SCHEMA={
  'service':{'data_dir','timezone','log_level'},
  'broker':{'provider','account_env','host','port','client_id','timeout_seconds','sync_interval_seconds'},
- 'model':{'name','api_key_env','max_calls','max_tools','supervisor_model','portfolio_model','research_model','monitor_model'},
+ 'model':{'name','api_key_env','max_calls','max_tools','supervisor_model','portfolio_model','research_model','monitor_model','task_budget_usd','price_model','input_rate','output_rate'},
  'notification':{'provider','token_env','chat_id_env','allowed_users_env','interactive'},
  'briefing':{'enabled','time','daily_budget_usd','max_calls','max_output_tokens','max_events','lookback_hours','retention_days','input_rate','output_rate'},
  'monitor':{'interval_seconds','buffer_pct','max_daily_alerts','quote_max_age_seconds'},
@@ -124,8 +128,16 @@ def load_config(path,env=None):
     broker=BrokerConfig(provider,account,host,number('broker','port',4001,1,65535,True),number('broker','client_id',17,0,2147483647,True),
           number('broker','timeout_seconds',12,1,120),number('broker','sync_interval_seconds',900,1,86400))
     roles=tuple((role,value('model',role+'_model',value('model','name','gemini-3.5-flash-lite'))) for role in ('supervisor','portfolio','research','monitor'))
+    configured=parser['model'] if parser.has_section('model') else {}
+    has_in='input_rate' in configured
+    has_out='output_rate' in configured
+    if has_in != has_out:raise ConfigError('model.input_rate and model.output_rate must be configured together')
     model=ModelConfig(secret('model','api_key_env','GEMINI_API_KEY'),value('model','name','gemini-3.5-flash-lite'),
-          number('model','max_calls',8,1,100,True),number('model','max_tools',12,1,100,True),roles)
+          number('model','max_calls',8,1,100,True),number('model','max_tools',12,1,100,True),roles,
+          number('model','task_budget_usd',1,0.000001,1000000) if 'task_budget_usd' in configured else None,
+          value('model','price_model',value('model','name','gemini-3.5-flash-lite')) if has_in else None,
+          number('model','input_rate',1,0,10000) if has_in else None,
+          number('model','output_rate',1,0,10000) if has_out else None)
     notification=ChannelConfig(channel,secret('notification','token_env','TG_BOT_TOKEN'),int(target),allowed,boolean('notification','interactive',True))
     monitor=MonitorConfig(number('monitor','interval_seconds',300,1,86400),number('monitor','buffer_pct',0.02,0.000001,1),
           number('monitor','max_daily_alerts',5,1,100,True),number('monitor','quote_max_age_seconds',900,1,86400))

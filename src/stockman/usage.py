@@ -25,3 +25,17 @@ def record(store, task, role, kind, model, started, usage=None, error=None, inpu
 
 def calls(store, task):
     return store.execute("SELECT role,kind,provider,model,elapsed_ms,input_tokens,output_tokens,total_tokens,estimated_micro_usd,extra_cost_unknown,status,at FROM usage_calls WHERE task_id=? ORDER BY id", (task,))
+
+
+def summary(rows):
+    return {
+        "logical_calls":len(rows),
+        "known_estimated_micro_usd":sum(row["estimated_micro_usd"] or 0 for row in rows),
+        "cost_unknown_calls":sum(row["estimated_micro_usd"] is None or row["extra_cost_unknown"] for row in rows),
+        "note":"已知费用仅为估算；未知费用、SDK 内部重试和供应商账单可能不同。",
+    }
+
+def price_for(model, price_model, input_rate, output_rate):
+    if model and model == price_model and input_rate is not None and output_rate is not None:
+        return input_rate, output_rate
+    return None, None
