@@ -12,20 +12,20 @@ class ServiceConfigTest(unittest.TestCase):
     def tearDown(self):self.temp.cleanup()
     def test_explicit_paths_and_secrets_never_appear_in_repr(self):
         with patch('socket.socket.connect',side_effect=AssertionError('network')):
-            config=load_config(self.path,{**ENV,'BRIEFING_TIME':'22:00','IBKR_PORT':'9999'})
-        self.assertEqual(config.directory,(Path(self.temp.name)/'runtime').resolve());self.assertEqual(config.briefing.at,'08:00');self.assertEqual(config.broker.port,4001)
+            config=load_config(self.path,{**ENV,'BRIEFING_TIME':'22:00','SNAPTRADE_UNUSED':'9999'})
+        self.assertEqual(config.directory,(Path(self.temp.name)/'runtime').resolve());self.assertEqual(config.briefing.at,'08:00');self.assertEqual(config.broker.provider,'snaptrade')
         self.assertFalse(config.directory.exists())
         for value in ENV.values():
             if value!='123':self.assertNotIn(value,repr(config))
     def test_invalid_fields_and_values_are_rejected_without_echoing_values(self):
-        for old,new in [('provider = ibkr','provider = unknown-secret'),('port = 4001','port = -1'),('daily_budget_usd = 0.20','daily_budget_usd = nan'),('time = 08:00','time = 99:99'),('interactive = true','interactive = maybe'),('client_id = 17','client_id = 17\nclient_id = 18')]:
+        for old,new in [('provider = snaptrade','provider = unknown-secret'),('daily_budget_usd = 0.20','daily_budget_usd = nan'),('time = 08:00','time = 99:99'),('interactive = true','interactive = maybe')]:
             self.path.write_text(self.original.replace(old,new))
             with self.assertRaises(ConfigError) as caught:load_config(self.path,ENV)
             self.assertNotIn('unknown-secret',str(caught.exception))
         self.path.write_text(self.original+'\n[evil]\nkey=secret\n')
         with self.assertRaises(ConfigError):load_config(self.path,ENV)
     def test_missing_environment_unauthorized_owner_and_defaults_fail_early(self):
-        for change in [{'GEMINI_API_KEY':''},{'TG_ALLOWED_USERS':'124'},{'TG_CHAT_ID':'-123'},{'IBKR_ACCOUNT':'another-secret'}]:
+        for change in [{'GEMINI_API_KEY':''},{'TG_ALLOWED_USERS':'124'},{'TG_CHAT_ID':'-123'},{'SNAPTRADE_ACCOUNT_ID':'another-secret'}]:
             with self.assertRaises(ConfigError):load_config(self.path,{**ENV,**change})
         self.path.write_text('[DEFAULT]\nx=secret\n'+self.original)
         with self.assertRaises(ConfigError):load_config(self.path,ENV)

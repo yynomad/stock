@@ -14,10 +14,8 @@ class ConfigError(ValueError):pass
 class BrokerConfig:
     provider:str
     account:str=field(repr=False)
-    host:str='127.0.0.1'
-    port:int=4001
-    client_id:int=17
-    timeout:float=12
+    client_id:str=field(repr=False)
+    consumer_key:str=field(repr=False)
     sync_interval:float=900
 
 @dataclass(frozen=True)
@@ -62,7 +60,7 @@ class ServiceConfig:
 
 SCHEMA={
  'service':{'data_dir','timezone','log_level'},
- 'broker':{'provider','account_env','host','port','client_id','timeout_seconds','sync_interval_seconds'},
+ 'broker':{'provider','account_env','client_id_env','consumer_key_env','sync_interval_seconds'},
  'model':{'name','api_key_env','max_calls','max_tools','supervisor_model','portfolio_model','research_model','monitor_model','task_budget_usd','price_model','input_rate','output_rate'},
  'notification':{'provider','token_env','chat_id_env','allowed_users_env','interactive'},
  'briefing':{'enabled','time','daily_budget_usd','max_calls','max_output_tokens','max_events','lookback_hours','retention_days','input_rate','output_rate'},
@@ -101,12 +99,17 @@ def load_config(path,env=None):
         if required and not result.strip():raise ConfigError('unresolved environment reference: '+section+'.'+key)
         return result
     def relative(raw):return (path.parent/Path(raw).expanduser()).resolve()
-    provider=value('broker','provider','ibkr')
+    provider=value('broker','provider','snaptrade')
     channel=value('notification','provider','telegram')
-    if provider!='ibkr':raise ConfigError('unsupported broker.provider')
+    if provider!='snaptrade':raise ConfigError('unsupported broker.provider')
     if channel!='telegram':raise ConfigError('unsupported notification.provider')
-    account=secret('broker','account_env','IBKR_ACCOUNT')
-    if not re.fullmatch(r'U[0-9]{5,}',account):raise ConfigError('invalid broker.account_env')
+    from uuid import UUID
+    account=secret('broker','account_env','SNAPTRADE_ACCOUNT_ID')
+    try:
+        if str(UUID(account))!=account.lower():raise ValueError()
+    except ValueError:raise ConfigError('invalid broker.account_env') from None
+    client_id=secret('broker','client_id_env','SNAPTRADE_CLIENT_ID')
+    consumer_key=secret('broker','consumer_key_env','SNAPTRADE_CONSUMER_KEY')
     target=secret('notification','chat_id_env','TG_CHAT_ID')
     if not target.isdigit() or int(target)<=0:raise ConfigError('notification.chat_id_env requires a private owner')
     owners=secret('notification','allowed_users_env','TG_ALLOWED_USERS',False)
@@ -123,10 +126,7 @@ def load_config(path,env=None):
     except (ValueError,KeyError):raise ConfigError('invalid briefing/timezone configuration') from None
     level=value('service','log_level','INFO').upper()
     if level not in ('DEBUG','INFO','WARNING','ERROR'):raise ConfigError('invalid service.log_level')
-    host=value('broker','host','127.0.0.1')
-    if any(x.isspace() for x in host) or '/' in host or '@' in host:raise ConfigError('invalid broker.host')
-    broker=BrokerConfig(provider,account,host,number('broker','port',4001,1,65535,True),number('broker','client_id',17,0,2147483647,True),
-          number('broker','timeout_seconds',12,1,120),number('broker','sync_interval_seconds',900,1,86400))
+    broker=BrokerConfig(provider,account,client_id,consumer_key,number('broker','sync_interval_seconds',900,1,86400))
     roles=tuple((role,value('model',role+'_model',value('model','name','gemini-3.5-flash-lite'))) for role in ('supervisor','portfolio','research','monitor'))
     configured=parser['model'] if parser.has_section('model') else {}
     has_in='input_rate' in configured

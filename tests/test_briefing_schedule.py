@@ -72,7 +72,7 @@ class BriefingScheduleTest(unittest.TestCase):
         from stockman.agents import OfflineModel
         from stockman.portfolio import PortfolioService
         transport=Mock(chat=123)
-        factory=lambda store:PortfolioService(store,ibkr=lambda account:{'AAPL':{'shares':1}})
+        factory=lambda store:PortfolioService(store,reader=lambda account:{'AAPL':{'shares':1}})
         with patch.dict(os.environ,{'BRIEFING_ENABLED':'true','TG_ALLOWED_USERS':'123'}):
             app=Application(Path(self.temp.name)/'app',OfflineModel(),portfolio_factory=factory,transport=transport)
         try:
@@ -81,7 +81,7 @@ class BriefingScheduleTest(unittest.TestCase):
             app.briefing.generate=Mock(return_value={'text':'synthetic'})
             app.build_daily('123',1001,'day')
             snapshot=app.briefing.generate.call_args.args[1]
-            self.assertEqual(snapshot['source'],'ibkr')
+            self.assertEqual(snapshot['source'],'snaptrade')
             self.assertEqual(set(snapshot['positions']),{'AAPL'})
         finally:app.runtime.close()
 

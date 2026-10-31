@@ -56,7 +56,7 @@ class EndToEndTest(unittest.TestCase):
                 self.assertEqual(result['status'],'completed',result)
                 rules=app.runtime.store.execute('SELECT symbol,spec FROM rules')
                 self.assertEqual([r['symbol'] for r in rules],['AAPL'])
-                self.assertEqual(json.loads(rules[0]['spec'])['source'],'ibkr')
+                self.assertEqual(json.loads(rules[0]['spec'])['source'],'snaptrade')
             finally:app.runtime.close()
 
     def test_unsupported_update_is_not_left_processing(self):

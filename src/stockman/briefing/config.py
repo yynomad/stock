@@ -31,8 +31,9 @@ class BriefingConfig:
     @classmethod
     def load(cls,env=None):
         env=os.environ if env is None else env
-        if env.get('BRIEFING_PORTFOLIO_SOURCE','ibkr')!='ibkr':
-            raise ValueError('BRIEFING_PORTFOLIO_SOURCE: 截图来源已移除；请移除此旧配置并使用券商持仓')
+        source=env.get('BRIEFING_PORTFOLIO_SOURCE','snaptrade')
+        if source=='image':raise ValueError('BRIEFING_PORTFOLIO_SOURCE: 截图来源已移除')
+        if source!='snaptrade':raise ValueError('BRIEFING_PORTFOLIO_SOURCE: 不支持旧持仓来源；请配置 SnapTrade')
         enabled=env.get('BRIEFING_ENABLED','false').lower()
         if enabled not in ('true','false'):raise ValueError('BRIEFING_ENABLED must be true or false')
         return cls(budget=float(env.get('BRIEFING_DAILY_BUDGET_USD','0.20')),

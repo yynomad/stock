@@ -36,7 +36,7 @@ class SyntheticNews:
 def create_offline_app(directory,transport=None):
     market=SyntheticMarket()
     def portfolio(store):
-        return PortfolioService(store,ibkr=lambda account:{'AAPL':{'shares':0.5,'avg_cost':100}},
+        return PortfolioService(store,reader=lambda account:{'AAPL':{'shares':0.5,'avg_cost':100}},
                                 bars=demo_bars)
     app=Application(directory,OfflineModel(),portfolio_factory=portfolio,
                     research=ResearchService(market,SyntheticSEC(),SyntheticNews()),market=market,transport=transport)
@@ -50,7 +50,7 @@ def end_to_end(directory):
     results=[]
     try:
         result=app.handle('检查持仓','demo');results.append(result)
-        assert 'ibkr' in result['text'] and 'AAPL' in result['text']
+        assert 'snaptrade' in result['text'] and 'AAPL' in result['text']
         for symbol in ('AAPL','QQQ'):
             result=app.handle('研究 '+symbol,'demo');results.append(result)
             assert result['news'] and 'SYNTHETIC NEWS' not in result['text']
@@ -72,6 +72,6 @@ def end_to_end(directory):
         assert app.runtime.store.execute('SELECT enabled FROM rules')[0]['enabled']==0
         assert len(sent)==1
         return {'synthetic':True,'tasks':len(results)+len(sent),'deliveries':len(sent),
-                'sources':['ibkr (synthetic)'],'restart_and_dedup':'passed',
+                'sources':['snaptrade (synthetic)'],'restart_and_dedup':'passed',
                 'database':str(app.directory/'stockman.sqlite')}
     finally:app.runtime.close()

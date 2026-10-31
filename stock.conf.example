@@ -6,12 +6,10 @@ timezone = Asia/Shanghai
 log_level = INFO
 
 [broker]
-provider = ibkr
-account_env = IBKR_ACCOUNT
-host = 127.0.0.1
-port = 4001
-client_id = 17
-timeout_seconds = 12
+provider = snaptrade
+account_env = SNAPTRADE_ACCOUNT_ID
+client_id_env = SNAPTRADE_CLIENT_ID
+consumer_key_env = SNAPTRADE_CONSUMER_KEY
 sync_interval_seconds = 900
 
 [model]

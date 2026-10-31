@@ -1,6 +1,6 @@
 # StockMan
 
-配置驱动的美股／ETF 持仓信息助手。通过 IBKR 只读同步持仓，结合公开资料生成中文日报、回答研究问题，并通过 Telegram 推送价格提醒。
+配置驱动的美股／ETF 持仓信息助手。通过 SnapTrade 只读同步 IBKR 持仓，结合公开资料生成中文日报、回答研究问题，并通过 Telegram 推送价格提醒。
 
 后台任务独立运行，不依赖用户发消息。项目使用 Python、LangChain、Gemini 和 SQLite，面向单机、单用户、单券商账户；没有网页界面或自动交易功能。
 
@@ -12,7 +12,7 @@
 - **价格监控**：按交易日历检查有效报价，达到规则条件时才调用模型并推送；规则与提醒状态持久保存。
 - **本地可观察性**：SQLite 保存任务、调用记录、会话检查点、预算估算和投递状态；提供无凭据的离线演示。
 
-项目处于开发阶段：离线流程已有自动化验收，真实 IBKR、模型、数据源及 Telegram 连接和报告质量仍需在自己的环境中核对。离线演示使用合成数据，不能证明真实持仓或研究效果。
+项目处于开发阶段：离线流程已有自动化验收，真实 SnapTrade/IBKR、模型、数据源及 Telegram 连接和报告质量仍需在自己的环境中核对。离线演示使用合成数据，不能证明真实持仓或研究效果。
 
 ## 目录
 
@@ -55,7 +55,7 @@ cp stock.conf.example stock.conf
 | 配置组 | 主要内容与示例默认值 |
 | --- | --- |
 | `[service]` | 数据目录 `runtime`、时区 `Asia/Shanghai`、日志级别 |
-| `[broker]` | `provider=ibkr`，Gateway 地址、端口、client ID、账户环境变量名；每 900 秒同步 |
+| `[broker]` | `provider=snaptrade`，Personal API 凭据与目标账户环境变量名；每 900 秒尝试同步 |
 | `[model]` | Gemini 模型名、API key 环境变量名；每任务最多 8 次逻辑模型／12 次工具调用 |
 | `[notification]` | `provider=telegram`，token、chat ID、授权用户的环境变量名；`interactive=true` 接收文字提问 |
 | `[briefing]` | 日报开关、08:00、预算估算目标、调用／输出限制、资料窗口与历史保留 |
@@ -68,7 +68,9 @@ cp stock.conf.example stock.conf
 
 | 环境变量 | 用途 |
 | --- | --- |
-| `IBKR_ACCOUNT` | 实际持仓账户 ID，须能通过已登录 Gateway 访问 |
+| `SNAPTRADE_CLIENT_ID` | SnapTrade Personal API 的 Client ID |
+| `SNAPTRADE_CONSUMER_KEY` | SnapTrade Personal API 的 Consumer Key |
+| `SNAPTRADE_ACCOUNT_ID` | SnapTrade 中目标账户 UUID；须核对联名账户 |
 | `GEMINI_API_KEY` | 模型及按需 Google 搜索接地 |
 | `TG_BOT_TOKEN` | Telegram Bot token |
 | `TG_CHAT_ID` | 本人目标私聊的正数数字 ID |
@@ -77,7 +79,15 @@ cp stock.conf.example stock.conf
 
 这些环境变量名可在 `.conf` 中调整。密钥、真实 `stock.conf`、数据库和日志不要提交 Git 或粘贴到 Issue。
 
-IBKR 认证在自己的 IB Gateway 中完成。启用 Socket API，勾选 **Read-Only API**，核对端口、可信地址及所选账户权限。程序不接收券商密码，也没有下单、撤单或资金操作工具。指定账户不可用时，只允许读取该账户的缓存；没有缓存会明确失败。
+在 SnapTrade Personal 中先完成 IBKR 授权，再启用 SnapTrade 双重认证并创建 Personal API Key，将 Client ID 与 Consumer Key 放入自己的环境变量；不要提供券商登录密码给本程序。本项目只读取账号和持仓，拒绝失效或非只读的连接，不调用下单、撤单或资金操作接口。账户数据经 SnapTrade 处理，须核对其授权与隐私条款。
+
+目标账户使用 SnapTrade 内部 UUID，而不是 IBKR 的 U 开头账户号。可在自己的本机终端，通过已配置 Client ID、Consumer Key 的环境（或本地 .env）运行以下只读命令。它仅显示账户 UUID、类别和账号尾号；请依据尾号选出联名账户，并把对应 UUID 写入本地 SNAPTRADE_ACCOUNT_ID。不要把命令输出、UUID 或密钥贴到公开位置：
+
+```sh
+venv/bin/python scripts/smoke.py --service snaptrade --read-only --list-accounts
+```
+
+后台服务从进程环境而非 .env 自动读取这些变量。数据可能延迟：显示 SnapTrade 提供的持仓数据时间，而非本次请求时间；未同步完成、连接失效或时间不可确认时明确报错。空列表如不能证明初始同步完成会视为未知而非空仓。同步不可用时仅使用同一 SnapTrade 账户的缓存；旧 Gateway 缓存不会自动迁移或复用。
 
 ### 2. 检查配置
 
@@ -236,10 +246,10 @@ venv/bin/python scripts/validate.py
 
 Telegram 格式检查使用 `venv/bin/python scripts/smoke.py --service telegram --dry-run`，不发送消息。完整场景使用假模型、假时钟和假发送器，验证权限、来源隔离、预算、重启去重及未知投递。
 
-真实只读连接检查须在准备好自己的环境后显式执行；Gemini 探测可能产生费用，IBKR 结果仍需人工核对账户、股数与只读设置：
+真实只读连接检查须在准备好自己的环境后显式执行；Gemini 探测可能产生费用，SnapTrade 结果仍需人工核对账户、股数和数据时效：
 
 ```sh
-venv/bin/python scripts/smoke.py --service ibkr --read-only
+venv/bin/python scripts/smoke.py --service snaptrade --read-only
 venv/bin/python scripts/smoke.py --service gemini --symbol AAPL
 ```
 
@@ -247,6 +257,6 @@ venv/bin/python scripts/smoke.py --service gemini --symbol AAPL
 
 ## 限制与许可证
 
-当前仅实现 IBKR、Telegram 和单账户部署，没有多账户聚合、其他通道、Web 管理台或自动交易。Yahoo 可能延迟或限流；引用匹配只验证来源一致性，不保证模型解释正确。本文中的功能描述不等于真实外部服务验收通过。
+当前仅实现通过 SnapTrade 读取单账户、Telegram 和单账户部署，没有多账户聚合、其他通道、Web 管理台或自动交易。Yahoo 可能延迟或限流；引用匹配只验证来源一致性，不保证模型解释正确。本文中的功能描述不等于真实外部服务验收通过。
 
 项目计划开源，许可证尚未确定，当前没有声明开源许可证。只提供规则分析与研究参考，不承诺投资结论、收益或费用硬上限。
