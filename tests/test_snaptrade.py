@@ -38,6 +38,41 @@ class FakeClient:
         self.calls.append(account_id);return SimpleNamespace(body=self.data)
 
 class SnapTradeTest(unittest.TestCase):
+    def test_position_rejections_have_specific_safe_codes(self):
+        from stockman.brokers.snaptrade import _positions
+        edits=[
+            ('asset_unsupported',lambda r:r['instrument'].update(kind='option')),
+            ('currency_unsupported',lambda r:r.update(currency='HKD')),
+            ('currency_unsupported',lambda r:(r.pop('currency'),r['instrument'].pop('currency'))),
+            ('instrument_missing',lambda r:r.pop('instrument')),
+            ('symbol_missing',lambda r:r['instrument'].pop('symbol')),
+            ('units_missing',lambda r:r.update(units=None)),
+            ('units_invalid',lambda r:r.update(units='NaN')),
+            ('cost_invalid',lambda r:r.update(cost_basis='private-value-must-not-appear')),
+        ]
+        for code,edit in edits:
+            fake=FakeClient();edit(fake.data['results'][0])
+            with self.subTest(code=code),self.assertRaises(BrokerError) as caught:
+                SnapTradeBroker(Config(),fake).sync()
+            self.assertEqual(caught.exception.code,code)
+            self.assertNotIn('private-value',str(caught.exception))
+        for data,code in (({},'positions_shape_invalid'),([None],'position_shape_invalid')):
+            with self.subTest(code=code),self.assertRaises(BrokerError) as caught:_positions(data)
+            self.assertEqual(caught.exception.code,code)
+        fake=FakeClient();fake.data['results']*=2
+        with self.assertRaises(BrokerError) as caught:SnapTradeBroker(Config(),fake).sync()
+        self.assertEqual(caught.exception.code,'symbol_duplicate')
+
+    def test_response_shape_rejections_have_specific_safe_codes(self):
+        cases=[('accounts_shape_invalid',lambda f:setattr(f,'list_all_user_accounts',lambda:SimpleNamespace(body=[]))),
+               ('sync_shape_invalid',lambda f:f.accounts[0].update(sync_status='invalid')),
+               ('positions_response_invalid',lambda f:setattr(f,'data',[])),
+               ('freshness_shape_invalid',lambda f:f.data.update(data_freshness='invalid'))]
+        for code,edit in cases:
+            fake=FakeClient();edit(fake)
+            with self.subTest(code=code),self.assertRaises(BrokerError) as caught:SnapTradeBroker(Config(),fake).sync()
+            self.assertEqual(caught.exception.code,code)
+
     def test_sdk_contract_and_only_target_account(self):
         fake=FakeClient();fake.accounts.append({'id':OTHER})
         snap=SnapTradeBroker(Config(),fake).sync()
@@ -125,6 +160,19 @@ class SnapTradeTest(unittest.TestCase):
 
 
 class SnapTradeSmokeTest(unittest.TestCase):
+    def test_smoke_reports_currency_failure_without_position_details(self):
+        import importlib.util
+        spec=importlib.util.spec_from_file_location('snap_smoke_currency',Path(__file__).resolve().parents[1]/'scripts'/'smoke.py')
+        module=importlib.util.module_from_spec(spec);spec.loader.exec_module(module)
+        fake=FakeClient();fake.data['results'][0].update(currency='HKD')
+        env={'SNAPTRADE_CLIENT_ID':'private-client','SNAPTRADE_CONSUMER_KEY':'private-secret','SNAPTRADE_ACCOUNT_ID':ACCOUNT}
+        with patch.dict(os.environ,env),patch('snaptrade_client.SnapTrade',return_value=fake),patch.object(sys,'argv',['smoke.py','--service','snaptrade','--read-only']),redirect_stdout(io.StringIO()) as output:
+            self.assertEqual(module.main(),2)
+        result=json.loads(output.getvalue())
+        self.assertEqual(result['failure_code'],'currency_unsupported')
+        for private in ('private-secret',ACCOUNT,'AAPL','HKD'):
+            self.assertNotIn(private,output.getvalue())
+
     def test_local_account_discovery_uses_v2_and_masks_broker_number(self):
         import importlib.util
         spec=importlib.util.spec_from_file_location('snap_smoke',Path(__file__).resolve().parents[1]/'scripts'/'smoke.py')

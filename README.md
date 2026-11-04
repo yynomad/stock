@@ -89,6 +89,8 @@ venv/bin/python scripts/smoke.py --service snaptrade --read-only --list-accounts
 
 后台服务从进程环境而非 .env 自动读取这些变量。数据可能延迟：显示 SnapTrade 提供的持仓数据时间，而非本次请求时间；未同步完成、连接失效或时间不可确认时明确报错。空列表如不能证明初始同步完成会视为未知而非空仓。同步不可用时仅使用同一 SnapTrade 账户的缓存；旧 Gateway 缓存不会自动迁移或复用。
 
+只读探测失败时查看 `failure_code`：`request_failed` 表示请求/SDK 异常；`account_unavailable` 表示目标账户不可用；`holdings_unavailable` 表示持仓不可用或初始同步未完成；`currency_unsupported` 表示持仓币种缺失或不是 `USD`；`asset_unsupported` 表示存在当前未支持的资产类型。首版只接收美元美股／ETF／ADR，遇到未支持资产或币种会拒绝整份快照，不静默丢弃部分持仓。诊断只输出固定错误码，不暴露密钥、账户或持仓明细。
+
 ### 2. 检查配置
 
 ```sh
