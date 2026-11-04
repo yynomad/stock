@@ -255,6 +255,39 @@ venv/bin/python scripts/smoke.py --service gemini --symbol AAPL
 
 提交问题时请附脱敏的复现步骤、Python／依赖版本和错误类型。修改业务前补充正常、边界及失败路径回归，再运行统一检查；不要提交真实配置、运行数据或本地开发笔记。
 
+## 分析质量评测
+
+[固定案例](evals/cases-v1.json) 包含 24 个自编合成场景，覆盖证据不足、错误引用、数字与时间口径、工具参数、多轮会话、提示注入、权限、失败及预算边界。评测复用现有 Agent 工具循环、日报引用校验和鉴权入口；券商、行情、搜索与消息通道均使用合成资料。评测不启动后台服务，不读取 `.env` 或 `stock.conf`。
+
+默认执行离线协议回放，禁止网络，每次在临时目录运行；结果保存在被忽略的 `runtime/evals/<本次运行>/`：
+
+```sh
+venv/bin/python scripts/evaluate.py run --offline --output runtime/evals
+# 只检查指定案例；重复的每次尝试都保留，不择优挑选
+venv/bin/python scripts/evaluate.py run --offline --case C01 --case F03 --repeat 2
+```
+
+每次生成 `report.json`、可直接打开的 `report.html` 和 `review-template.json`。报告包含数据集版本/hash、Git 与代码/提示词标识、固定资料时钟、模型、全部调用/错误/降级、tokens、费用未知和耗时分布。离线响应和 tokens 是预设测试数据；`offline_replay_pass` 只证明流程与检测器通过，不能证明真实模型分析质量。超时或无 usage 不视为免费，SDK 重试关闭，日报仍最多进行一次有记录的应用重试。
+
+真实模型评测必须显式指定 `--live` 和 Gemini 型号，并在当前进程环境设置自己的 `GEMINI_API_KEY`。以下命令会产生供应商费用，业务工具仍是同一组合成资料，不是实盘联调：
+
+```sh
+venv/bin/python scripts/evaluate.py run --live --model gemini-3.5-flash-lite --max-cases 4 --repeat 1 --max-calls 12 --call-timeout 30 --timeout 120
+```
+
+`--max-calls` 限制每个案例尝试的总模型调用；`--call-timeout` 为单次供应商超时，`--timeout` 为整次隔离执行超时。可同时提供 `--input-rate` 与 `--output-rate`，单位为指定型号每百万 token 的美元估算费率；未提供时费用明确标记未知。估算、调用数和超时不是供应商账单硬上限。鉴权及阈值 guard 始终使用假模型，真实报告将其模拟用量与供应商用量分开。
+
+人工复核时复制 `review-template.json` 为自己的评审文件，填写 `reviewer`、带时区的 ISO `reviewed_at`，并逐项核对任务、原始资料、所有模型响应、工具请求及最终回答。`supported` 检查事实/引用是否支持结论，`uncertainty_clear` 检查缺失/冲突/时效是否说清，`task_completed` 检查是否完成任务；填写 `pass` 或 `fail` 和具体 `reason`，未评保持 `pending`。适用性由数据集预先固定，不能事后用 `not_applicable` 跳过失败项。
+
+```sh
+venv/bin/python scripts/evaluate.py review --report runtime/evals/<本次运行>/report.json --input runtime/evals/<本次运行>/my-review.json
+venv/bin/python scripts/evaluate.py compare --baseline runtime/evals/<基线>/report.json --candidate runtime/evals/<候选>/report.json
+```
+
+导入会更新 JSON/HTML 并保留评审历史；评审与运行记录绑定，修改执行内容后不能套用旧评审。对比要求数据集、模式、阈值、运行配置一致且覆盖完整；模型或提示词变化会列出，不混排离线和真实成绩。
+
+通过标准：离线检查及错误回答控制样本全部通过；越权、泄密、已检出的事实/引用错误等关键失败为零容忍；真实模式普通任务完成率至少 95%，事实支持与不确定性人工评审不得失败。关键词/原文匹配只能发现部分错误，语义支持必须人工复核。少跑案例、运行错误或人工待评都不能宣称完整真实基线通过；真实待评退出 3，执行/判定失败退出 2。首版成本和延迟只做观测，不设置未经测量的费用或 P95 保证。小型合成案例集的结果不代表生产准确率，DeepSeek 等未接入模型不在当前支持范围。
+
 ## 限制与许可证
 
 当前仅实现通过 SnapTrade 读取单账户、Telegram 和单账户部署，没有多账户聚合、其他通道、Web 管理台或自动交易。Yahoo 可能延迟或限流；引用匹配只验证来源一致性，不保证模型解释正确。本文中的功能描述不等于真实外部服务验收通过。
