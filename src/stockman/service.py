@@ -132,4 +132,11 @@ def read_status(config):
         jobs=[dict(r) for r in conn.execute('SELECT * FROM service_health ORDER BY job')] if 'service_health' in tables else []
         broker=[dict(r) for r in conn.execute('SELECT status,last_attempt,last_success,error FROM broker_health WHERE provider=? AND scope=?',(config.broker.provider,config.broker.account))] if 'broker_health' in tables else []
         daily=[dict(r) for r in conn.execute('SELECT day,status,report,attempts,error FROM brief_daily WHERE owner=? ORDER BY day DESC LIMIT 10',(str(config.channel.chat),))] if 'brief_daily' in tables else []
-        return {'status':'recorded_state','jobs':jobs,'broker':broker,'daily':daily,'note':'记录时间请自行核对；unknown 需人工核实，记录不证明进程仍存活。'}
+        coverage=None
+        if 'snapshots' in tables:
+            rows=conn.execute('SELECT * FROM snapshots WHERE source=? AND scope=? ORDER BY asof DESC,rowid DESC LIMIT 1',(config.broker.provider,config.broker.account)).fetchall()
+            if rows:
+                from .storage import decode_snapshot
+                from .brokers.coverage import coverage_info
+                coverage=coverage_info(decode_snapshot(dict(rows[0])))
+        return {'status':'recorded_state','jobs':jobs,'broker':broker,'daily':daily,'holdings_coverage':coverage,'note':'记录时间请自行核对；unknown 需人工核实，记录不证明进程仍存活。'}

@@ -7,6 +7,7 @@ import time
 from .pa_strategy import analyze_pa
 from .position_decision import build_position_decision
 from .yahoo_data import fetch_yahoo_bars
+from .brokers.coverage import coverage_info,coverage_notice,make_coverage
 
 
 def valid_symbol(symbol):
@@ -59,7 +60,7 @@ class PortfolioService:
         # Injectable synthetic reader for offline tests; never selected in live configuration.
         try:
             positions=normalize_positions(self.reader(account))
-            self.store.snapshot('snaptrade',account,positions)
+            self.store.snapshot('snaptrade',account,positions,coverage=make_coverage(len(positions),len(positions),[]))
             row=self.store.latest('snaptrade',account);row['cached']=False
         except Exception as exc:
             row=self.store.latest('snaptrade',account)
@@ -71,6 +72,11 @@ class PortfolioService:
 
     def report(self, request: str):
         snapshot=self.load()
+        coverage=coverage_info(snapshot)
+        from .agents import CURRENT
+        current=CURRENT.get()
+        if current is not None:
+            with current.lock:current.coverage=coverage
         rows=[]
         for symbol,position in snapshot['positions'].items():
             row={'symbol':symbol,'currency_sign':'$','shares':position.get('shares'),'avg_cost':position.get('avg_cost')}
@@ -86,5 +92,5 @@ class PortfolioService:
             rows.append(row)
         # Raw account identifiers are intentionally omitted from model-visible output.
         return json.dumps({'source':snapshot['source'],'asof':snapshot['asof'],'cached':snapshot['cached'],
-                           'stale':snapshot.get('stale',False),'positions':rows,
-                           'note':'空组合' if not rows else '规则参考；未下单'},ensure_ascii=False)
+                           'stale':snapshot.get('stale',False),'positions':rows,'coverage':coverage,
+                           'note':coverage_notice(coverage)+' '+('范围内无持仓。' if not rows else '规则参考；未下单。')},ensure_ascii=False)

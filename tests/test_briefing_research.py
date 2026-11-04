@@ -117,7 +117,10 @@ class BriefingResearchTest(unittest.TestCase):
         class Empty(StockSource):
             def fetch(self,now):return []
         service=StockBriefing(self.store,BriefingConfig(),registry={'issuers':{},'rss':[]})
-        snapshot={'source':'ibkr','asof':2000000000,'positions':{'AAA':{'shares':1}}}
+        # This synthetic case explicitly covers all returned rows; legacy caches
+        # without coverage metadata are now correctly labelled unknown/partial.
+        from stockman.brokers.coverage import make_coverage
+        snapshot={'source':'ibkr','asof':2000000000,'positions':{'AAA':{'shares':1}},'coverage':make_coverage(1,1,[])}
         empty=service.generate('local',snapshot,2000000000,sources=[Empty()])
         failed=service.generate('local',snapshot,2000000000,sources=[BrokenSource()])
         self.assertEqual(empty['status'],'completed');self.assertEqual(failed['status'],'partial')

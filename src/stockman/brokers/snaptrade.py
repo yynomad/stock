@@ -2,8 +2,10 @@
 from datetime import datetime
 from collections.abc import Mapping
 import math
+import re
 from .base import BrokerError, BrokerSnapshot
-from snaptrade_client.schemas import BoolSchema
+from .coverage import make_coverage
+from snaptrade_client.schemas import BoolSchema,NoneClass
 
 def _flag(value):
     return bool(value) if isinstance(value,(bool,BoolSchema)) else None
@@ -35,11 +37,13 @@ def _positions(data):
         currency=row.get('currency') or instrument.get('currency')
         if currency!='USD':raise BrokerError('unsupported or unknown currency',code='currency_unsupported')
         units=row.get('units')
+        if isinstance(units,NoneClass):units=None
         if units is None or isinstance(units,bool):raise BrokerError('missing position units',code='units_missing')
         try: shares=float(units)
         except (ValueError,TypeError,OverflowError):raise BrokerError('invalid units',code='units_invalid') from None
         if not math.isfinite(shares):raise BrokerError('invalid units',code='units_invalid')
         cost=row.get('cost_basis')
+        if isinstance(cost,NoneClass):cost=None
         if cost is not None:
             if isinstance(cost,bool):raise BrokerError('invalid cost',code='cost_invalid')
             try:cost=float(cost)
@@ -48,6 +52,28 @@ def _positions(data):
             if cost==0:cost=None
         result[symbol]={'shares':shares,'avg_cost':cost,'currency':currency,'asset_type':'STK'}
     return result
+
+
+def _scoped_positions(data):
+    if not isinstance(data,(list,tuple)):raise BrokerError('invalid SnapTrade positions',code='positions_shape_invalid')
+    included=[];excluded=[]
+    for index,row in enumerate(data):
+        if not isinstance(row,Mapping):raise BrokerError('invalid position',code='position_shape_invalid')
+        instrument=row.get('instrument')
+        if not isinstance(instrument,Mapping):raise BrokerError('missing instrument',code='instrument_missing')
+        currency=row.get('currency') or instrument.get('currency')
+        if not isinstance(currency,str) or not re.fullmatch('[A-Z]{3}',currency):
+            raise BrokerError('unsupported or unknown currency',code='currency_unsupported')
+        instrument_currency=instrument.get('currency')
+        if row.get('currency') and instrument_currency and row['currency']!=instrument_currency:
+            raise BrokerError('inconsistent position currency',code='currency_conflict')
+        if currency!='USD':
+            symbol=instrument.get('symbol')
+            symbol=str(symbol) if isinstance(symbol,str) and re.fullmatch(r'[A-Z0-9][A-Z0-9.:-]{0,31}',symbol) else None
+            excluded.append({'index':index,'symbol':symbol,'currency':str(currency),'reason':'non_usd'})
+        else:included.append(row)
+    positions=_positions(included)
+    return positions,make_coverage(len(data),len(positions),excluded)
 
 
 class SnapTradeBroker:
@@ -99,6 +125,7 @@ class SnapTradeBroker:
             freshness=data.get('data_freshness') or {}
             if not isinstance(freshness,Mapping):raise BrokerError('invalid freshness',code='freshness_shape_invalid')
             asof=_timestamp(freshness.get('as_of') or sync.get('positions') or holdings.get('last_successful_sync'))
-            return BrokerSnapshot(self.provider,self.account,asof,_positions(data['results']))
+            positions,coverage=_scoped_positions(data['results'])
+            return BrokerSnapshot(self.provider,self.account,asof,positions,coverage=coverage)
         except BrokerError:raise
         except Exception as exc:raise BrokerError('SnapTrade request failed: '+type(exc).__name__,code='request_failed') from None

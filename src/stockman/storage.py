@@ -7,6 +7,18 @@ import threading
 import time
 import uuid
 
+def decode_snapshot(row):
+    """Read legacy positions or the atomic positions+scope envelope; no DB writes."""
+    row=dict(row);data=json.loads(row.pop('payload'))
+    if isinstance(data,dict) and isinstance(data.get('format'),str):
+        from .brokers.coverage import FORMAT,validate_coverage
+        if data['format']!=FORMAT or set(data)!={'format','positions','coverage'} or not isinstance(data['positions'],dict):
+            raise ValueError('invalid snapshot envelope')
+        row['positions']=data['positions']
+        row['coverage']=validate_coverage(data['coverage'],len(row['positions']))
+    else:row['positions']=data
+    return row
+
 
 def redact(value):
     if isinstance(value, dict):
@@ -63,9 +75,13 @@ class Store:
     def traces(self, task):
         return self.execute("SELECT * FROM traces WHERE task_id=? ORDER BY id",(task,))
 
-    def snapshot(self, source, scope, positions, asof=None, identity=None):
+    def snapshot(self, source, scope, positions, asof=None, identity=None,coverage=None):
         identity=identity or uuid.uuid4().hex
-        self.execute("INSERT OR REPLACE INTO snapshots VALUES(?,?,?,?,?)",(identity,source,scope,asof or time.time(),json.dumps(positions,ensure_ascii=False)))
+        payload=positions
+        if coverage is not None:
+            from .brokers.coverage import FORMAT,validate_coverage
+            payload={'format':FORMAT,'positions':positions,'coverage':validate_coverage(coverage,len(positions))}
+        self.execute("INSERT OR REPLACE INTO snapshots VALUES(?,?,?,?,?)",(identity,source,scope,asof or time.time(),json.dumps(payload,ensure_ascii=False)))
         return identity
 
     def latest(self, source, scope=None):
@@ -73,14 +89,14 @@ class Store:
         args=[source]
         if scope is not None:
             sql+=" AND scope=?"; args.append(scope)
-        rows=self.execute(sql+" ORDER BY asof DESC LIMIT 1",args)
+        rows=self.execute(sql+" ORDER BY asof DESC,rowid DESC LIMIT 1",args)
         if not rows:return None
-        row=rows[0];row['positions']=json.loads(row.pop('payload'));return row
+        return decode_snapshot(rows[0])
 
     def get_snapshot(self, identity):
         rows=self.execute("SELECT * FROM snapshots WHERE id=?",(identity,))
         if not rows:return None
-        row=rows[0];row['positions']=json.loads(row.pop('payload'));return row
+        return decode_snapshot(rows[0])
 
     def close(self):
         self.conn.close()

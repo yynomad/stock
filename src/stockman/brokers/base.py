@@ -17,11 +17,17 @@ class BrokerSnapshot:
     asof:float=0
     positions:dict=field(default_factory=dict)
     complete:bool=True
+    coverage:dict|None=None
     def validate(self,provider,account,now):
         if self.provider!=provider or self.account!=account or self.complete is not True:raise BrokerError('incomplete or wrong-scope broker snapshot')
         if isinstance(self.asof,bool) or not isinstance(self.asof,(int,float)) or not math.isfinite(self.asof) or not 0<self.asof<=now+30:raise BrokerError('invalid snapshot timestamp')
         from ..portfolio import normalize_positions
-        return normalize_positions(self.positions)
+        positions=normalize_positions(self.positions)
+        if self.coverage is not None:
+            from .coverage import validate_coverage
+            try:validate_coverage(self.coverage,len(positions))
+            except ValueError:raise BrokerError('invalid snapshot coverage',code='coverage_invalid') from None
+        return positions
 
 class BrokerAdapter(Protocol):
     provider:str
@@ -53,13 +59,18 @@ class BrokerService:
                 snapshot=adapter.sync();positions=snapshot.validate(adapter.provider,adapter.account,now)
                 if cached and snapshot.asof<cached['asof']:raise BrokerError('out-of-order snapshot')
                 if cached and snapshot.asof==cached['asof']:
-                    if positions!=cached['positions']:raise BrokerError('changed positions with unchanged source timestamp')
+                    from .coverage import same_coverage
+                    if positions!=cached['positions'] or (cached.get('coverage') is not None and not same_coverage(snapshot.coverage,cached['coverage'])):raise BrokerError('changed positions with unchanged source timestamp')
+                    # A successful fresh read may enrich a legacy snapshot whose scope was unknown.
+                    if cached.get('coverage') is None and snapshot.coverage is not None:
+                        self.store.snapshot(adapter.provider,adapter.account,positions,asof=snapshot.asof,identity=cached['id'],coverage=snapshot.coverage)
+                        cached=self.store.latest(adapter.provider,adapter.account)
                     self.last_result='ok'
-                    self.store.execute('INSERT OR REPLACE INTO broker_health VALUES(?,?,?,?,?,?)',(adapter.provider,adapter.account,'ok',now,now,None))
+                    self.store.execute('INSERT OR REPLACE INTO broker_health VALUES(?,?,?,?,?,?)',(adapter.provider,adapter.account,self._health_status(snapshot),now,now,None))
                     return self._row(cached,now,True)
-                self.store.snapshot(adapter.provider,adapter.account,positions,asof=snapshot.asof)
+                self.store.snapshot(adapter.provider,adapter.account,positions,asof=snapshot.asof,coverage=snapshot.coverage)
                 self.last_result='ok'
-                self.store.execute('INSERT OR REPLACE INTO broker_health VALUES(?,?,?,?,?,?)',(adapter.provider,adapter.account,'ok',now,now,None))
+                self.store.execute('INSERT OR REPLACE INTO broker_health VALUES(?,?,?,?,?,?)',(adapter.provider,adapter.account,self._health_status(snapshot),now,now,None))
                 return self._row(self.store.latest(adapter.provider,adapter.account),now,False)
             except Exception as exc:
                 self.last_result='failed'
@@ -71,3 +82,6 @@ class BrokerService:
     def health(self):
         rows=self.store.execute('SELECT status,last_attempt,last_success,error FROM broker_health WHERE provider=? AND scope=?',(self.adapter.provider,self.adapter.account))
         return rows[0] if rows else {'status':'not_synced'}
+    @staticmethod
+    def _health_status(snapshot):
+        return 'partial' if snapshot.coverage and snapshot.coverage['excluded'] else 'ok'

@@ -42,7 +42,7 @@ class SnapTradeTest(unittest.TestCase):
         from stockman.brokers.snaptrade import _positions
         edits=[
             ('asset_unsupported',lambda r:r['instrument'].update(kind='option')),
-            ('currency_unsupported',lambda r:r.update(currency='HKD')),
+            ('currency_unsupported',lambda r:r.update(currency='usd')),
             ('currency_unsupported',lambda r:(r.pop('currency'),r['instrument'].pop('currency'))),
             ('instrument_missing',lambda r:r.pop('instrument')),
             ('symbol_missing',lambda r:r['instrument'].pop('symbol')),
@@ -127,7 +127,7 @@ class SnapTradeTest(unittest.TestCase):
     def test_rejects_incomplete_mixed_unsupported_or_duplicate_positions(self):
         for edit in (
             lambda f:f.data['results'][0]['instrument'].update(kind='option'),
-            lambda f:f.data['results'][0].update(currency='JPY'),
+            lambda f:(f.data['results'][0].pop('currency'),f.data['results'][0]['instrument'].pop('currency')),
             lambda f:f.data['results'][0].update(units=None),
             lambda f:f.data['results'].append(f.data['results'][0]),
             lambda f:f.data['results'][0].update(units='NaN'),
@@ -160,16 +160,20 @@ class SnapTradeTest(unittest.TestCase):
 
 
 class SnapTradeSmokeTest(unittest.TestCase):
-    def test_smoke_reports_currency_failure_without_position_details(self):
+    def test_smoke_reports_scoped_coverage_without_position_details(self):
         import importlib.util
         spec=importlib.util.spec_from_file_location('snap_smoke_currency',Path(__file__).resolve().parents[1]/'scripts'/'smoke.py')
         module=importlib.util.module_from_spec(spec);spec.loader.exec_module(module)
-        fake=FakeClient();fake.data['results'][0].update(currency='HKD')
+        fake=FakeClient();fake.data['results'][0].update(currency='HKD');fake.data['results'][0]['instrument'].update(currency='HKD')
         env={'SNAPTRADE_CLIENT_ID':'private-client','SNAPTRADE_CONSUMER_KEY':'private-secret','SNAPTRADE_ACCOUNT_ID':ACCOUNT}
         with patch.dict(os.environ,env),patch('snaptrade_client.SnapTrade',return_value=fake),patch.object(sys,'argv',['smoke.py','--service','snaptrade','--read-only']),redirect_stdout(io.StringIO()) as output:
-            self.assertEqual(module.main(),2)
+            self.assertEqual(module.main(),0)
         result=json.loads(output.getvalue())
-        self.assertEqual(result['failure_code'],'currency_unsupported')
+        self.assertEqual(result['status'],'read_verified')
+        self.assertEqual(result['position_count'],0)
+        self.assertEqual(result['coverage']['excluded_positions'],1)
+        self.assertEqual(result['coverage']['total_positions'],1)
+        self.assertTrue(result['coverage']['partial'])
         for private in ('private-secret',ACCOUNT,'AAPL','HKD'):
             self.assertNotIn(private,output.getvalue())
 

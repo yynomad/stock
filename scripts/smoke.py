@@ -54,7 +54,10 @@ def main():
             snapshot=SnapTradeBroker(BrokerConfig('snaptrade',account,client_id,consumer_key)).sync()
             import time
             positions=snapshot.validate('snaptrade',account,time.time())
+            from stockman.brokers.coverage import coverage_info,coverage_notice
+            coverage=coverage_info({'positions':positions,'coverage':snapshot.coverage})
             print(json.dumps({'status':'read_verified','position_count':len(positions),'asof':snapshot.asof,
+                              'coverage':{key:value for key,value in coverage.items() if key!='excluded'},'scope_note':coverage_notice({**coverage,'excluded':[]}),
                               'limitations':'用户需核对目标联名账户、持仓数量及数据时效；结果不证明实时或完整覆盖'},ensure_ascii=False))
         elif args.service=='gemini':
             from stockman.research import GoogleNews,valid_symbol

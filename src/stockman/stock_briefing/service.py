@@ -9,6 +9,7 @@ from ..briefing.budget import Budget
 from .agent import ResearchAgent
 from .relations import Relations,scope,relevant
 from .sources import PublicHTTP,configured_sources,load_registry
+from ..brokers.coverage import coverage_notice
 
 def stamp(value,zone):return datetime.fromtimestamp(value,ZoneInfo(zone)).strftime('%Y-%m-%d %H:%M %Z')
 
@@ -58,13 +59,14 @@ class StockBriefing:
             candidates=[group[0] for group in groups][:min(20,config.max_events*2)]
             grouped={group[0].identity:group for group in groups}
             allowed=[i for i in candidates if policies[i.source].analyze]
-            explained,status=self.research.explain(task,allowed,self.budget,now,relations,holdings['symbols']) if allowed and config.budget else ([], 'model_disabled' if config.budget==0 else ('no_new_evidence' if not candidates else 'no_analyzable_new_evidence'))
+            explained,status=self.research.explain(task,allowed,self.budget,now,relations,holdings['symbols'],holdings['coverage']) if allowed and config.budget else ([], 'model_disabled' if config.budget==0 else ('no_new_evidence' if not candidates else 'no_analyzable_new_evidence'))
             chosen={row['id']:row for row in explained}
             selected=([i for i in candidates if i.identity in chosen] if explained else candidates[:config.max_events])
             displayed=list(selected)
             status=status if explained or not allowed else status+'; deterministic_source_fallback'
             lines=[f'Stock 持仓简报 · {day}',f'资料截止：{stamp(now,config.timezone)}；主要覆盖最近 {config.lookback_hours} 小时。',
                 f'持仓：{holdings["source"]}，时点 {stamp(holdings["asof"],config.timezone)}'+('（缓存）' if holdings['cached'] else '')+('（超过一天，需更新）' if holdings['stale'] else '')]
+            lines.append(coverage_notice(holdings['coverage']))
             previous=self.store.execute("SELECT at FROM brief_reports WHERE owner=? AND status='sent' ORDER BY at DESC LIMIT 1",(owner,))
             if previous and now-previous[0]['at']>config.lookback_hours*3600:lines.append('覆盖缺口：上次成功投递早于当前窗口，未补抓全部历史。')
             if not selected:lines.append('成功取得的来源和窗口内没有筛选出新增；不代表市场没有新闻。')
@@ -96,7 +98,7 @@ class StockBriefing:
             text='\n'.join(lines)
             meta={'health':health,'holdings':holdings,'asof':now,'status':status,'budget':bill,'relations':relations,'event_groups':len(groups),'selected':len(selected)}
             identity=self.history.save(owner,day,displayed,policies,text,meta)
-            result={'task_id':task,'report_id':identity,'text':text,'status':'partial' if failed or missing or holdings['stale'] or status not in ('explained','no_new_evidence') else 'completed','meta':meta}
+            result={'task_id':task,'report_id':identity,'text':text,'status':'partial' if failed or missing or holdings['stale'] or holdings['coverage']['partial'] or status not in ('explained','no_new_evidence') else 'completed','meta':meta}
             self.store.finish(task,result['status'],{'report_id':identity,'budget':bill,'health':health})
             self.history.prune(config.retention_days,now)
             return result
