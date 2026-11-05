@@ -3,9 +3,15 @@ import json
 
 from ..research import financial_facts
 from ..research_queries import ResearchQueries
+from ..sec_filings import FilingReader, filing_request
 
 
 def parse_lookup(request):
+    if isinstance(request, dict) and request.get('tool') == 'lookup_filing':
+        required = {'tool','symbol','form','section'}
+        if set(request) not in (required, required | {'report_end'}) or not isinstance(request['symbol'],str):
+            raise ValueError('invalid daily filing lookup')
+        return 'lookup_filing',request['symbol'],filing_request(request['form'],request['section'],request.get('report_end'))
     if not isinstance(request, dict) or set(request) not in ({'tool','symbol'}, {'tool','symbol','period'}):
         raise ValueError('invalid daily lookup request')
     tool, symbol = request['tool'], request['symbol']
@@ -26,6 +32,8 @@ class DailyInvestigation:
         self.issuers = issuers
         self.http = http
         self.now = now
+        self.filing_citations = []
+        self.filing_summary = None
 
     def lookup(self, request):
         tool,symbol,period = parse_lookup(request)
@@ -33,6 +41,11 @@ class DailyInvestigation:
             return self.queries.reject(tool,'scope_denied')
         if tool == 'lookup_evidence':
             return self.queries.lookup((tool,symbol),lambda:self._read_evidence(symbol))
+        if tool == 'lookup_filing':
+            form,section,report_end = period
+            key = (tool,symbol,form,section,report_end)
+            reader = FilingReader(self.issuers,self.http)
+            return self.queries.lookup(key,lambda:reader.read(symbol,form,section,report_end,self.now),once=True)
         issuer = self.issuers.get(symbol, {})
         cik = str(issuer.get('cik',''))
         if not cik.isascii() or not cik.isdigit() or not 1 <= len(cik) <= 10 or int(cik)==0:

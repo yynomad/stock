@@ -8,6 +8,7 @@ from .brokers import BrokerService,create_broker
 from .channels import create_channel
 from .portfolio import PortfolioService
 from .research import ResearchService,SECClient,GoogleNews
+from .sec_filings import FilingReader
 from .market import YahooMarket
 from .monitoring import MonitoringService
 from .briefing.schedule import Scheduler
@@ -23,7 +24,10 @@ class BackendService(Application):
         if not self.logger.handlers:self.logger.addHandler(logging.StreamHandler())
         self.stop_event=threading.Event();self.workers=[];self.closed=False;self.next_sync=0;self.next_price=0
         self.market=market or YahooMarket(proxy='',quote_age=config.monitor.quote_age)
-        self.research=research or ResearchService(self.market,SECClient(config.sec_user_agent),GoogleNews(config.model.key,dict(config.model.roles)['research']))
+        registry=load_registry(config.sources)
+        http=PublicHTTP(config.sec_user_agent)
+        self.research=research or ResearchService(self.market,SECClient(config.sec_user_agent),GoogleNews(config.model.key,dict(config.model.roles)['research']),
+                                                filings=FilingReader(registry['issuers'],http))
         self.runtime=AgentRuntime(self.directory,model,services={
             'portfolio':lambda request:self.portfolio.report(request),
             'research':lambda request:self.research.collect(request),
@@ -38,7 +42,7 @@ class BackendService(Application):
             self.portfolio=PortfolioService(store,broker=self.broker,bars=self.market.bars)
             self.monitor=MonitoringService(store,self.portfolio,self.market,settings=config.monitor)
             self.sources=sources
-            self.briefing=StockBriefing(store,config.briefing,daily_model,load_registry(config.sources),PublicHTTP(config.sec_user_agent),
+            self.briefing=StockBriefing(store,config.briefing,daily_model,registry,http,
                 model_factory=lambda:make_model(config.briefing,config.model.key,dict(config.model.roles)['research']))
             self.daily=Scheduler(store,config.briefing,str(config.channel.chat),self.allowed,self.build_daily,self.transport.deliver)
             self.daily.recover()

@@ -64,12 +64,21 @@ class ResearchQueries:
             return self._save(key, result)
 
     def summary(self):
-        return {
+        summary = {
             'queries': self.attempts,
             'limit': self.limit,
             'outcomes': [{'tool': key[0], 'status': status} for key, status in self.outcomes.items()],
-            'evidence': [result for result in self.cache.values() if result['status'] == 'ok'],
+            'evidence': [result for key,result in self.cache.items() if result['status'] == 'ok' and key[0] != 'lookup_filing'],
         }
+        filings = [{key: value for key,value in result.items() if key != 'passages'}
+                   for result in self.filing_lookups() if 'filing' in result]
+        if filings:
+            summary['filings'] = filings
+        return summary
+
+    def filing_lookups(self):
+        with self.lock:
+            return [result for key,result in self.cache.items() if key[0]=='lookup_filing']
 
 
 STATUS_TEXT = {
@@ -81,11 +90,20 @@ STATUS_TEXT = {
     'model_budget_exhausted': '模型调用或费用额度已用尽',
     'scope_denied': '标的不在本次调查范围',
     'already_attempted': '该查询已尝试，本次未重复调用',
+    'filing_missing': '未找到所选申报或主文档',
+    'filing_request_invalid': '请指定一份 10-K 或 10-Q，以及有效的报告期末',
+    'filing_metadata_invalid': '申报信息缺失或格式不符',
+    'filing_not_reviewed': '该发行人尚未启用正文读取',
+    'filing_rate_limited': 'SEC 请求被限速',
+    'filing_access_denied': 'SEC 暂时拒绝访问',
+    'filing_too_large': '文档超出下载大小上限',
+    'filing_parse_failed': '主文档解析失败',
+    'filing_section_missing': '主文档未找到可核验的目标章节段落',
 }
 
 
 def research_gaps(summary):
-    labels={'lookup_quote':'报价','lookup_daily_bars':'日线','lookup_financials':'SEC 财务','lookup_news':'新闻','lookup_evidence':'已审核材料','research':'研究'}
+    labels={'lookup_quote':'报价','lookup_daily_bars':'日线','lookup_financials':'SEC 财务','lookup_news':'新闻','lookup_evidence':'已审核材料','lookup_filing':'SEC 正文','research':'研究'}
     return list(dict.fromkeys(f'{labels.get(row["tool"],"研究")}：{STATUS_TEXT[row["status"]]}'
                               for row in summary['outcomes'] if row['status'] in STATUS_TEXT))
 

@@ -8,7 +8,7 @@
 
 - **持仓复盘**：分析指定账户的美元美股／ETF／ADR 子集，保留非美元排除清单和覆盖范围；校验股数、成本和时间，使用确定性代码计算 PA 指标与仓位规则。
 - **每日简报**：采集配置的 SEC／RSS 来源，去重并解释重要新增，默认每天北京时间 08:00 生成；恢复后只补当天一份。
-- **按需研究**：围绕单只美股或 ETF 选择报价、日线、SEC 财务和新闻工具，保留来源、时间、已有证据和缺失资料。
+- **按需研究**：围绕单只美股或 ETF 选择报价、日线、SEC 财务、申报正文和新闻工具，保留来源、时间、已有证据和缺失资料。
 - **价格监控**：按交易日历检查有效报价，达到规则条件时才调用模型并推送；规则与提醒状态持久保存。
 - **本地可观察性**：SQLite 保存任务、调用记录、会话检查点、预算估算和投递状态；提供无凭据的离线演示。
 
@@ -128,6 +128,7 @@ venv/bin/stockman --config stock.conf --status
 ```text
 检查持仓
 研究 AAPL
+研究 AAPL 10-Q 2024-12-28，管理层如何解释营收变化？
 研究 QQQ
 AAPL 最新价格
 AAPL 最近一季营收
@@ -171,7 +172,11 @@ venv/bin/python scripts/briefing.py --status --data-dir runtime
 
 ## 数据来源与费用
 
-默认来源见 [briefing.sources.json](briefing.sources.json)：9 个美股发行人的 SEC 申报元数据及美联储货币政策 RSS。SEC 元数据只能确认申报类型和时间，**不包含财报／公告正文**。ETF 不套用公司财务口径，未配置的基金资料会显示缺失。
+默认来源见 [briefing.sources.json](briefing.sources.json)。包括 9 个发行人的 SEC 申报元数据及美联储货币政策 RSS。元数据确认申报类型和时间；Company Facts 提供标准化财务指标；正文工具读取公司在申报中对业务、经营表现和风险的原文。ETF 不套用公司财务口径，未配置的基金资料会显示缺失。
+
+问答和日报共用 SEC 正文工具。仅对设置 `filing_body_reviewed: true` 且配置了 CIK 的发行人开放，需要配置 `SEC_USER_AGENT`。每次任务最多补查一份 10-K 或 10-Q 的 HTML 主文档，支持管理层讨论、风险因素以及 10-K 的业务章节。给出 YYYY-MM-DD 格式的期末可查找指定报告期，缺省时取 SEC 近期索引内、截至任务时点已披露的最新同类型申报。修订件、附件、8-K、历史归档索引和表格数值解析超出当前范围。
+
+可核验引文附 SEC 接收时间、报告期、申报编号、章节和原文链接。有唯一 HTML 锚点时链接直接定位，否则可在主文档内搜索短引文。正文和候选段落只在当次任务中使用，历史记录可保留经逐字校验的短引文和摘要。请求失败或找不到对应章节时，会显示缺口及已取得的申报信息。
 
 自定义官方 RSS 需逐源审核 `review_url` 和 `reviewed/analyze/store_metadata/store_body/store_analysis` 权限。未审核的来源不采集；正文默认不持久保存；不允许保存分析的来源只作临时展示。可参考 [SEC 开发资料](https://www.sec.gov/about/developer-resources)、[美联储 RSS](https://www.federalreserve.gov/feeds/feeds.htm) 和[版权说明](https://www.federalreserve.gov/disclaimer.htm)。
 

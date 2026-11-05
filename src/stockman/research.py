@@ -16,11 +16,16 @@ from .pa_strategy import analyze_pa
 from .market import YahooMarket
 from .agents import CURRENT,CallLimit,check_task_cost
 from .sec_access import SEC_GATE
+from .sec_filings import filing_request
+
+FILING_FORM = re.compile(r'(?<![A-Za-z0-9])10-[KQ](?:/A)?(?![A-Za-z0-9])',re.IGNORECASE)
 
 
 def mentioned_symbols(request):
+    request=FILING_FORM.sub(' ',request)
+    request=re.sub(r'(?<![A-Za-z0-9])MD&A(?![A-Za-z0-9])',' ',request,flags=re.IGNORECASE)
     matches=re.findall(r'(?<![A-Za-z0-9])\$?([A-Z][A-Z0-9.-]{0,14})(?![A-Za-z0-9])',request)
-    ignore={'ETF','PA','IBKR','USD','SEC','ADR','EPS','CEO','AI','RSS','GDP','CPI'}
+    ignore={'ETF','PA','IBKR','USD','SEC','ADR','EPS','CEO','AI','RSS','GDP','CPI','EDGAR','CIK'}
     return {match.rstrip('.-') for match in matches}-ignore
 
 
@@ -168,13 +173,15 @@ def news_html(bundle):
 
 
 class ResearchService:
-    def __init__(self,market=None,sec=None,news=None):
+    def __init__(self,market=None,sec=None,news=None,filings=None):
         self.market=market or YahooMarket();self.sec=sec or SECClient();self.news=news or GoogleNews()
+        self.filings=filings
 
     def tools(self):
         from langchain_core.tools import StructuredTool
-        return [StructuredTool.from_function(method) for method in
-                (self.lookup_quote,self.lookup_daily_bars,self.lookup_financials,self.lookup_news)]
+        methods=[self.lookup_quote,self.lookup_daily_bars,self.lookup_financials,self.lookup_news]
+        if self.filings is not None:methods.append(self.lookup_filing)
+        return [StructuredTool.from_function(method) for method in methods]
 
     def _lookup(self,name,symbol,operation,period=None):
         current=CURRENT.get()
@@ -186,7 +193,7 @@ class ResearchService:
             result=current.research.reject(name,'scope_denied')
         else:
             key=(name,symbol) if period is None else (name,symbol,period)
-            result=current.research.lookup(key,lambda:operation(symbol),once=name=='lookup_news')
+            result=current.research.lookup(key,lambda:operation(symbol),once=name in ('lookup_news','lookup_filing'))
         return json.dumps(result,ensure_ascii=False,default=str)
 
     def lookup_quote(self,symbol: str):
@@ -234,6 +241,26 @@ class ResearchService:
             return {'status':'ok','symbol':ticker,'source':'Gemini Google Search','fetched_at':bundle.get('queried_at',time.time()),
                     'note':'原文、引用与关联搜索建议见单独附件。'}
         return self._lookup('lookup_news',symbol,fetch)
+
+    def lookup_filing(self,symbol: str,form: Literal['10-K','10-Q'],
+                      section: Literal['management','risks','business'],report_end: str|None=None):
+        """Read a SEC primary filing section. report_end is the explicit ISO period end, or omit for the latest disclosed filing."""
+        current=CURRENT.get()
+        if current is None or current.research is None:
+            raise RuntimeError('Missing research task')
+        current.filing_requested=True
+        dates=set(re.findall(r'(?<![0-9])[0-9]{4}-[0-9]{2}-[0-9]{2}(?![0-9])',current.request))
+        forms=set(FILING_FORM.findall(current.request.upper()))
+        if len(dates)>1 or len(forms)>1 or any(form.endswith('/A') for form in forms):
+            return json.dumps(current.research.reject('lookup_filing','filing_request_invalid'))
+        report_end=next(iter(dates),None)
+        if forms:form=next(iter(forms))
+        try:
+            filing_request(form,section,report_end)
+        except ValueError:
+            return json.dumps(current.research.reject('lookup_filing','filing_request_invalid'))
+        return self._lookup('lookup_filing',symbol,lambda ticker:self.filings.read(ticker,form,section,report_end,time.time()),
+                            f'{form}:{section}:{report_end or "latest"}')
     def collect(self,request: str):
         symbol=symbol_from_request(request)
         evidence={'symbol':symbol,'fetched_at':time.time(),'missing':[]}

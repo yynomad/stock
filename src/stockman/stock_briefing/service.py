@@ -12,6 +12,7 @@ from .relations import Relations,scope,relevant
 from .sources import PublicHTTP,configured_sources,load_registry
 from ..brokers.coverage import coverage_notice
 from ..research_queries import research_gaps
+from ..sec_filings import citation_lines, filing_metadata_lines
 
 def stamp(value,zone):return datetime.fromtimestamp(value,ZoneInfo(zone)).strftime('%Y-%m-%d %H:%M %Z')
 
@@ -72,11 +73,12 @@ class StockBriefing:
                 explained=[]
                 status='model_disabled' if config.budget==0 else ('no_new_evidence' if not candidates else 'no_analyzable_new_evidence')
             research=investigation.queries.summary() if investigation is not None else None
+            citations=investigation.filing_citations if investigation is not None else []
             gaps=research_gaps(research) if research is not None else []
             chosen={row['id']:row for row in explained}
             selected=([i for i in representatives if i.identity in chosen] if explained else candidates[:config.max_events])
             displayed=list(selected)
-            status=status if explained or not allowed else status+'; deterministic_source_fallback'
+            status=status if explained or not allowed or citations else status+'; deterministic_source_fallback'
             lines=[f'Stock 持仓简报 · {day}',f'资料截止：{stamp(now,config.timezone)}；主要覆盖最近 {config.lookback_hours} 小时。',
                 f'持仓：{holdings["source"]}，时点 {stamp(holdings["asof"],config.timezone)}'+('（缓存）' if holdings['cached'] else '')+('（超过一天，需更新）' if holdings['stale'] else '')]
             lines.append(coverage_notice(holdings['coverage']))
@@ -99,6 +101,10 @@ class StockBriefing:
                     lines.append(f'同事件的另一进展原文：{(excerpt or extra.title)[:300]}\n来源：{extra.source} {extra.url} [证据 {extra.identity}]')
                     displayed.append(extra)
             if research is not None:
+                if citations:
+                    lines.extend(['申报正文补充：'+investigation.filing_summary,*citation_lines(citations)])
+                elif research.get('filings'):
+                    lines.extend(['本次没有可核验的申报正文引文。',*filing_metadata_lines(research['filings'])])
                 rendered=set()
                 for result in research['evidence']:
                     for metric,fact in result.get('financials',{}).items():
@@ -122,6 +128,7 @@ class StockBriefing:
             text='\n'.join(lines)
             meta={'health':health,'holdings':holdings,'asof':now,'status':status,'budget':bill,'relations':relations,'event_groups':len(groups),'selected':len(selected)}
             if research is not None:meta['research']=research
+            if citations:meta['filing_citations']=citations
             can_store_analysis=investigation is None or all(policies[item.source].store_analysis for item in investigation.items.values())
             identity=self.history.save(owner,day,displayed,policies,text,meta,store_analysis=can_store_analysis)
             partial=failed or missing or gaps or holdings['stale'] or holdings['coverage']['partial'] or status not in ('explained','no_new_evidence')
