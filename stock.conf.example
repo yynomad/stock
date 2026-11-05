@@ -17,6 +17,8 @@ name = gemini-3.5-flash-lite
 api_key_env = GEMINI_API_KEY
 max_calls = 8
 max_tools = 12
+max_research_queries = 3
+research_timeout_seconds = 90
 # Optional soft threshold per interactive task (USD); omit to disable.
 # task_budget_usd = 0.05
 # USD per million tokens, only for the named model. Verify your provider prices.
@@ -37,6 +39,9 @@ enabled = true
 time = 08:00
 daily_budget_usd = 0.20
 max_calls = 8
+max_research_queries = 3
+max_report_model_calls = 4
+research_timeout_seconds = 90
 max_output_tokens = 2048
 max_events = 5
 lookback_hours = 24

@@ -212,7 +212,7 @@ class EvaluationTest(unittest.TestCase):
         changed = deepcopy(self.report)
         changed['metadata']['mode'] = 'live'  # summary fixture only; no live execution
         summary = summarize(changed)
-        self.assertEqual(summary['model_calls']['observed'], 64)
+        self.assertEqual(summary['model_calls']['observed'], 65)
         self.assertEqual(summary['costs']['simulated_guard_calls'], 2)
 
     def test_live_pending_partial_or_runtime_error_can_never_pass(self):

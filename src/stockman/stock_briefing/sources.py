@@ -32,7 +32,7 @@ class PublicHTTP:
     def __init__(self,user_agent=None,get=requests.get,sleep=time.sleep):
         self.user_agent=user_agent if user_agent is not None else os.getenv('SEC_USER_AGENT','')
         self.get=get;self.sleep=sleep
-    def read(self,url,hosts):
+    def read(self,url,hosts,*,max_bytes=2*1024*1024):
         url=canonical_url(url);host=urlsplit(url).hostname
         if host not in hosts:raise PermissionError('host not allowed')
         addresses=socket.getaddrinfo(host,443,type=socket.SOCK_STREAM)
@@ -50,7 +50,7 @@ class PublicHTTP:
                     response.raise_for_status();parts=[];size=0
                     for part in response.iter_content(16384):
                         size+=len(part)
-                        if size>2*1024*1024:raise ValueError('source response too large')
+                        if size>max_bytes:raise ValueError('source response too large')
                         parts.append(part)
                     return b''.join(parts)
             except (requests.Timeout,requests.ConnectionError):

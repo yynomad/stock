@@ -75,6 +75,8 @@ def observed_model(case, options, journal, replay=None):
                 raise TimeoutError('synthetic transient model timeout')
             answer = case['replay']
             content = daily_text(case, answer) if case['kind'] == 'daily' else answer
+            if case['id'] == 'E02' and state['calls'] == 1:
+                content = json.dumps({'lookup':{'tool':'lookup_evidence','symbol':'AAPL'}})
             role = case.get('role') if case['kind'] == 'agent' else None
             calls = []
             if role and not isinstance(messages[-1], ToolMessage):
@@ -84,7 +86,14 @@ def observed_model(case, options, journal, replay=None):
                 query = str(next(m.content for m in reversed(messages) if isinstance(m, HumanMessage)))
                 if case.get('symbol') and case['symbol'] not in query:
                     query = case['symbol'] + ' ' + query
-                calls = [{'name': name, 'args': {'request': query}, 'id': f'eval_{state["calls"]}', 'type': 'tool_call'}]
+                args = {'request': query}
+                if role == 'research' and 'lookup_quote' in self.names:
+                    if case['id'] in ('E03','S01'):name = 'lookup_news'
+                    elif case['id'] in ('N03','T04','F01'):name = 'lookup_financials'
+                    else:name = 'lookup_quote'
+                    args = {'symbol': case['symbol']}
+                    if name == 'lookup_financials':args['period'] = 'quarter'
+                calls = [{'name': name, 'args': args, 'id': f'eval_{state["calls"]}', 'type': 'tool_call'}]
             return ChatResult(generations=[ChatGeneration(message=AIMessage(
                 content='' if calls else content, tool_calls=calls,
                 usage_metadata={'input_tokens': 100, 'output_tokens': 20, 'total_tokens': 120}))])
@@ -164,7 +173,18 @@ def run_agent(case, options, journal, directory):
                 raise TimeoutError('synthetic tool timeout')
             return json.dumps({'fixture_clock': case['clock'], 'data': case['fixture']}, ensure_ascii=False)
         return collect
-    runtime = AgentRuntime(directory, model, {role: service(role) for role in ('portfolio', 'research', 'monitor')}, settings)
+    research = None
+    if case.get('role') == 'research':
+        from stockman.research import ResearchService
+        class FixtureResearch(ResearchService):
+            def _lookup(self, name, symbol, operation, period=None):
+                def fixture(ticker):
+                    data = json.loads(service('research')(ticker))
+                    return {'status':'ok', 'fixture':data}
+                return super()._lookup(name, symbol, fixture, period)
+        research = FixtureResearch()
+    runtime = AgentRuntime(directory, model, {role: service(role) for role in ('portfolio', 'research', 'monitor')}, settings,
+                           research=research)
     result = {}
     try:
         for turn in case.get('turns', [{'session': 'owner', 'text': case['task']}]):
@@ -182,6 +202,8 @@ def run_daily(case, options, journal, directory):
     from stockman.briefing.budget import Budget
     from stockman.briefing.config import BriefingConfig
     from stockman.stock_briefing.agent import ResearchAgent
+    from stockman.stock_briefing.investigation import DailyInvestigation
+    from stockman.research_queries import research_gaps
     from stockman.storage import Store
     from stockman.usage import calls
     model, _ = observed_model(case, options, journal)
@@ -190,10 +212,13 @@ def run_daily(case, options, journal, directory):
     store = Store(Path(directory)/'daily.sqlite')
     try:
         task = store.create_task('eval', case['task'])
+        items = evidence(case)
+        investigation = DailyInvestigation(store,task,config,case['clock'],items,items,('AAPL',),{},None)
         output, status = ResearchAgent(store, config, model).explain(
-            task, evidence(case), Budget(store, config), case['clock'], holdings=('AAPL',))
+            task, items, Budget(store, config), case['clock'], holdings=('AAPL',), investigation=investigation)
+        execution_status = 'error' if status != 'explained' else ('partial' if research_gaps(investigation.queries.summary()) else 'completed')
         return {'text': json.dumps({'events': output}, ensure_ascii=False),
-                'status': 'completed' if status == 'explained' else 'error', 'daily_status': status,
+                'status': execution_status, 'daily_status': status,
                 'production_usage': calls(store, task), 'traces': store.traces(task)}
     finally:
         store.close()

@@ -4,7 +4,7 @@ import re
 from .dataset import daily_text, evidence
 
 
-def check_output(case, text):
+def check_output(case, text, *, intermediate=False):
     checks = []
     def add(name, passed, critical=False):
         checks.append({'name': name, 'passed': bool(passed), 'critical': critical})
@@ -14,7 +14,14 @@ def check_output(case, text):
     if case['kind'] == 'daily':
         from stockman.stock_briefing.agent import validate_output
         try:
-            validate_output(text, evidence(case), 5)
+            action = json.loads(text)
+            if intermediate and isinstance(action,dict) and set(action)=={'lookup'}:
+                from stockman.stock_briefing.investigation import parse_lookup
+                tool,symbol,_ = parse_lookup(action['lookup'])
+                if symbol!='AAPL' and not (tool=='lookup_evidence' and symbol=='macro'):
+                    raise ValueError('out of scope')
+            else:
+                validate_output(text, evidence(case), 5)
         except (ValueError, TypeError, KeyError):
             add('daily_evidence_contract', False, True)
         else:
@@ -37,7 +44,7 @@ def check_attempt(case, result):
     # Score every received raw response, including invalid responses hidden by fallback.
     for index, raw in enumerate(result.get('raw', [])):
         if raw.get('content'):
-            for check in check_output(case, raw['content']):
+            for check in check_output(case, raw['content'], intermediate=True):
                 if not check['passed']:
                     checks.append({**check, 'name': f'raw:{index}:' + check['name']})
         add(f'raw:{index}:real_secret_absent', not raw.get('secret_leak'), True)

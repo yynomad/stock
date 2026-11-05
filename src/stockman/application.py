@@ -17,12 +17,13 @@ class Application:
         from .briefing.config import BriefingConfig
         self.briefing_config=BriefingConfig.load()
         self.directory=Path(directory or os.getenv('STOCKMAN_DATA_DIR','runtime'))
+        self.research=research or ResearchService(market=market)
         self.runtime=AgentRuntime(self.directory,model,services={
             'portfolio':lambda request:self.portfolio.report(request),
             'research':lambda request:self.research.collect(request),
-            'monitor':lambda request:self.monitor.command(request)})
+            'monitor':lambda request:self.monitor.command(request)},
+            research=self.research if callable(getattr(self.research,'tools',None)) else None)
         self.portfolio=portfolio_factory(self.runtime.store)
-        self.research=research or ResearchService(market=market)
         self.monitor=MonitoringService(self.runtime.store,self.portfolio,market=market)
         self.transport=transport
         self.stop_event=threading.Event()

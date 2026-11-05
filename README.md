@@ -8,7 +8,7 @@
 
 - **持仓复盘**：分析指定账户的美元美股／ETF／ADR 子集，保留非美元排除清单和覆盖范围；校验股数、成本和时间，使用确定性代码计算 PA 指标与仓位规则。
 - **每日简报**：采集配置的 SEC／RSS 来源，去重并解释重要新增，默认每天北京时间 08:00 生成；恢复后只补当天一份。
-- **按需研究**：支持单只股票或 ETF，区分已取得证据、潜在影响与缺失资料，保留原始引用。
+- **按需研究**：围绕单只美股或 ETF 选择报价、日线、SEC 财务和新闻工具，保留来源、时间、已有证据和缺失资料。
 - **价格监控**：按交易日历检查有效报价，达到规则条件时才调用模型并推送；规则与提醒状态持久保存。
 - **本地可观察性**：SQLite 保存任务、调用记录、会话检查点、预算估算和投递状态；提供无凭据的离线演示。
 
@@ -129,6 +129,8 @@ venv/bin/stockman --config stock.conf --status
 检查持仓
 研究 AAPL
 研究 QQQ
+AAPL 最新价格
+AAPL 最近一季营收
 开始监控 AAPL
 监控状态
 停止监控 AAPL
@@ -137,6 +139,8 @@ venv/bin/stockman --config stock.conf --status
 
 一次研究一个明确股票代码。监控规则只有在本次用户文字明确要求开始或停止时才变更，工具结果和新闻中的指令不构成授权。配置 `interactive=false` 可只推送、不接收提问。图片消息被忽略，不下载、保存或调用识图模型。
 
+研究 Agent 按问题选择只读工具。同一会话的明确追问可沿用上一只标的。问最新价格通常只需 Yahoo 报价，问最近一季营收可直接取 SEC 季度事实，新闻搜索保留原文及关联搜索建议附件。默认每项任务最多三次研究查询，其中 Gemini 接地搜索最多一次并计入模型调用额度。相同查询复用本次结果，失败查询计入额度。来源超时、缺失、范围拒绝或预算耗尽时，返回缺口和已取得的可核对证据。
+
 ### 本地问答与任务记录
 
 ```sh
@@ -144,7 +148,7 @@ venv/bin/python scripts/chat.py --offline "研究 QQQ"
 venv/bin/python scripts/tasks.py --data-dir runtime/offline
 ```
 
-`chat.py --offline` 使用合成依赖及 `runtime/offline`，输出 `task_id`、模型／工具调用次数和任务状态。用 `scripts/tasks.py --data-dir runtime/offline --task <任务编号>` 查看对应的 `traces`；它记录角色、工具、耗时和错误，不包含模型隐藏推理。 任务详情还会列出本地模型和搜索逻辑调用的用量、耗时及可计算的估算费用；未知值为 null。日报调用使用其配置费率，问答和搜索暂不估价，搜索附加费用未知。SDK 内部重试未必逐次可见，记录不是供应商账单。历史数据库没有用量表时显示空列表。
+`chat.py --offline` 使用合成依赖及 `runtime/offline`，输出 `task_id`、模型／工具调用次数、任务状态和本次研究结果。用 `scripts/tasks.py --data-dir runtime/offline --task <任务编号>` 查看角色、工具、耗时和错误。任务详情还会列出本地模型和搜索逻辑调用的用量、耗时及可计算的估算费用，未知值为 null。日报调用使用其配置费率。问答和搜索可按指定模型费率估算，搜索附加费用仍标为未知。
 
 去掉 `--offline` 可进行真实本地问答，结果打印到终端，不发送 Telegram。单次脚本沿用环境配置：可将 [env.template](env.template) 复制为 `.env`，已有文件只补必要字段。它与后台 `.conf` 的加载方式不同；代理、模型角色覆盖和日报参数以模板为准。
 
@@ -159,7 +163,7 @@ venv/bin/python scripts/briefing.py --dry-run
 venv/bin/python scripts/briefing.py --status --data-dir runtime
 ```
 
-日报说明持仓来源／时点、资料截止、事实、与持仓的关系、可能影响、未知、观察点及来源。没有重要新增时简短说明；来源失败或覆盖不足单独列出，不当作“没有新闻”。
+日报说明持仓来源／时点、资料截止、事实、与持仓的关系、可能影响、未知、观察点及来源。有可分析材料时，研究角色可按标的补查本次已审核的 SEC／RSS 证据，或为范围内已映射的发行人补查 SEC Company Facts。补充财务附报告期、单位、披露时间和来源，单列为背景。缺少来源或可核验的新增材料时会明确说明。
 
 需要手动发送当天一份时，显式执行 `venv/bin/python scripts/briefing.py --send`。它只向已授权的本人正数私聊 ID 投递，不向群发日报；已确认发送的当天报告不再重发，公开标的预览不能直接转为发送。自动日报由后台 `.conf` 控制，脚本的 `.env` 参数不覆盖后台配置。
 
@@ -182,6 +186,9 @@ Yahoo 提供行情与日线；SEC 提供适用的公司财务披露。按需 Goo
 | `time`；时区见 `[service] timezone` | `BRIEFING_TIME` / `BRIEFING_TIMEZONE` | `08:00` / `Asia/Shanghai` |
 | `daily_budget_usd` | `BRIEFING_DAILY_BUDGET_USD` | `0.20`，估算目标；`0` 禁用日报模型 |
 | `max_calls` | `BRIEFING_MAX_MODEL_CALLS` | `8`，按日累计，预览与重试也计数 |
+| `max_report_model_calls` | `BRIEFING_MAX_REPORT_MODEL_CALLS` | `4`，单份日报的模型次数，含重试 |
+| `max_research_queries` | `BRIEFING_MAX_RESEARCH_QUERIES` | `3`，单份日报的补充查询次数 |
+| `research_timeout_seconds` | `BRIEFING_RESEARCH_TIMEOUT_SECONDS` | `90`，补充调查的步骤截止时间 |
 | `max_output_tokens` | `BRIEFING_MAX_OUTPUT_TOKENS` | `2048` |
 | `max_events` | `BRIEFING_MAX_EVENTS` | `5` |
 | `lookback_hours` | `BRIEFING_LOOKBACK_HOURS` | `24` |
@@ -191,6 +198,8 @@ Yahoo 提供行情与日线；SEC 提供适用的公司财务披露。按需 Goo
 预算通过 SQLite 原子预留，超时保留未知用量估算。日报模型每次 SDK 只尝试一次，最多一次应用重试且重新预留；实际用量可得时结算。
 
 **主动问答任务费用阈值（可选）**：在 stock.conf 的 [model] 中设置 task_budget_usd，并按需一起设置 input_rate 和 output_rate（单位：每百万 Token 美元）。price_model 指定费率适用的精确模型名，省略时使用 [model] 的 name；其他模型和未配置费率的调用显示未知。首次调用结束后按返回用量估算，达到阈值后阻止后续可估价模型调用并提示未完成。无法估算的调用及搜索附加费用仍可继续并标记未知；单次调用可能超过阈值，内部重试可能不可见，不能保证账单封顶。任务内可估价模型调用串行检查；搜索附加费不计入已知金额。默认不启用该阈值。
+
+问答的 `[model] max_research_queries`、`research_timeout_seconds` 默认为 `3`、`90`，本地 CLI 可用 `STOCKMAN_MAX_RESEARCH_QUERIES`、`STOCKMAN_RESEARCH_TIMEOUT_SECONDS` 配置。研究截止时间在开始下一步骤前检查，已发出的请求仍由来源自身的超时机制控制。日报每个模型步骤先从每日账本预留费用。
 
 本地 scripts/chat.py 使用环境变量 STOCKMAN_TASK_BUDGET_USD、STOCKMAN_TASK_PRICE_MODEL、STOCKMAN_TASK_INPUT_RATE 和 STOCKMAN_TASK_OUTPUT_RATE；输入与输出费率须同时设置。任务详情中的 usage_summary 汇总已知费用和费用未知调用；旧任务没有记录时不代表免费。日报继续使用独立的 [briefing] 配置。费用为估算，不能硬性封顶整个供应商账户账单；按需聊天／搜索另计。模型、费率和费用以自己的供应商配置与账单核对。
 
@@ -230,7 +239,7 @@ stockman / service.py → 配置校验 → BackendService
 
 模型只负责按需决策和证据解释；指标、时间、权限、预算、去重及投递状态由普通代码校验。主控按需选择分支，不要求每次调用全部子 Agent；日报直接复用研究角色，没有手写 LangGraph 编排图。
 
-离线模型通过真实 LangChain 工具协议运行，可用 `scripts/demo.py --offline --scenario routing` 观察委派，用 `scripts/tasks.py` 查看记录。模型调用数限制可通过 `STOCKMAN_MAX_MODEL_CALLS=1 venv/bin/python scripts/chat.py --offline "研究 AAPL"` 练习：预期因 `CallLimit` 失败并退出 2；移除临时限制后重新发起任务。
+离线模型通过 LangChain 工具协议运行，可用 `scripts/demo.py --offline --scenario routing` 观察委派，用 `scripts/tasks.py` 查看记录。运行 `STOCKMAN_MAX_MODEL_CALLS=1 venv/bin/python scripts/chat.py --offline "研究 AAPL"` 可看到模型调用额度用尽时的 `partial` 结果。
 
 ## 开发与验证
 
