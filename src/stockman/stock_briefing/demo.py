@@ -43,7 +43,7 @@ def research_demo(directory,budget_zero=False):
     store=Store(Path(directory)/'stockman.sqlite')
     try:
         service=StockBriefing(store,BriefingConfig(budget=0 if budget_zero else 0.20),model=SyntheticResearch(),registry={'issuers':{'AAA':{'name':'Alpha Corp'},'BBB':{'name':'Beta Corp'}},'rss':[]})
-        snapshot={'source':'ibkr','asof':2000000000,'positions':{'AAA':{'shares':2}}}
+        snapshot={'source':'snaptrade','asof':2000000000,'positions':{'AAA':{'shares':2}}}
         first=service.generate('local',snapshot,2000000000,sources=[StockSource(),BrokenSource()])
         assert ('model_disabled' in first['text']) if budget_zero else ('事实原文摘录' in first['text'])
         assert first['meta']['budget']['calls']==(0 if budget_zero else 1)
@@ -109,7 +109,7 @@ def end_to_end(directory):
         {'url':'https://example.com/broken','macro':True,'policy':{'source':'synthetic-unavailable','review_url':'https://example.com/policy','reviewed':True,'analyze':True,'store_metadata':True,'store_analysis':True}}]}
     store=Store(Path(directory)/'stockman.sqlite')
     try:
-        portfolio=PortfolioService(store,ibkr=lambda account:{'AAA':{'shares':0.5}})
+        portfolio=PortfolioService(store,reader=lambda account:{'AAA':{'shares':0.5}})
         service=StockBriefing(store,config,Model(),registry,http)
         def build(owner,now,day):
             http.now=now
@@ -127,7 +127,7 @@ def end_to_end(directory):
         preview=build('123',http.now,'2026-10-22');assert preview['meta']['selected']==0
         store.close();store=Store(Path(directory)/'stockman.sqlite')
         service=StockBriefing(store,config,Model(),registry,http)
-        portfolio=PortfolioService(store,ibkr=lambda account:{'AAA':{'shares':0.5}})
+        portfolio=PortfolioService(store,reader=lambda account:{'AAA':{'shares':0.5}})
         scheduler=Scheduler(store,config,'123',{'123'},build,lambda result:sent.append(result) or 'sent')
         scheduler.recover();assert scheduler.tick(at('2026-10-22T10:00:00'))['status']=='sent'
         delayed=scheduler.tick(at('2026-10-25T12:00:00'));assert delayed['status']=='sent' and delayed['delayed']
@@ -138,5 +138,5 @@ def end_to_end(directory):
         assert scheduler.tick(at('2026-10-26T08:00:00'))['status']=='unknown'
         scheduler.recover();scheduler.send=lambda result:(_ for _ in ()).throw(AssertionError('replay'))
         assert scheduler.tick(at('2026-10-26T09:00:00'))['status']=='unknown'
-        return {'synthetic':True,'scenario':'end-to-end','deliveries':len(sent),'sources':['ibkr (synthetic)','SEC adapter (synthetic)','RSS adapter (synthetic)'],'relationship_hops':1,'today_only_catchup':'passed','restart_and_dedup':'passed','unconfirmed_delivery':'unknown','budget':service.budget.status('2026-10-22')}
+        return {'synthetic':True,'scenario':'end-to-end','deliveries':len(sent),'sources':['snaptrade (synthetic)','SEC adapter (synthetic)','RSS adapter (synthetic)'],'relationship_hops':1,'today_only_catchup':'passed','restart_and_dedup':'passed','unconfirmed_delivery':'unknown','budget':service.budget.status('2026-10-22')}
     finally:store.close()

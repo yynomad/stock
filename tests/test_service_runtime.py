@@ -17,7 +17,7 @@ class ServiceRuntimeTest(unittest.TestCase):
         with patch('socket.socket.connect',side_effect=AssertionError('network')):result=service_demo('service')
         self.assertEqual(result['automatic_reports_without_input'],1);self.assertEqual(result['on_demand_responses'],1)
     def test_config_overrides_legacy_environment_limits(self):
-        with patch.dict(os.environ,{'STOCKMAN_MAX_MODEL_CALLS':'1','BRIEFING_ENABLED':'false','IBKR_ACCOUNT':'U9999999'}):app=build_synthetic(self.config)
+        with patch.dict(os.environ,{'STOCKMAN_MAX_MODEL_CALLS':'1','BRIEFING_ENABLED':'false','SNAPTRADE_ACCOUNT_ID':'22222222-2222-4222-8222-222222222222'}):app=build_synthetic(self.config)
         try:
             result=app.handle('检查持仓','123')
             self.assertGreater(result['model_calls'],1);self.assertEqual(app.broker.adapter.account,self.config.broker.account)

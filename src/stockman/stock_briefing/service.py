@@ -7,8 +7,12 @@ from ..briefing.history import History
 from ..briefing.pipeline import collect
 from ..briefing.budget import Budget
 from .agent import ResearchAgent
+from .investigation import DailyInvestigation
 from .relations import Relations,scope,relevant
 from .sources import PublicHTTP,configured_sources,load_registry
+from ..brokers.coverage import coverage_notice
+from ..research_queries import research_gaps
+from ..sec_filings import citation_lines, filing_metadata_lines
 
 def stamp(value,zone):return datetime.fromtimestamp(value,ZoneInfo(zone)).strftime('%Y-%m-%d %H:%M %Z')
 
@@ -55,19 +59,33 @@ class StockBriefing:
             fresh=self.history.fresh(owner,[i for i,_ in scoped])
             groups=event_groups(sorted(fresh,key=lambda i:i.published,reverse=True))
             # Limit inputs independently of source text; never let a feed force unlimited model work.
-            candidates=[group[0] for group in groups][:min(20,config.max_events*2)]
+            representatives=[group[0] for group in groups]
+            candidates=representatives[:min(20,config.max_events*2)]
             grouped={group[0].identity:group for group in groups}
             allowed=[i for i in candidates if policies[i.source].analyze]
-            explained,status=self.research.explain(task,allowed,self.budget,now,relations,holdings['symbols']) if allowed and config.budget else ([], 'model_disabled' if config.budget==0 else ('no_new_evidence' if not candidates else 'no_analyzable_new_evidence'))
+            investigation=None
+            if allowed and config.budget:
+                approved=[item for item in representatives if policies[item.source].analyze]
+                symbols=set(holdings['symbols']) | {r['related'] for r in relations if not r['stale']}
+                investigation=DailyInvestigation(self.store,task,config,now,allowed,approved,symbols,self.registry.get('issuers',{}),self.http)
+                explained,status=self.research.explain(task,allowed,self.budget,now,relations,holdings['symbols'],holdings['coverage'],investigation)
+            else:
+                explained=[]
+                status='model_disabled' if config.budget==0 else ('no_new_evidence' if not candidates else 'no_analyzable_new_evidence')
+            research=investigation.queries.summary() if investigation is not None else None
+            citations=investigation.filing_citations if investigation is not None else []
+            gaps=research_gaps(research) if research is not None else []
             chosen={row['id']:row for row in explained}
-            selected=([i for i in candidates if i.identity in chosen] if explained else candidates[:config.max_events])
+            selected=([i for i in representatives if i.identity in chosen] if explained else candidates[:config.max_events])
             displayed=list(selected)
-            status=status if explained or not allowed else status+'; deterministic_source_fallback'
+            status=status if explained or not allowed or citations else status+'; deterministic_source_fallback'
             lines=[f'Stock 持仓简报 · {day}',f'资料截止：{stamp(now,config.timezone)}；主要覆盖最近 {config.lookback_hours} 小时。',
                 f'持仓：{holdings["source"]}，时点 {stamp(holdings["asof"],config.timezone)}'+('（缓存）' if holdings['cached'] else '')+('（超过一天，需更新）' if holdings['stale'] else '')]
+            lines.append(coverage_notice(holdings['coverage']))
             previous=self.store.execute("SELECT at FROM brief_reports WHERE owner=? AND status='sent' ORDER BY at DESC LIMIT 1",(owner,))
             if previous and now-previous[0]['at']>config.lookback_hours*3600:lines.append('覆盖缺口：上次成功投递早于当前窗口，未补抓全部历史。')
-            if not selected:lines.append('成功取得的来源和窗口内没有筛选出新增；不代表市场没有新闻。')
+            if not selected and not groups:
+                lines.append('成功取得的来源和窗口内没有筛选出新增；不代表市场没有新闻。' if any(h['status']=='ok' for h in health) else '本次没有取得可核验的新增材料。')
             for index,item in enumerate(selected,1):
                 row=chosen.get(item.identity)
                 lines.extend([f'\n{index}. {item.title}',f'关联：{reasons[item.identity]}；发布：{stamp(item.published,config.timezone)}'])
@@ -82,6 +100,20 @@ class StockBriefing:
                     excerpt=extra.body if policies[extra.source].analyze else extra.title
                     lines.append(f'同事件的另一进展原文：{(excerpt or extra.title)[:300]}\n来源：{extra.source} {extra.url} [证据 {extra.identity}]')
                     displayed.append(extra)
+            if research is not None:
+                if citations:
+                    lines.extend(['申报正文补充：'+investigation.filing_summary,*citation_lines(citations)])
+                elif research.get('filings'):
+                    lines.extend(['本次没有可核验的申报正文引文。',*filing_metadata_lines(research['filings'])])
+                rendered=set()
+                for result in research['evidence']:
+                    for metric,fact in result.get('financials',{}).items():
+                        key=(result['symbol'],metric,fact['end'],fact['filed'])
+                        if key in rendered:continue
+                        rendered.add(key)
+                        lines.append(f'财务背景：{result["symbol"]} {metric} {fact["value"]} {fact["unit"]}；{fact["period"]}，'
+                                     f'期间 {fact["start"] or "时点"} 至 {fact["end"]}，披露 {fact["filed"]}；来源 {fact["source"]}')
+                if gaps:lines.append('补充调查缺口：'+'；'.join(gaps)+'。')
             failed=[h['source'] for h in health if h['status']!='ok']
             if not health:missing.append('no configured sources for this scope')
             if len(groups)>len(selected):lines.append(f'还有 {len(groups)-len(selected)} 个新增事件组未展开；受篇幅／分析限制，不代表完整覆盖。')
@@ -95,8 +127,12 @@ class StockBriefing:
             lines.extend([f'分析状态：{status}',f'当日模型费用估算 ${bill["estimated_usd"]:.6f} / 配置 ${config.budget:.4f}；用量未知 {bill["usage_unknown"]} 次。',bill['note']])
             text='\n'.join(lines)
             meta={'health':health,'holdings':holdings,'asof':now,'status':status,'budget':bill,'relations':relations,'event_groups':len(groups),'selected':len(selected)}
-            identity=self.history.save(owner,day,displayed,policies,text,meta)
-            result={'task_id':task,'report_id':identity,'text':text,'status':'partial' if failed or missing or holdings['stale'] or status not in ('explained','no_new_evidence') else 'completed','meta':meta}
+            if research is not None:meta['research']=research
+            if citations:meta['filing_citations']=citations
+            can_store_analysis=investigation is None or all(policies[item.source].store_analysis for item in investigation.items.values())
+            identity=self.history.save(owner,day,displayed,policies,text,meta,store_analysis=can_store_analysis)
+            partial=failed or missing or gaps or holdings['stale'] or holdings['coverage']['partial'] or status not in ('explained','no_new_evidence')
+            result={'task_id':task,'report_id':identity,'text':text,'status':'partial' if partial else 'completed','meta':meta}
             self.store.finish(task,result['status'],{'report_id':identity,'budget':bill,'health':health})
             self.history.prune(config.retention_days,now)
             return result

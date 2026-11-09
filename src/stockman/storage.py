@@ -7,6 +7,24 @@ import threading
 import time
 import uuid
 
+RESPONSE_STYLES = {
+    'concise': '在保留必要证据和限制的前提下，使用简明回答。',
+    'standard': '先回答主要问题，再列出支撑证据和限制。',
+    'detailed': '分段展开证据、依据和限制，明确每一项推测。',
+}
+
+def decode_snapshot(row):
+    """Read legacy positions or the atomic positions+scope envelope; no DB writes."""
+    row=dict(row);data=json.loads(row.pop('payload'))
+    if isinstance(data,dict) and isinstance(data.get('format'),str):
+        from .brokers.coverage import FORMAT,validate_coverage
+        if data['format']!=FORMAT or set(data)!={'format','positions','coverage'} or not isinstance(data['positions'],dict):
+            raise ValueError('invalid snapshot envelope')
+        row['positions']=data['positions']
+        row['coverage']=validate_coverage(data['coverage'],len(row['positions']))
+    else:row['positions']=data
+    return row
+
 
 def redact(value):
     if isinstance(value, dict):
@@ -30,6 +48,10 @@ class Store:
         self.conn.executescript("""
         CREATE TABLE IF NOT EXISTS tasks(id TEXT PRIMARY KEY,session TEXT,input TEXT,status TEXT,result TEXT,error TEXT,created REAL,updated REAL);
         CREATE TABLE IF NOT EXISTS traces(id INTEGER PRIMARY KEY,task_id TEXT,agent TEXT,tool TEXT,phase TEXT,payload TEXT,at REAL);
+        CREATE TABLE IF NOT EXISTS usage_calls(id INTEGER PRIMARY KEY,task_id TEXT,role TEXT,kind TEXT,provider TEXT,model TEXT,elapsed_ms INTEGER,input_tokens INTEGER,output_tokens INTEGER,total_tokens INTEGER,estimated_micro_usd INTEGER,extra_cost_unknown INTEGER NOT NULL,status TEXT,at REAL);
+        CREATE TABLE IF NOT EXISTS task_budget_limits(task_id TEXT PRIMARY KEY,limit_micro_usd INTEGER NOT NULL);
+        CREATE TABLE IF NOT EXISTS session_preferences(session TEXT PRIMARY KEY,response_style TEXT NOT NULL);
+
         CREATE TABLE IF NOT EXISTS snapshots(id TEXT PRIMARY KEY,source TEXT,scope TEXT,asof REAL,payload TEXT);
         CREATE TABLE IF NOT EXISTS rules(symbol TEXT PRIMARY KEY,spec TEXT,state TEXT DEFAULT 'normal',last_time REAL DEFAULT 0,enabled INTEGER DEFAULT 1);
         CREATE TABLE IF NOT EXISTS events(id TEXT PRIMARY KEY,symbol TEXT,day TEXT,status TEXT,payload TEXT,at REAL);
@@ -60,9 +82,26 @@ class Store:
     def traces(self, task):
         return self.execute("SELECT * FROM traces WHERE task_id=? ORDER BY id",(task,))
 
-    def snapshot(self, source, scope, positions, asof=None, identity=None):
+    def response_style(self, session):
+        rows = self.execute('SELECT response_style FROM session_preferences WHERE session=?', (session,))
+        return rows[0]['response_style'] if rows else None
+
+    def set_response_style(self, session, style):
+        if style is None:
+            self.execute('DELETE FROM session_preferences WHERE session=?', (session,))
+            return
+        if style not in RESPONSE_STYLES:
+            raise ValueError('invalid response style')
+        self.execute('INSERT INTO session_preferences VALUES (?,?) ON CONFLICT(session) '
+                     'DO UPDATE SET response_style=excluded.response_style', (session, style))
+
+    def snapshot(self, source, scope, positions, asof=None, identity=None,coverage=None):
         identity=identity or uuid.uuid4().hex
-        self.execute("INSERT OR REPLACE INTO snapshots VALUES(?,?,?,?,?)",(identity,source,scope,asof or time.time(),json.dumps(positions,ensure_ascii=False)))
+        payload=positions
+        if coverage is not None:
+            from .brokers.coverage import FORMAT,validate_coverage
+            payload={'format':FORMAT,'positions':positions,'coverage':validate_coverage(coverage,len(positions))}
+        self.execute("INSERT OR REPLACE INTO snapshots VALUES(?,?,?,?,?)",(identity,source,scope,asof or time.time(),json.dumps(payload,ensure_ascii=False)))
         return identity
 
     def latest(self, source, scope=None):
@@ -70,14 +109,14 @@ class Store:
         args=[source]
         if scope is not None:
             sql+=" AND scope=?"; args.append(scope)
-        rows=self.execute(sql+" ORDER BY asof DESC LIMIT 1",args)
+        rows=self.execute(sql+" ORDER BY asof DESC,rowid DESC LIMIT 1",args)
         if not rows:return None
-        row=rows[0];row['positions']=json.loads(row.pop('payload'));return row
+        return decode_snapshot(rows[0])
 
     def get_snapshot(self, identity):
         rows=self.execute("SELECT * FROM snapshots WHERE id=?",(identity,))
         if not rows:return None
-        row=rows[0];row['positions']=json.loads(row.pop('payload'));return row
+        return decode_snapshot(rows[0])
 
     def close(self):
         self.conn.close()

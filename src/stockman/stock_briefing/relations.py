@@ -45,11 +45,12 @@ class Relations:
 
 def scope(snapshot,now):
     from ..portfolio import normalize_positions
+    from ..brokers.coverage import coverage_info
     positions=normalize_positions(snapshot['positions'])
     asof=snapshot['asof']
     if isinstance(asof,bool) or not isinstance(asof,(int,float)) or not 0<asof<=now+30:raise ValueError('invalid holdings time')
     return {'symbols':sorted(positions),'source':snapshot['source'],'asof':asof,
-            'cached':bool(snapshot.get('cached')),'stale':now-asof>86400}
+            'cached':bool(snapshot.get('cached')),'stale':now-asof>86400,'coverage':coverage_info(snapshot)}
 
 def relevant(items,holdings,relations):
     direct={r['related']:r['held'] for r in relations if not r['stale'] and r['held'] in holdings}

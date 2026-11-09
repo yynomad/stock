@@ -6,12 +6,10 @@ timezone = Asia/Shanghai
 log_level = INFO
 
 [broker]
-provider = ibkr
-account_env = IBKR_ACCOUNT
-host = 127.0.0.1
-port = 4001
-client_id = 17
-timeout_seconds = 12
+provider = snaptrade
+account_env = SNAPTRADE_ACCOUNT_ID
+client_id_env = SNAPTRADE_CLIENT_ID
+consumer_key_env = SNAPTRADE_CONSUMER_KEY
 sync_interval_seconds = 900
 
 [model]
@@ -19,6 +17,15 @@ name = gemini-3.5-flash-lite
 api_key_env = GEMINI_API_KEY
 max_calls = 8
 max_tools = 12
+context_bytes = 49152
+max_research_queries = 3
+research_timeout_seconds = 90
+# Optional soft threshold per interactive task (USD); omit to disable.
+# task_budget_usd = 0.05
+# USD per million tokens, only for the named model. Verify your provider prices.
+# price_model = gemini-3.5-flash-lite
+# input_rate = 0.30
+# output_rate = 2.50
 
 [notification]
 provider = telegram
@@ -33,6 +40,9 @@ enabled = true
 time = 08:00
 daily_budget_usd = 0.20
 max_calls = 8
+max_research_queries = 3
+max_report_model_calls = 4
+research_timeout_seconds = 90
 max_output_tokens = 2048
 max_events = 5
 lookback_hours = 24

@@ -2,8 +2,9 @@
 from pathlib import Path
 import tempfile
 from .service_config import load_config
+from .brokers.coverage import make_coverage
 
-ENV={'IBKR_ACCOUNT':'U1234567','GEMINI_API_KEY':'synthetic-model-key','TG_BOT_TOKEN':'synthetic-bot-token','TG_CHAT_ID':'123'}
+ENV={'SNAPTRADE_ACCOUNT_ID':'11111111-1111-4111-8111-111111111111','SNAPTRADE_CLIENT_ID':'synthetic-client','SNAPTRADE_CONSUMER_KEY':'synthetic-secret','GEMINI_API_KEY':'synthetic-model-key','TG_BOT_TOKEN':'synthetic-bot-token','TG_CHAT_ID':'123'}
 
 def fixture(directory):
     root=Path(__file__).resolve().parents[2]
@@ -23,16 +24,22 @@ def run(scenario):
         return {'synthetic':True,'scenario':scenario,'broker':config.broker.provider,'channel':config.channel.provider,'check_without_runtime_write':'passed'}
 
 def broker_demo():
+    import time
     from .storage import Store
-    from .brokers import create_broker,BrokerService
+    from .brokers import BrokerService,BrokerSnapshot
     with tempfile.TemporaryDirectory() as d:
         config=fixture(d);store=Store(Path(d)/'db')
         try:
-            calls=[]
-            def read(*args,**kwargs):calls.append(1);return {'AAPL':{'shares':0.5,'avg_cost':100}}
-            broker=BrokerService(store,create_broker(config.broker,read))
-            first=broker.load();assert broker.load()['cached'] and len(calls)==1
-            return {'synthetic':True,'scenario':'broker','source':first['source'],'complete_single_account':'passed','native_calls':len(calls)}
+            class Fake:
+                provider='snaptrade'
+                account=config.broker.account
+                calls=0
+                def sync(self):
+                    self.calls+=1
+                    return BrokerSnapshot(self.provider,self.account,time.time(),{'AAPL':{'shares':0.5,'avg_cost':100}},coverage=make_coverage(1,1,[]))
+            adapter=Fake();broker=BrokerService(store,adapter)
+            first=broker.load();assert broker.load()['cached'] and adapter.calls==1
+            return {'synthetic':True,'scenario':'broker','source':first['source'],'complete_single_account':'passed','native_calls':adapter.calls}
         finally:store.close()
 
 def channel_demo():
@@ -46,14 +53,14 @@ def channel_demo():
         return {'synthetic':True,'scenario':'channel','normalized_text_and_unsupported_media':'passed','real_messages_sent':0}
 
 class FakeBroker:
-    provider='ibkr'
+    provider='snaptrade'
     def __init__(self,account):self.account=account;self.calls=0;self.fail=False
     def sync(self):
         import time
         from .brokers import BrokerSnapshot
         self.calls+=1
         if self.fail:raise TimeoutError('synthetic-secret-must-not-be-recorded')
-        return BrokerSnapshot('ibkr',self.account,time.time(),{'AAPL':{'shares':0.5,'avg_cost':100}})
+        return BrokerSnapshot('snaptrade',self.account,time.time(),{'AAPL':{'shares':0.5,'avg_cost':100}},coverage=make_coverage(1,1,[]))
 
 class FakeChannel:
     provider='telegram';capabilities=frozenset({'send','text'})
@@ -121,5 +128,5 @@ def service_demo(scenario):
                     assert app.tick(now+86401)['status']=='unknown' and len(channel.sent)==count
                 unknown='retained_without_replay'
             return {'synthetic':True,'scenario':scenario,'automatic_reports_without_input':1,'on_demand_responses':1,
-                'unsupported_media_ignored':'passed','restart_dedup':'passed','unconfirmed_delivery':unknown,'broker':'ibkr (synthetic)','channel':'telegram (synthetic)','real_messages_sent':0}
+                'unsupported_media_ignored':'passed','restart_dedup':'passed','unconfirmed_delivery':unknown,'broker':'snaptrade (synthetic)','channel':'telegram (synthetic)','real_messages_sent':0}
         finally:app.close()

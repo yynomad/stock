@@ -7,6 +7,7 @@ import os
 from pathlib import Path
 import re
 from .briefing.config import BriefingConfig
+from .harness import DEFAULT_CONTEXT_BYTES, MAX_CONTEXT_BYTES, MIN_CONTEXT_BYTES
 
 class ConfigError(ValueError):pass
 
@@ -14,10 +15,8 @@ class ConfigError(ValueError):pass
 class BrokerConfig:
     provider:str
     account:str=field(repr=False)
-    host:str='127.0.0.1'
-    port:int=4001
-    client_id:int=17
-    timeout:float=12
+    client_id:str=field(repr=False)
+    consumer_key:str=field(repr=False)
     sync_interval:float=900
 
 @dataclass(frozen=True)
@@ -35,6 +34,13 @@ class ModelConfig:
     max_calls:int=8
     max_tools:int=12
     roles:tuple=()
+    task_budget_usd:float|None=None
+    price_model:str|None=None
+    input_rate:float|None=None
+    output_rate:float|None=None
+    max_research_queries:int=3
+    research_timeout:int=90
+    context_bytes:int=DEFAULT_CONTEXT_BYTES
 
 @dataclass(frozen=True)
 class MonitorConfig:
@@ -58,10 +64,10 @@ class ServiceConfig:
 
 SCHEMA={
  'service':{'data_dir','timezone','log_level'},
- 'broker':{'provider','account_env','host','port','client_id','timeout_seconds','sync_interval_seconds'},
- 'model':{'name','api_key_env','max_calls','max_tools','supervisor_model','portfolio_model','research_model','monitor_model'},
+ 'broker':{'provider','account_env','client_id_env','consumer_key_env','sync_interval_seconds'},
+ 'model':{'name','api_key_env','max_calls','max_tools','supervisor_model','portfolio_model','research_model','monitor_model','task_budget_usd','price_model','input_rate','output_rate','max_research_queries','research_timeout_seconds','context_bytes'},
  'notification':{'provider','token_env','chat_id_env','allowed_users_env','interactive'},
- 'briefing':{'enabled','time','daily_budget_usd','max_calls','max_output_tokens','max_events','lookback_hours','retention_days','input_rate','output_rate'},
+ 'briefing':{'enabled','time','daily_budget_usd','max_calls','max_output_tokens','max_events','lookback_hours','retention_days','input_rate','output_rate','max_research_queries','max_report_model_calls','research_timeout_seconds'},
  'monitor':{'interval_seconds','buffer_pct','max_daily_alerts','quote_max_age_seconds'},
  'sources':{'file','sec_user_agent_env'}}
 
@@ -97,12 +103,17 @@ def load_config(path,env=None):
         if required and not result.strip():raise ConfigError('unresolved environment reference: '+section+'.'+key)
         return result
     def relative(raw):return (path.parent/Path(raw).expanduser()).resolve()
-    provider=value('broker','provider','ibkr')
+    provider=value('broker','provider','snaptrade')
     channel=value('notification','provider','telegram')
-    if provider!='ibkr':raise ConfigError('unsupported broker.provider')
+    if provider!='snaptrade':raise ConfigError('unsupported broker.provider')
     if channel!='telegram':raise ConfigError('unsupported notification.provider')
-    account=secret('broker','account_env','IBKR_ACCOUNT')
-    if not re.fullmatch(r'U[0-9]{5,}',account):raise ConfigError('invalid broker.account_env')
+    from uuid import UUID
+    account=secret('broker','account_env','SNAPTRADE_ACCOUNT_ID')
+    try:
+        if str(UUID(account))!=account.lower():raise ValueError()
+    except ValueError:raise ConfigError('invalid broker.account_env') from None
+    client_id=secret('broker','client_id_env','SNAPTRADE_CLIENT_ID')
+    consumer_key=secret('broker','consumer_key_env','SNAPTRADE_CONSUMER_KEY')
     target=secret('notification','chat_id_env','TG_CHAT_ID')
     if not target.isdigit() or int(target)<=0:raise ConfigError('notification.chat_id_env requires a private owner')
     owners=secret('notification','allowed_users_env','TG_ALLOWED_USERS',False)
@@ -115,17 +126,28 @@ def load_config(path,env=None):
           budget=number('briefing','daily_budget_usd',0.20,0,1000000),max_calls=number('briefing','max_calls',8,1,100,True),
           max_output=number('briefing','max_output_tokens',2048,1,16384,True),max_events=number('briefing','max_events',5,1,20,True),
           lookback_hours=number('briefing','lookback_hours',24,1,168,True),retention_days=number('briefing','retention_days',30,1,365,True),
-          input_rate=number('briefing','input_rate',0.30,0.000001,10000),output_rate=number('briefing','output_rate',2.50,0.000001,10000))
+          input_rate=number('briefing','input_rate',0.30,0.000001,10000),output_rate=number('briefing','output_rate',2.50,0.000001,10000),
+          max_research_queries=number('briefing','max_research_queries',3,1,12,True),
+          max_report_model_calls=number('briefing','max_report_model_calls',4,1,20,True),
+          research_timeout=number('briefing','research_timeout_seconds',90,1,600,True))
     except (ValueError,KeyError):raise ConfigError('invalid briefing/timezone configuration') from None
     level=value('service','log_level','INFO').upper()
     if level not in ('DEBUG','INFO','WARNING','ERROR'):raise ConfigError('invalid service.log_level')
-    host=value('broker','host','127.0.0.1')
-    if any(x.isspace() for x in host) or '/' in host or '@' in host:raise ConfigError('invalid broker.host')
-    broker=BrokerConfig(provider,account,host,number('broker','port',4001,1,65535,True),number('broker','client_id',17,0,2147483647,True),
-          number('broker','timeout_seconds',12,1,120),number('broker','sync_interval_seconds',900,1,86400))
+    broker=BrokerConfig(provider,account,client_id,consumer_key,number('broker','sync_interval_seconds',900,1,86400))
     roles=tuple((role,value('model',role+'_model',value('model','name','gemini-3.5-flash-lite'))) for role in ('supervisor','portfolio','research','monitor'))
+    configured=parser['model'] if parser.has_section('model') else {}
+    has_in='input_rate' in configured
+    has_out='output_rate' in configured
+    if has_in != has_out:raise ConfigError('model.input_rate and model.output_rate must be configured together')
     model=ModelConfig(secret('model','api_key_env','GEMINI_API_KEY'),value('model','name','gemini-3.5-flash-lite'),
-          number('model','max_calls',8,1,100,True),number('model','max_tools',12,1,100,True),roles)
+          number('model','max_calls',8,1,100,True),number('model','max_tools',12,1,100,True),roles,
+          number('model','task_budget_usd',1,0.000001,1000000) if 'task_budget_usd' in configured else None,
+          value('model','price_model',value('model','name','gemini-3.5-flash-lite')) if has_in else None,
+          number('model','input_rate',1,0,10000) if has_in else None,
+          number('model','output_rate',1,0,10000) if has_out else None,
+          max_research_queries=number('model','max_research_queries',3,1,12,True),
+          research_timeout=number('model','research_timeout_seconds',90,1,600,True),
+          context_bytes=number('model','context_bytes',DEFAULT_CONTEXT_BYTES,MIN_CONTEXT_BYTES,MAX_CONTEXT_BYTES,True))
     notification=ChannelConfig(channel,secret('notification','token_env','TG_BOT_TOKEN'),int(target),allowed,boolean('notification','interactive',True))
     monitor=MonitorConfig(number('monitor','interval_seconds',300,1,86400),number('monitor','buffer_pct',0.02,0.000001,1),
           number('monitor','max_daily_alerts',5,1,100,True),number('monitor','quote_max_age_seconds',900,1,86400))

@@ -37,13 +37,16 @@ class EndToEndTest(unittest.TestCase):
                 finally:app.runtime.close()
 
     def test_text_task_model_budget_still_applies(self):
-        from stockman.agents import CallLimit
         with tempfile.TemporaryDirectory() as d,patch.dict('os.environ',{'STOCKMAN_MAX_MODEL_CALLS':'1'}):
             app=create_offline_app(d)
             try:
-                with self.assertRaises(CallLimit):app.handle('研究 AAPL')
-                task=app.runtime.store.execute('SELECT * FROM tasks')[0]
-                self.assertEqual(task['status'],'failed')
+                result=app.handle('研究 AAPL')
+                self.assertEqual(result['status'],'partial')
+                self.assertEqual(result['model_calls'],1)
+                self.assertEqual(result['usage_summary']['logical_calls'],1)
+                self.assertIn('模型调用次数达到上限',result['text'])
+                self.assertEqual(result['research']['queries'],0)
+                self.assertEqual(app.runtime.store.task(result['task_id'])['status'],'partial')
             finally:app.runtime.close()
 
     def test_start_monitoring_all_broker_holdings_without_an_explicit_symbol(self):
@@ -56,7 +59,7 @@ class EndToEndTest(unittest.TestCase):
                 self.assertEqual(result['status'],'completed',result)
                 rules=app.runtime.store.execute('SELECT symbol,spec FROM rules')
                 self.assertEqual([r['symbol'] for r in rules],['AAPL'])
-                self.assertEqual(json.loads(rules[0]['spec'])['source'],'ibkr')
+                self.assertEqual(json.loads(rules[0]['spec'])['source'],'snaptrade')
             finally:app.runtime.close()
 
     def test_unsupported_update_is_not_left_processing(self):

@@ -8,6 +8,7 @@ from .brokers import BrokerService,create_broker
 from .channels import create_channel
 from .portfolio import PortfolioService
 from .research import ResearchService,SECClient,GoogleNews
+from .sec_filings import FilingReader
 from .market import YahooMarket
 from .monitoring import MonitoringService
 from .briefing.schedule import Scheduler
@@ -22,22 +23,26 @@ class BackendService(Application):
         self.logger.propagate=False
         if not self.logger.handlers:self.logger.addHandler(logging.StreamHandler())
         self.stop_event=threading.Event();self.workers=[];self.closed=False;self.next_sync=0;self.next_price=0
+        self.market=market or YahooMarket(proxy='',quote_age=config.monitor.quote_age)
+        registry=load_registry(config.sources)
+        http=PublicHTTP(config.sec_user_agent)
+        self.research=research or ResearchService(self.market,SECClient(config.sec_user_agent),GoogleNews(config.model.key,dict(config.model.roles)['research']),
+                                                filings=FilingReader(registry['issuers'],http))
         self.runtime=AgentRuntime(self.directory,model,services={
             'portfolio':lambda request:self.portfolio.report(request),
             'research':lambda request:self.research.collect(request),
-            'monitor':lambda request:self.monitor.command(request)},settings=config.model)
+            'monitor':lambda request:self.monitor.command(request)},settings=config.model,
+            research=self.research if callable(getattr(self.research,'tools',None)) else None)
         try:
             store=self.runtime.store
             self.broker=BrokerService(store,broker or create_broker(config.broker),config.broker.sync_interval)
             self.transport=channel or create_channel(config.channel);self.allowed=set(config.channel.allowed)
             if str(self.transport.chat)!=str(config.channel.chat):raise ValueError('configured channel destination mismatch')
             if config.channel.interactive and 'text' not in self.transport.capabilities:raise ValueError('channel does not support incoming text')
-            self.market=market or YahooMarket(proxy='',quote_age=config.monitor.quote_age)
             self.portfolio=PortfolioService(store,broker=self.broker,bars=self.market.bars)
-            self.research=research or ResearchService(self.market,SECClient(config.sec_user_agent),GoogleNews(config.model.key,dict(config.model.roles)['research']))
             self.monitor=MonitoringService(store,self.portfolio,self.market,settings=config.monitor)
             self.sources=sources
-            self.briefing=StockBriefing(store,config.briefing,daily_model,load_registry(config.sources),PublicHTTP(config.sec_user_agent),
+            self.briefing=StockBriefing(store,config.briefing,daily_model,registry,http,
                 model_factory=lambda:make_model(config.briefing,config.model.key,dict(config.model.roles)['research']))
             self.daily=Scheduler(store,config.briefing,str(config.channel.chat),self.allowed,self.build_daily,self.transport.deliver)
             self.daily.recover()
@@ -132,4 +137,11 @@ def read_status(config):
         jobs=[dict(r) for r in conn.execute('SELECT * FROM service_health ORDER BY job')] if 'service_health' in tables else []
         broker=[dict(r) for r in conn.execute('SELECT status,last_attempt,last_success,error FROM broker_health WHERE provider=? AND scope=?',(config.broker.provider,config.broker.account))] if 'broker_health' in tables else []
         daily=[dict(r) for r in conn.execute('SELECT day,status,report,attempts,error FROM brief_daily WHERE owner=? ORDER BY day DESC LIMIT 10',(str(config.channel.chat),))] if 'brief_daily' in tables else []
-        return {'status':'recorded_state','jobs':jobs,'broker':broker,'daily':daily,'note':'记录时间请自行核对；unknown 需人工核实，记录不证明进程仍存活。'}
+        coverage=None
+        if 'snapshots' in tables:
+            rows=conn.execute('SELECT * FROM snapshots WHERE source=? AND scope=? ORDER BY asof DESC,rowid DESC LIMIT 1',(config.broker.provider,config.broker.account)).fetchall()
+            if rows:
+                from .storage import decode_snapshot
+                from .brokers.coverage import coverage_info
+                coverage=coverage_info(decode_snapshot(dict(rows[0])))
+        return {'status':'recorded_state','jobs':jobs,'broker':broker,'daily':daily,'holdings_coverage':coverage,'note':'记录时间请自行核对；unknown 需人工核实，记录不证明进程仍存活。'}

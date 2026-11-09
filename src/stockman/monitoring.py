@@ -11,6 +11,7 @@ from .agents import CURRENT
 from .market import YahooMarket,regular_session
 from .pa_strategy import analyze_pa
 from .portfolio import valid_symbol
+from .brokers.coverage import coverage_info,coverage_notice
 
 
 def monitor_intent(text):
@@ -32,9 +33,12 @@ class MonitoringService:
             return json.dumps({'status':'stopped','symbols':symbols or 'all'},ensure_ascii=False)
         if action=='start':
             source=None
+            coverage=None
             if not symbols:
                 source=self.portfolio.load(context.session)
                 symbols=list(source['positions'])
+                coverage=coverage_info(source)
+                with context.lock:context.coverage=coverage
             rules=[];errors=[]
             for symbol in dict.fromkeys(symbols):
                 bars=self.market.bars(symbol)
@@ -45,9 +49,12 @@ class MonitoringService:
                       'buffer':(self.settings.buffer if self.settings else float(os.getenv('MONITOR_BUFFER_PCT','0.02'))),
                       'created_at':time.time(),'bars_asof':bars[-1].get('date') if bars else None,'source':source['source'] if source else 'explicit-symbol',
                       'source_asof':source['asof'] if source else None}
+                if coverage is not None:spec['coverage']=coverage
                 self.store.execute("INSERT INTO rules(symbol,spec,enabled) VALUES(?,?,1) ON CONFLICT(symbol) DO UPDATE SET spec=excluded.spec,enabled=1",(symbol,json.dumps(spec)))
                 rules.append(spec)
-            return json.dumps({'status':'configured' if rules else 'not_configured','rules':rules,'errors':errors},ensure_ascii=False)
+            result={'status':'configured' if rules else 'not_configured','rules':rules,'errors':errors}
+            if coverage is not None:result.update(coverage=coverage,note=coverage_notice(coverage))
+            return json.dumps(result,ensure_ascii=False)
         rules=self.store.execute('SELECT * FROM rules ORDER BY symbol')
         events=self.store.execute('SELECT symbol,status,payload,at FROM events ORDER BY at DESC LIMIT 5')
         return json.dumps({'status':'read_only_status','rules':rules,'recent_events':events,
@@ -85,6 +92,12 @@ class MonitoringService:
                 events.append(event)
                 try:
                     result=runtime.run('监控价格事件：'+json.dumps(event,ensure_ascii=False)+'。请解释价格变化及需要关注的风险。',session=session)
+                    coverage=event['levels'].get('coverage')
+                    if coverage is not None and result.get('coverage') is None:
+                        result['coverage']=coverage
+                        result['text']+='\n'+coverage_notice(coverage)
+                        if coverage['partial']:result['status']='partial'
+                        if result.get('task_id'):runtime.store.finish(result['task_id'],result['status'],result)
                     status=send(result)
                     if status not in ('sent','failed','unknown'):status='unknown'
                 except Exception as exc:

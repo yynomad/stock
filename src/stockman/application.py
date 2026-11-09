@@ -8,6 +8,8 @@ from .config import TG_CHAT_ID,MONITOR_INTERVAL,configure_logging
 from .agents import AgentRuntime
 from .portfolio import PortfolioService
 from .research import ResearchService
+from .sec_filings import FilingReader
+from .stock_briefing.sources import PublicHTTP,load_registry
 from .monitoring import MonitoringService
 from .telegram import Telegram
 
@@ -17,12 +19,13 @@ class Application:
         from .briefing.config import BriefingConfig
         self.briefing_config=BriefingConfig.load()
         self.directory=Path(directory or os.getenv('STOCKMAN_DATA_DIR','runtime'))
+        self.research=research or ResearchService(market=market,filings=FilingReader(load_registry()['issuers'],PublicHTTP()))
         self.runtime=AgentRuntime(self.directory,model,services={
             'portfolio':lambda request:self.portfolio.report(request),
             'research':lambda request:self.research.collect(request),
-            'monitor':lambda request:self.monitor.command(request)})
+            'monitor':lambda request:self.monitor.command(request)},
+            research=self.research if callable(getattr(self.research,'tools',None)) else None)
         self.portfolio=portfolio_factory(self.runtime.store)
-        self.research=research or ResearchService(market=market)
         self.monitor=MonitoringService(self.runtime.store,self.portfolio,market=market)
         self.transport=transport
         self.stop_event=threading.Event()
@@ -67,7 +70,9 @@ class Application:
             return status
         except Exception as exc:
             self.runtime.store.execute("UPDATE updates SET status='failed' WHERE id=?",(identity,))
-            self.transport.deliver({'text':'本次任务未完成：'+type(exc).__name__+'。请检查本机配置与任务记录。'})
+            from .agents import TaskBudgetExceeded
+            text='本次任务已达到已知费用阈值，剩余调查未完成；未知费用仍可能产生。' if isinstance(exc,TaskBudgetExceeded) else '本次任务未完成：'+type(exc).__name__+'。请检查本机配置与任务记录。'
+            self.transport.deliver({'text':text})
             return 'failed'
 
     def build_daily(self,owner,now,day):

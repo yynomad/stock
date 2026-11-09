@@ -60,6 +60,10 @@ class BriefingResearchTest(unittest.TestCase):
         self.assertNotIn('avg_cost',str(self.store.traces(result['task_id'])))
         self.assertEqual(result['meta']['budget']['calls'],1)
         self.assertEqual(result['meta']['budget']['usage_unknown'],0)
+        usage=self.store.execute('SELECT * FROM usage_calls WHERE task_id=?',(result['task_id'],))
+        self.assertEqual(len(usage),1)
+        self.assertEqual((usage[0]['input_tokens'],usage[0]['output_tokens']),(100,100))
+        self.assertEqual(usage[0]['estimated_micro_usd'],280)
     def test_invalid_model_output_falls_back_without_retry(self):
         service=StockBriefing(self.store,BriefingConfig(),model=BriefModel(bad=True),registry={'issuers':{},'rss':[]})
         result=service.generate('local',{'source':'ibkr','asof':2000000000,'positions':{'AAA':{'shares':2}}},2000000000,sources=[StockSource()])
@@ -81,6 +85,9 @@ class BriefingResearchTest(unittest.TestCase):
         rows=self.store.execute('SELECT * FROM brief_budget')
         self.assertEqual(len(rows),2);self.assertTrue(all(r['state']=='usage_unknown' and r['charge']>0 for r in rows))
         self.assertNotIn('secret',str(self.store.traces(task)))
+        usage=self.store.execute('SELECT * FROM usage_calls WHERE task_id=?',(task,))
+        self.assertEqual(len(usage),2)
+        self.assertTrue(all(row['estimated_micro_usd'] is None and row['status']=='failed' for row in usage))
 
     def test_same_event_updates_displayed_and_only_displayed_items_marked_sent(self):
         class Updates(StockSource):
@@ -110,7 +117,10 @@ class BriefingResearchTest(unittest.TestCase):
         class Empty(StockSource):
             def fetch(self,now):return []
         service=StockBriefing(self.store,BriefingConfig(),registry={'issuers':{},'rss':[]})
-        snapshot={'source':'ibkr','asof':2000000000,'positions':{'AAA':{'shares':1}}}
+        # This synthetic case explicitly covers all returned rows; legacy caches
+        # without coverage metadata are now correctly labelled unknown/partial.
+        from stockman.brokers.coverage import make_coverage
+        snapshot={'source':'ibkr','asof':2000000000,'positions':{'AAA':{'shares':1}},'coverage':make_coverage(1,1,[])}
         empty=service.generate('local',snapshot,2000000000,sources=[Empty()])
         failed=service.generate('local',snapshot,2000000000,sources=[BrokenSource()])
         self.assertEqual(empty['status'],'completed');self.assertEqual(failed['status'],'partial')

@@ -27,12 +27,15 @@ def timestamp(value):
 
 def plain(value):return html.unescape(re.sub('<[^>]*>',' ',value or '')).strip()
 
+class SourceTooLarge(ValueError):
+    pass
+
 class PublicHTTP:
     """Bounded, allow-listed HTTPS, no redirects, total SEC rate below 10/s."""
     def __init__(self,user_agent=None,get=requests.get,sleep=time.sleep):
         self.user_agent=user_agent if user_agent is not None else os.getenv('SEC_USER_AGENT','')
         self.get=get;self.sleep=sleep
-    def read(self,url,hosts):
+    def read(self,url,hosts,*,max_bytes=2*1024*1024,accept='application/json, application/xml, text/xml'):
         url=canonical_url(url);host=urlsplit(url).hostname
         if host not in hosts:raise PermissionError('host not allowed')
         addresses=socket.getaddrinfo(host,443,type=socket.SOCK_STREAM)
@@ -43,14 +46,14 @@ class PublicHTTP:
             if is_sec:
                 SEC_GATE.wait(sleep=self.sleep)
             try:
-                with self.get(url,headers={'User-Agent':self.user_agent or 'StockMan public RSS reader','Accept':'application/json, application/xml, text/xml'},timeout=(5,10),allow_redirects=False,stream=True) as response:
+                with self.get(url,headers={'User-Agent':self.user_agent or 'StockMan public RSS reader','Accept':accept},timeout=(5,10),allow_redirects=False,stream=True) as response:
                     if response.status_code in (429,500,502,503,504) and attempt<2:
                         self.sleep(0.5*(attempt+1));continue
                     if 300<=response.status_code<400:raise ValueError('redirect requires separate host review')
                     response.raise_for_status();parts=[];size=0
                     for part in response.iter_content(16384):
                         size+=len(part)
-                        if size>2*1024*1024:raise ValueError('source response too large')
+                        if size>max_bytes:raise SourceTooLarge('source response too large')
                         parts.append(part)
                     return b''.join(parts)
             except (requests.Timeout,requests.ConnectionError):
@@ -62,7 +65,7 @@ class SECSource:
     def __init__(self,symbol,cik,http):
         if not re.fullmatch(r'[A-Z][A-Z0-9.-]{0,14}',symbol) or not re.fullmatch(r'[0-9]{1,10}',str(cik)):raise ValueError('invalid SEC issuer')
         self.symbol=symbol;self.cik=str(int(cik));self.http=http
-        # Only SEC-created filing metadata is retained; third-party filing bodies are not fetched.
+        # The feed reads filing metadata. The research tool reads primary documents separately.
         self.policy=SourcePolicy('sec:'+symbol,SEC_POLICY,True,True,True,False,True)
     def fetch(self,now):
         data=json.loads(self.http.read(f'https://data.sec.gov/submissions/CIK{int(self.cik):010d}.json',{'data.sec.gov'}))

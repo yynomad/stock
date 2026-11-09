@@ -29,7 +29,7 @@ class RemovedImageInputsTest(unittest.TestCase):
             self.assertFalse(target.exists())
 
     def test_legacy_broker_source_setting_remains_compatible(self):
-        self.assertEqual(BriefingConfig.load({'BRIEFING_PORTFOLIO_SOURCE':'ibkr'}),BriefingConfig.load({}))
+        self.assertEqual(BriefingConfig.load({'BRIEFING_PORTFOLIO_SOURCE':'snaptrade'}),BriefingConfig.load({}))
 
     def test_photo_from_unauthorized_user_does_not_create_tasks_or_files(self):
         from unittest.mock import Mock
