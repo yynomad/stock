@@ -236,7 +236,7 @@ class AgentRuntime:
                     return str(content)
                 return call
             delegates.append(StructuredTool.from_function(make_delegate(role),name='delegate_'+role,description=roles[role]))
-        self.agent=create_agent(models["supervisor"],tools=delegates,system_prompt=common+'你是主控。按任务委派持仓、研究或监控Agent，汇总结果；不相关问题不调用业务工具。不必调用全部Agent。',middleware=self._middleware('supervisor'),checkpointer=self.checkpointer,name='supervisor')
+        self.agent=create_agent(models["supervisor"],tools=delegates,system_prompt=common+'你是主控。按用户目标选择持仓、研究或监控角色。多目标请求拆成各角色可独立执行的子任务，依赖其他结果的任务在收到证据后再发起。每次委派的 request 写明子任务目标，收到结果后汇总完成项和证据缺口。不相关问题直接答复。',middleware=self._middleware('supervisor'),checkpointer=self.checkpointer,name='supervisor')
 
     def _middleware(self, agent):
         @before_model

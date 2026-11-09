@@ -237,7 +237,7 @@ venv/bin/python scripts/chat.py --offline --session demo --response-style clear
 
 可选值为 `concise`、`standard`、`detailed`。管理已有运行目录时显式指定 `--data-dir` 和相同的 `--session`，先停止占用该目录的进程。偏好只用于答复排版，证据和授权仍由现有规则检查。
 
-`decision` 轨迹记录模型实际提出的工具步骤或直接作答，工具轨迹用 `span` 和 `parent_tool` 关联委派与子角色执行。步骤表示模型在当前轮选择的动作，执行结果与失败另有记录。
+主控按目标选择角色，在多目标请求中委派子任务并汇总证据。`decision` 轨迹记录模型实际提出的工具步骤或直接作答，工具轨迹用 `span` 和 `parent_tool` 关联委派与子角色执行。步骤表示模型在当前轮选择的动作，执行结果与失败另有记录。
 
 ## 架构与代码导航
 
