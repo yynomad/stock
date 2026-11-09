@@ -10,6 +10,17 @@ class ServiceConfigTest(unittest.TestCase):
     def setUp(self):
         self.temp=tempfile.TemporaryDirectory();self.config=fixture(self.temp.name);self.path=self.config.path;self.original=self.path.read_text()
     def tearDown(self):self.temp.cleanup()
+
+    def test_context_budget_is_optional_and_validated(self):
+        prefix = self.original.replace('context_bytes = 49152\n', '')
+        self.path.write_text(prefix)
+        self.assertEqual(load_config(self.path, ENV).model.context_bytes, 49152)
+        self.path.write_text(prefix.replace('max_tools = 12', 'max_tools = 12\ncontext_bytes = 65536'))
+        self.assertEqual(load_config(self.path, ENV).model.context_bytes, 65536)
+        self.path.write_text(prefix.replace('max_tools = 12', 'max_tools = 12\ncontext_bytes = 4095'))
+        with self.assertRaises(ConfigError):
+            load_config(self.path, ENV)
+
     def test_explicit_paths_and_secrets_never_appear_in_repr(self):
         with patch('socket.socket.connect',side_effect=AssertionError('network')):
             config=load_config(self.path,{**ENV,'BRIEFING_TIME':'22:00','SNAPTRADE_UNUSED':'9999'})

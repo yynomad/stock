@@ -4,8 +4,90 @@ import tempfile
 import unittest
 from unittest.mock import patch
 from stockman.agents import AgentRuntime,OfflineModel,CallLimit
+from stockman.harness import ContextOverflow
+from stockman.service_config import ModelConfig
 
 class AgentTest(unittest.TestCase):
+    def test_operator_style_memory_survives_restart_and_is_session_scoped(self):
+        from scripts.chat import response_style
+        from stockman.storage import RESPONSE_STYLES
+        observed = []
+
+        class ObservedModel(OfflineModel):
+            def _generate(self, messages, **kwargs):
+                observed.append(messages[0].content)
+                return super()._generate(messages, **kwargs)
+
+        with tempfile.TemporaryDirectory() as directory:
+            self.assertEqual(response_style(directory, 'owner', 'detailed'), {'response_style': 'detailed'})
+            runtime = AgentRuntime(directory, ObservedModel())
+            try:
+                runtime.run('记住偏好简短回答', 'owner')
+                runtime.run('你好', 'another')
+                self.assertEqual(runtime.store.response_style('owner'), 'detailed')
+                self.assertIn(RESPONSE_STYLES['detailed'], observed[0])
+                self.assertNotIn(RESPONSE_STYLES['detailed'], observed[1])
+                with self.assertRaisesRegex(RuntimeError, 'already in use'):
+                    response_style(directory, 'owner', 'clear')
+            finally:
+                runtime.close()
+            self.assertEqual(response_style(directory, 'owner', 'show'), {'response_style': 'detailed'})
+            self.assertEqual(response_style(directory, 'owner', 'clear'), {'response_style': None})
+            self.assertEqual(response_style(directory, 'owner', 'show'), {'response_style': None})
+
+    def test_context_keeps_whole_recent_turns_without_rewriting_checkpoint(self):
+        from langchain_core.messages import HumanMessage, ToolMessage
+        observed = []
+
+        class ObservedModel(OfflineModel):
+            def _generate(self, messages, **kwargs):
+                observed.append(list(messages))
+                return super()._generate(messages, **kwargs)
+
+        def collect(request: str):
+            return 'CURRENT_EVIDENCE'
+
+        settings = ModelConfig(key='', context_bytes=4096)
+        with tempfile.TemporaryDirectory() as directory:
+            runtime = AgentRuntime(directory, ObservedModel(), settings=ModelConfig(key=''))
+            old = '旧' * 850
+            try:
+                runtime.run(old, 'owner')
+                runtime.run('保留这条旧问题', 'owner')
+            finally:
+                runtime.close()
+            runtime = AgentRuntime(directory, ObservedModel(), {'research': collect}, settings=settings)
+            try:
+                result = runtime.run('研究 AAPL', 'owner')
+                self.assertIn('CURRENT_EVIDENCE', result['text'])
+                self.assertTrue(any(isinstance(m, ToolMessage) for m in observed[-1]))
+                self.assertNotIn(old, [m.content for m in observed[-1]])
+                self.assertIn('保留这条旧问题', [m.content for m in observed[-1]])
+                checkpoint = runtime.agent.get_state({'configurable': {'thread_id': 'owner'}})
+                self.assertIn(old, [m.content for m in checkpoint.values['messages'] if isinstance(m, HumanMessage)])
+                traces = [json.loads(t['payload']) for t in runtime.store.traces(result['task_id'])
+                          if t['tool'] == 'context' and t['phase'] == 'prepared']
+                self.assertTrue(any(t['omitted_messages'] == 2 for t in traces))
+                self.assertTrue(all(t['after_bytes'] <= t['limit_bytes'] for t in traces))
+            finally:
+                runtime.close()
+
+    def test_oversized_question_is_blocked_before_model_provider(self):
+        with tempfile.TemporaryDirectory() as directory:
+            runtime = AgentRuntime(directory, OfflineModel(), settings=ModelConfig(key='', context_bytes=4096))
+            try:
+                with patch.object(OfflineModel, '_generate', side_effect=AssertionError('model invoked')):
+                    with self.assertRaises(ContextOverflow):
+                        runtime.run('问题' * 3000)
+                task = runtime.store.execute('SELECT id,status FROM tasks')[0]
+                self.assertEqual(task['status'], 'failed')
+                self.assertFalse(runtime.store.execute('SELECT id FROM usage_calls'))
+                trace = next(t for t in runtime.store.traces(task['id']) if t['phase'] == 'blocked')
+                self.assertNotIn('问题', trace['payload'])
+                self.assertGreater(json.loads(trace['payload'])['active_bytes'], 4096)
+            finally:
+                runtime.close()
+
     def test_real_langchain_tool_loop_and_routing(self):
         with tempfile.TemporaryDirectory() as d:
             received=[]

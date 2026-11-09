@@ -20,8 +20,9 @@ from langchain_core.outputs import ChatGeneration, ChatResult
 from langchain_core.tools import StructuredTool
 from langgraph.checkpoint.sqlite import SqliteSaver
 from .config import GEMINI_API_KEY, GEMINI_MODEL
+from .harness import ContextOverflow, DEFAULT_CONTEXT_BYTES, MAX_CONTEXT_BYTES, MIN_CONTEXT_BYTES, prepare_context
 from .sec_filings import citation_lines, filing_metadata_lines, guard_summary, validate_citations
-from .storage import Store, redact
+from .storage import RESPONSE_STYLES, Store, redact
 
 
 class CallLimit(RuntimeError):
@@ -67,6 +68,7 @@ class Invocation:
     filing_requested: bool = False
     filing_answer: str | None = None
     filing_citations: list = field(default_factory=list)
+    response_style: str | None = None
 
 
 CURRENT=ContextVar("stockman_invocation",default=None)
@@ -170,6 +172,9 @@ class AgentRuntime:
         self.session_locks={};self.lock=threading.Lock()
         self.max_models=settings.max_calls if settings else int(os.getenv('STOCKMAN_MAX_MODEL_CALLS','8'))
         self.max_tools=settings.max_tools if settings else int(os.getenv('STOCKMAN_MAX_TOOL_CALLS','12'))
+        self.context_bytes = settings.context_bytes if settings else int(os.getenv('STOCKMAN_CONTEXT_BYTES', str(DEFAULT_CONTEXT_BYTES)))
+        if not MIN_CONTEXT_BYTES <= self.context_bytes <= MAX_CONTEXT_BYTES:
+            raise ValueError('invalid model context byte allowance')
         self.max_research_queries=settings.max_research_queries if settings else int(os.getenv('STOCKMAN_MAX_RESEARCH_QUERIES','3'))
         self.research_timeout=settings.research_timeout if settings else int(os.getenv('STOCKMAN_RESEARCH_TIMEOUT_SECONDS','90'))
         if not 1<=self.max_research_queries<=12 or not 1<=self.research_timeout<=600:
@@ -252,9 +257,20 @@ class AgentRuntime:
             # an already-exhausted threshold. One call may exceed it before usage is known.
             with current.lock if current.budget_micro is not None and input_rate is not None else nullcontext():
                 check_task_cost(current,input_rate,agent)
+                if agent == 'supervisor' and current.response_style in RESPONSE_STYLES:
+                    system = request.system_message
+                    instructions = RESPONSE_STYLES[current.response_style]
+                    request = request.override(system_message=system.model_copy(update={
+                        'content': f'{system.content}\n答复排版偏好：{instructions}',
+                    }))
+                messages, context = prepare_context(request, self.context_bytes)
+                if messages is None:
+                    self.store.trace(current.task, agent, 'context', 'blocked', context)
+                    raise ContextOverflow('当前问题与证据超出上下文容量，请缩小调查范围')
+                self.store.trace(current.task, agent, 'context', 'prepared', context)
                 started=time.monotonic()
                 try:
-                    response=handler(request)
+                    response=handler(request.override(messages=messages))
                     message=next((m for m in reversed(response.result) if isinstance(m,AIMessage)),None)
                     record(self.store,current.task,agent,'model',name,started,getattr(message,'usage_metadata',None),
                            input_rate=input_rate,output_rate=output_rate,extra_unknown=(getattr(request.model,'max_retries',1) or 1)>1)
@@ -275,7 +291,7 @@ class AgentRuntime:
                 result=handler(request)
                 self.store.trace(current.task,agent,name,'success',{'seconds':round(time.monotonic()-start,3)})
                 return result
-            except CallLimit:raise
+            except (CallLimit, ContextOverflow):raise
             except Exception as exc:
                 with current.lock:current.failures.append({"tool":name,"error_type":type(exc).__name__})
                 # Raw provider exceptions may contain URLs or credentials: record type only.
@@ -298,6 +314,7 @@ class AgentRuntime:
             limits=self.store.execute('SELECT limit_micro_usd FROM task_budget_limits WHERE task_id=?',(task,))
             persisted=limits[0]['limit_micro_usd'] if limits else None
         current=Invocation(task,session,request=str(original),max_models=self.max_models,store=self.store,budget_micro=persisted,price_model=self.price_model,input_rate=self.input_rate,output_rate=self.output_rate)
+        current.response_style = self.store.response_style(session)
         if self.research_service is not None:
             from .research import task_symbol
             from .research_queries import ResearchQueries
@@ -318,7 +335,7 @@ class AgentRuntime:
                     state=self.agent.invoke(payload,config={'configurable':{'thread_id':session},'recursion_limit':32})
                 content=state['messages'][-1].content
                 text=content if isinstance(content,str) else '\n'.join(str(part.get('text','')) for part in content if isinstance(part,dict))
-            except CallLimit as exc:
+            except (CallLimit, ContextOverflow) as exc:
                 if not current.research_active:raise
                 stopped=type(exc).__name__
                 text=f'调查提前结束：{exc}。'

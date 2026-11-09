@@ -7,6 +7,7 @@ import os
 from pathlib import Path
 import re
 from .briefing.config import BriefingConfig
+from .harness import DEFAULT_CONTEXT_BYTES, MAX_CONTEXT_BYTES, MIN_CONTEXT_BYTES
 
 class ConfigError(ValueError):pass
 
@@ -39,6 +40,7 @@ class ModelConfig:
     output_rate:float|None=None
     max_research_queries:int=3
     research_timeout:int=90
+    context_bytes:int=DEFAULT_CONTEXT_BYTES
 
 @dataclass(frozen=True)
 class MonitorConfig:
@@ -63,7 +65,7 @@ class ServiceConfig:
 SCHEMA={
  'service':{'data_dir','timezone','log_level'},
  'broker':{'provider','account_env','client_id_env','consumer_key_env','sync_interval_seconds'},
- 'model':{'name','api_key_env','max_calls','max_tools','supervisor_model','portfolio_model','research_model','monitor_model','task_budget_usd','price_model','input_rate','output_rate','max_research_queries','research_timeout_seconds'},
+ 'model':{'name','api_key_env','max_calls','max_tools','supervisor_model','portfolio_model','research_model','monitor_model','task_budget_usd','price_model','input_rate','output_rate','max_research_queries','research_timeout_seconds','context_bytes'},
  'notification':{'provider','token_env','chat_id_env','allowed_users_env','interactive'},
  'briefing':{'enabled','time','daily_budget_usd','max_calls','max_output_tokens','max_events','lookback_hours','retention_days','input_rate','output_rate','max_research_queries','max_report_model_calls','research_timeout_seconds'},
  'monitor':{'interval_seconds','buffer_pct','max_daily_alerts','quote_max_age_seconds'},
@@ -144,7 +146,8 @@ def load_config(path,env=None):
           number('model','input_rate',1,0,10000) if has_in else None,
           number('model','output_rate',1,0,10000) if has_out else None,
           max_research_queries=number('model','max_research_queries',3,1,12,True),
-          research_timeout=number('model','research_timeout_seconds',90,1,600,True))
+          research_timeout=number('model','research_timeout_seconds',90,1,600,True),
+          context_bytes=number('model','context_bytes',DEFAULT_CONTEXT_BYTES,MIN_CONTEXT_BYTES,MAX_CONTEXT_BYTES,True))
     notification=ChannelConfig(channel,secret('notification','token_env','TG_BOT_TOKEN'),int(target),allowed,boolean('notification','interactive',True))
     monitor=MonitorConfig(number('monitor','interval_seconds',300,1,86400),number('monitor','buffer_pct',0.02,0.000001,1),
           number('monitor','max_daily_alerts',5,1,100,True),number('monitor','quote_max_age_seconds',900,1,86400))

@@ -221,6 +221,22 @@ Yahoo 提供行情与日线；SEC 提供适用的公司财务披露。按需 Goo
 
 `stockman.sqlite` 保存任务、快照、规则、来源、日报、预算和投递状态，`checkpoints.sqlite` 保存主控会话执行状态。报告历史默认保留 30 天，预算账本与日投递索引保留审计。原始新闻不持久保存，恢复后的输出不保证带有中断前的新闻附件。
 
+### Agent Harness
+
+问答主控和子 Agent 在模型调用前为上下文设置输入预算。后台通过 `[model] context_bytes` 配置，本地问答通过 `STOCKMAN_CONTEXT_BYTES` 配置，默认 49,152 字节。预算估算包含系统提示、工具 schema、消息、工具调用参数与结果。它使用 UTF-8 JSON 大小，供应商 token 用量仍取自独立的用量记录。
+
+当前问题及其工具调用链整体保留。剩余预算按最近顺序容纳已完成的历史轮次，超限或未完成的历史轮次可从本轮输入省略，原检查点保持完整。当前问题和证据自身超限时，在调用供应商前停止。`scripts/tasks.py --task <任务编号>` 的 `context` 轨迹记录前后字节数、上限与省略消息数。日报保留独立的证据和预算处理。
+
+会话级排版偏好保存在 SQLite，重启后仍可读取。由本机操作员设置，只有该会话的主控读取，模型没有写入工具。离线操作示例：
+
+```sh
+venv/bin/python scripts/chat.py --offline --session demo --response-style detailed
+venv/bin/python scripts/chat.py --offline --session demo --response-style show
+venv/bin/python scripts/chat.py --offline --session demo --response-style clear
+```
+
+可选值为 `concise`、`standard`、`detailed`。管理已有运行目录时显式指定 `--data-dir` 和相同的 `--session`，先停止占用该目录的进程。偏好只用于答复排版，证据和授权仍由现有规则检查。
+
 ## 架构与代码导航
 
 ```text
@@ -237,6 +253,7 @@ stockman / service.py → 配置校验 → BackendService
 | [src/stockman/service_config.py](src/stockman/service_config.py)、[service.py](src/stockman/service.py) | INI 校验、依赖组装、后台生命周期 |
 | `src/stockman/brokers/`、`channels/` | 券商快照和消息通道契约，以及 IBKR／Telegram 适配器 |
 | [src/stockman/agents.py](src/stockman/agents.py) | LangChain 主控与三个子 Agent、调用限制、日志和会话检查点 |
+| [src/stockman/harness.py](src/stockman/harness.py) | 模型输入预算和按完整轮次筛选历史 |
 | `src/stockman/portfolio.py`、`research.py`、`monitoring.py` | 持仓、研究和监控业务 |
 | `src/stockman/briefing/` | 条目、权限、去重、预算、历史与调度 |
 | `src/stockman/stock_briefing/` | 股票来源、直接关系、证据解释与报告 |

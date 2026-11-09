@@ -7,6 +7,12 @@ import threading
 import time
 import uuid
 
+RESPONSE_STYLES = {
+    'concise': '在保留必要证据和限制的前提下，使用简明回答。',
+    'standard': '先回答主要问题，再列出支撑证据和限制。',
+    'detailed': '分段展开证据、依据和限制，明确每一项推测。',
+}
+
 def decode_snapshot(row):
     """Read legacy positions or the atomic positions+scope envelope; no DB writes."""
     row=dict(row);data=json.loads(row.pop('payload'))
@@ -44,6 +50,7 @@ class Store:
         CREATE TABLE IF NOT EXISTS traces(id INTEGER PRIMARY KEY,task_id TEXT,agent TEXT,tool TEXT,phase TEXT,payload TEXT,at REAL);
         CREATE TABLE IF NOT EXISTS usage_calls(id INTEGER PRIMARY KEY,task_id TEXT,role TEXT,kind TEXT,provider TEXT,model TEXT,elapsed_ms INTEGER,input_tokens INTEGER,output_tokens INTEGER,total_tokens INTEGER,estimated_micro_usd INTEGER,extra_cost_unknown INTEGER NOT NULL,status TEXT,at REAL);
         CREATE TABLE IF NOT EXISTS task_budget_limits(task_id TEXT PRIMARY KEY,limit_micro_usd INTEGER NOT NULL);
+        CREATE TABLE IF NOT EXISTS session_preferences(session TEXT PRIMARY KEY,response_style TEXT NOT NULL);
 
         CREATE TABLE IF NOT EXISTS snapshots(id TEXT PRIMARY KEY,source TEXT,scope TEXT,asof REAL,payload TEXT);
         CREATE TABLE IF NOT EXISTS rules(symbol TEXT PRIMARY KEY,spec TEXT,state TEXT DEFAULT 'normal',last_time REAL DEFAULT 0,enabled INTEGER DEFAULT 1);
@@ -74,6 +81,19 @@ class Store:
 
     def traces(self, task):
         return self.execute("SELECT * FROM traces WHERE task_id=? ORDER BY id",(task,))
+
+    def response_style(self, session):
+        rows = self.execute('SELECT response_style FROM session_preferences WHERE session=?', (session,))
+        return rows[0]['response_style'] if rows else None
+
+    def set_response_style(self, session, style):
+        if style is None:
+            self.execute('DELETE FROM session_preferences WHERE session=?', (session,))
+            return
+        if style not in RESPONSE_STYLES:
+            raise ValueError('invalid response style')
+        self.execute('INSERT INTO session_preferences VALUES (?,?) ON CONFLICT(session) '
+                     'DO UPDATE SET response_style=excluded.response_style', (session, style))
 
     def snapshot(self, source, scope, positions, asof=None, identity=None,coverage=None):
         identity=identity or uuid.uuid4().hex
