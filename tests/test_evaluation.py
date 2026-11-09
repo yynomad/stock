@@ -100,6 +100,15 @@ class EvaluationTest(unittest.TestCase):
         self.assertEqual(self.rows['T04']['model_starts'], 8)
         self.assertEqual(self.rows['T03']['tools'], [])
         self.assertTrue(self.rows['T02']['traces'])
+        self.assertTrue(any(row['tool'] == 'context' and row['phase'] == 'prepared'
+                            for row in self.rows['T02']['traces']))
+        report = deepcopy(self.report)
+        summary = summarize(report)['tool_contract']
+        self.assertGreater(summary['eligible'], 0)
+        self.assertEqual(summary['passed'], summary['eligible'])
+        wrong = next(row for row in report['attempts'] if row['case_id'] == 'T02')
+        next(check for check in wrong['checks'] if check['name'] == 'tool_argument_symbol')['passed'] = False
+        self.assertEqual(summarize(report)['tool_contract']['passed'], summary['passed'] - 1)
 
     def test_injection_no_authorization_canary_and_session_checks(self):
         for identity in ('S01', 'S02', 'S04', 'F04'):

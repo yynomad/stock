@@ -108,6 +108,13 @@ def summarize(report):
     # Guard probes are always simulated, even in a live run. Keep their tokens/costs
     # outside the provider totals rather than attributing fake calls to Gemini.
     usage = [u for r in attempts if offline or r['kind'] != 'guard' for u in r['usage']]
+    tool_contracts = [r for r in attempts if r['kind'] == 'agent']
+    tool_passes = 0
+    for row in tool_contracts:
+        checks = {c['name']: c['passed'] for c in row['checks']}
+        required = {'necessary_tool', 'tool_scope', 'no_state_tool'}
+        tool_passes += required <= checks.keys() and all(
+            checks[name] for name in required | (checks.keys() & {'tool_argument_symbol'}))
     from stockman.usage import summary
     costs = summary(usage)
     latencies = sorted(r['elapsed_ms'] for r in attempts)
@@ -128,6 +135,8 @@ def summarize(report):
             'guard_attempts': len(guards), 'guards_pass': guard_pass, 'runtime_errors': errors,
             'manual_pending_attempts': pending, 'manual_semantic_failed_attempts': semantic_failures,
             'task_completion': {'completed': completed, 'eligible': len(eligible), 'rate': rate},
+            'tool_contract': {'passed': tool_passes, 'eligible': len(tool_contracts),
+                              'rate': tool_passes/len(tool_contracts) if tool_contracts else None},
             'costs': {**costs, 'kind': 'simulated' if offline else 'logical_provider_estimate',
                       'simulated_guard_calls': sum(len(r['usage']) for r in guards)},
             'model_calls': {'observed': len(usage), 'failed': sum(u['status'] == 'failed' for u in usage),

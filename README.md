@@ -308,6 +308,8 @@ venv/bin/python scripts/evaluate.py run --offline --case C01 --case F03 --repeat
 
 每次生成 `report.json`、可直接打开的 `report.html` 和 `review-template.json`。报告包含数据集版本/hash、Git 与代码/提示词标识、固定资料时钟、模型、全部调用/错误/降级、tokens、费用未知和耗时分布。离线响应和 tokens 是预设测试数据；`offline_replay_pass` 只证明流程与检测器通过，不能证明真实模型分析质量。超时或无 usage 不视为免费，SDK 重试关闭，日报仍最多进行一次有记录的应用重试。
 
+`tool_contract` 按问答案例尝试计算，检查预期工具的使用或省略、角色作用域、适用的标的参数，以及是否尝试未经授权的变更。报告给出通过数和分母，单次调用的语义正确性由案例证据和人工评审补充。
+
 真实模型评测必须显式指定 `--live` 和 Gemini 型号，并在当前进程环境设置自己的 `GEMINI_API_KEY`。以下命令会产生供应商费用，业务工具仍是同一组合成资料，不是实盘联调：
 
 ```sh
