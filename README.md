@@ -294,6 +294,35 @@ venv/bin/python scripts/smoke.py --service gemini --symbol AAPL
 
 提交问题时请附脱敏的复现步骤、Python／依赖版本和错误类型。修改业务前补充正常、边界及失败路径回归，再运行统一检查；不要提交真实配置、运行数据或本地开发笔记。
 
+### GitHub Actions 构建与部署
+
+PR 和 `main` 的推送会在 Ubuntu 上打包源码，并从解包目录安装锁定依赖、运行统一离线检查及服务和日报演示。部署使用同一次运行中已通过验证的压缩包。GitHub Actions 核对 SHA-256，再经 SSH 上传到 Oracle。服务器在独立版本目录安装并复验，成功后写入 `acceptance/result.json`。
+
+首次配置时，在仓库的 **Settings → Environments** 创建 `oracle-test`，限制部署分支为 `main`，并设置：
+
+| 类型 | 名称 | 值 |
+| --- | --- | --- |
+| 环境变量 | `STOCKMAN_SSH_HOST` | `ubuntu@YOUR_VPS_IP`，替换为实际 SSH 用户和主机 |
+| 环境变量 | `STOCKMAN_SSH_PORT` | 默认 `22`，使用自定义端口时设置 |
+| 环境变量 | `STOCKMAN_SSH_KNOWN_HOSTS` | 目标主机已经核实的 `known_hosts` 记录 |
+| 环境密钥 | `STOCKMAN_SSH_KEY` | 为 GitHub Actions 单独授权的 SSH 私钥，公钥添加到目标 SSH 用户 |
+
+服务器须已安装 Python 3.10+ 和 `venv` 模块，并允许 Actions runner 访问 SSH 端口。首次从 **Actions → StockMan CI/CD → Run workflow** 选择 `main` 安装并验收。首次验收通过后，可在仓库的 **Settings → Secrets and variables → Actions → Variables** 设置仓库变量 `STOCKMAN_AUTO_DEPLOY=true`，让 `main` 每次通过构建后自动部署。
+
+这个流程只安装和验证版本。常驻服务启动、真实凭据配置及 Zilliz 联调各自验收。
+
+### 从本机执行 VPS 安装测试
+
+准备 Python 3.10+ 和 `venv` 模块后，可以从本机通过已有 SSH 登录安装当前工作区源码。SSH 主机须已在本机 `known_hosts` 中核实。命令会上传包括未提交源码的部署包，在 SSH 用户的 `~/.local/share/stockman/releases/` 下建立独立版本目录和 Python 环境，并执行完整离线检查以及服务、日报端到端演示。
+
+```sh
+venv/bin/python scripts/vps.py deploy --host ubuntu@YOUR_VPS_IP --identity ~/.ssh/YOUR_KEY
+```
+
+结果和日志位于版本目录的 `acceptance/`。`result.json` 只在全部检查通过后生成。依赖目前锁定自 macOS/Python 3.10，Linux 安装与运行结果须以目标机实际验收为准，失败日志保留在本次版本目录。部署包仅包含代码、测试、合成评测及公开配置模板。安装测试完成后，可在 VPS 的版本目录继续运行现有 CLI。持续运行和真实模型、券商、消息联调需要准备目标机配置并分别验收。
+
+只生成源码包时使用 `venv/bin/python scripts/vps.py package --output /tmp/stockman-source.tar.gz`，输出给出包的 SHA-256，已有输出文件会被拒绝覆盖。
+
 ## 分析质量评测
 
 [固定案例](evals/cases-v1.json) 包含 24 个自编合成场景，覆盖证据不足、错误引用、数字与时间口径、工具参数、多轮会话、提示注入、权限、失败及预算边界。评测复用现有 Agent 工具循环、日报引用校验和鉴权入口；券商、行情、搜索与消息通道均使用合成资料。评测不启动后台服务，不读取 `.env` 或 `stock.conf`。
