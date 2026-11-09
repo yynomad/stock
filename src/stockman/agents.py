@@ -72,6 +72,7 @@ class Invocation:
 
 
 CURRENT=ContextVar("stockman_invocation",default=None)
+PARENT_TOOL=ContextVar('stockman_parent_tool', default=None)
 
 FILING_PROMPT = """
 问 10-K/10-Q 正文或其中的管理层讨论、业务或风险时，用 lookup_filing。报告期末采用用户明确给出的 YYYY-MM-DD，未指定则查最新披露。
@@ -272,6 +273,13 @@ class AgentRuntime:
                 try:
                     response=handler(request.override(messages=messages))
                     message=next((m for m in reversed(response.result) if isinstance(m,AIMessage)),None)
+                    if message is not None:
+                        allowed = {getattr(tool, 'name', None) for tool in request.tools}
+                        steps = [call['name'] if call['name'] in allowed else 'unregistered'
+                                 for call in message.tool_calls]
+                        steps.extend('invalid_tool_call' for _ in message.invalid_tool_calls)
+                        self.store.trace(current.task, agent, 'decision', 'proposed' if steps else 'answer',
+                                         {'steps': steps, 'parent_tool': PARENT_TOOL.get()})
                     record(self.store,current.task,agent,'model',name,started,getattr(message,'usage_metadata',None),
                            input_rate=input_rate,output_rate=output_rate,extra_unknown=(getattr(request.model,'max_retries',1) or 1)>1)
                     return response
@@ -282,21 +290,34 @@ class AgentRuntime:
         def trace_tool(request, handler):
             current=CURRENT.get()
             with current.lock:
+                if current.tools>=self.max_tools:raise CallLimit('工具调用次数达到上限')
                 current.tools+=1
-                if current.tools>self.max_tools:raise CallLimit('工具调用次数达到上限')
-            name=request.tool_call['name'];start=time.monotonic()
-            trace_args={} if name.startswith('lookup_') else {'args':request.tool_call.get('args')}
+                span = current.tools
+            name = request.tool.name if request.tool is not None else 'unregistered'
+            start=time.monotonic()
+            trace_args = {'span': span, 'parent_tool': PARENT_TOOL.get()}
+            if request.tool is not None and not name.startswith('lookup_'):
+                trace_args['args'] = request.tool_call.get('args')
             self.store.trace(current.task,agent,name,'start',trace_args)
+            parent = PARENT_TOOL.set(span)
             try:
                 result=handler(request)
-                self.store.trace(current.task,agent,name,'success',{'seconds':round(time.monotonic()-start,3)})
+                failed = isinstance(result, ToolMessage) and result.status == 'error'
+                if failed:
+                    with current.lock:current.failures.append({'tool': name, 'error_type': 'ToolError'})
+                self.store.trace(current.task, agent, name, 'failed' if failed else 'success',
+                                 {'span': span, 'seconds': round(time.monotonic()-start, 3)})
                 return result
-            except (CallLimit, ContextOverflow):raise
+            except (CallLimit, ContextOverflow) as exc:
+                self.store.trace(current.task, agent, name, 'stopped', {'span': span, 'error_type': type(exc).__name__})
+                raise
             except Exception as exc:
                 with current.lock:current.failures.append({"tool":name,"error_type":type(exc).__name__})
                 # Raw provider exceptions may contain URLs or credentials: record type only.
-                self.store.trace(current.task,agent,name,'failed',{'error_type':type(exc).__name__})
+                self.store.trace(current.task,agent,name,'failed',{'span': span, 'error_type':type(exc).__name__})
                 return ToolMessage(content=json.dumps({'error':type(exc).__name__,'detail':'工具调用失败，数据未验证；不要宣称成功'},ensure_ascii=False),tool_call_id=request.tool_call['id'])
+            finally:
+                PARENT_TOOL.reset(parent)
         return [count_model,account_model,trace_tool]
 
     def _session_lock(self, session):

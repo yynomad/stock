@@ -100,6 +100,11 @@ class AgentTest(unittest.TestCase):
             traces=runtime.store.traces(result['task_id'])
             self.assertTrue(any(t['tool']=='delegate_research' and t['phase']=='success' for t in traces))
             self.assertFalse(any(t['tool']=='delegate_portfolio' for t in traces))
+            decision = next(t for t in traces if t['tool'] == 'decision' and t['agent'] == 'supervisor')
+            self.assertEqual(json.loads(decision['payload'])['steps'], ['delegate_research'])
+            delegate = next(t for t in traces if t['tool'] == 'delegate_research' and t['phase'] == 'start')
+            child = next(t for t in traces if t['tool'] == 'research_tool' and t['phase'] == 'start')
+            self.assertEqual(json.loads(child['payload'])['parent_tool'], json.loads(delegate['payload'])['span'])
             self.assertEqual(result['model_calls'],4)
             runtime.close()
 
