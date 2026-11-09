@@ -299,9 +299,12 @@ class AgentRuntime:
                 return ToolMessage(content=json.dumps({'error':type(exc).__name__,'detail':'工具调用失败，数据未验证；不要宣称成功'},ensure_ascii=False),tool_call_id=request.tool_call['id'])
         return [count_model,account_model,trace_tool]
 
+    def _session_lock(self, session):
+        with self.lock:
+            return self.session_locks.setdefault(session, threading.RLock())
+
     def run(self, text, session='local'):
-        with self.lock:session_lock=self.session_locks.setdefault(session,threading.RLock())
-        with session_lock:
+        with self._session_lock(session):
             task=self.store.create_task(session,text)
             return self._invoke(task,session,{'messages':[HumanMessage(content=text)]})
 
@@ -390,17 +393,23 @@ class AgentRuntime:
     def resume(self, task):
         row=self.store.task(task)
         if not row or row['status']!='interrupted':raise ValueError('没有可恢复的中断任务')
+        with self._session_lock(row['session']):
+            return self._resume_locked(task, row['session'])
+
+    def _resume_locked(self, task, session):
+        if self.store.task(task)['status'] != 'interrupted':
+            raise ValueError('没有可恢复的中断任务')
         # Keep old local records, but never resume an image task against broker holdings.
         if self.store.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='task_context'"):
             legacy=self.store.execute('SELECT snapshot FROM task_context WHERE task_id=?',(task,))
             if legacy and legacy[0]['snapshot']:
                 raise ValueError('截图任务功能已移除，不能恢复旧图片任务；请重新发起文字请求')
-        newer=self.store.execute('SELECT id FROM tasks WHERE session=? AND created>?',(row['session'],row['created']))
+        newer=self.store.execute('SELECT id FROM tasks WHERE session=? AND rowid>(SELECT rowid FROM tasks WHERE id=?) LIMIT 1',(session,task))
         if newer:raise ValueError('会话已有后续任务，不能重放旧检查点')
-        state=self.agent.get_state({'configurable':{'thread_id':row['session']}})
+        state=self.agent.get_state({'configurable':{'thread_id':session}})
         if not state.next:raise ValueError('没有待执行检查点，不能宣称已恢复')
         self.store.finish(task,'running')
-        return self._invoke(task,row['session'],None)
+        return self._invoke(task,session,None)
 
     def close(self):
         self.conn.close();self.store.close();self.process_lock.close()

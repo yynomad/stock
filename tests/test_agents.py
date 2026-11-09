@@ -199,3 +199,18 @@ class AgentTest(unittest.TestCase):
             self.assertEqual(runtime.store.task(task)['status'],'interrupted')
             with self.assertRaises(ValueError):runtime.resume(task)
             runtime.close()
+
+    def test_resume_rejects_newer_same_session_task_with_equal_timestamp(self):
+        with tempfile.TemporaryDirectory() as directory:
+            runtime = AgentRuntime(directory, OfflineModel())
+            try:
+                with patch('stockman.storage.time.time', return_value=1):
+                    older = runtime.store.create_task('owner', '先前问题')
+                    runtime.store.finish(older, 'interrupted')
+                    runtime.store.create_task('owner', '后续问题')
+                with patch.object(runtime.agent, 'get_state') as state:
+                    with self.assertRaisesRegex(ValueError, '已有后续任务'):
+                        runtime.resume(older)
+                    state.assert_not_called()
+            finally:
+                runtime.close()
