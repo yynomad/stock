@@ -12,6 +12,7 @@ import tempfile
 import time
 import uuid
 
+from ..model_providers import DEFAULT_URLS, KEY_NAMES, ModelEndpoint
 from .dataset import digest, evidence, load_dataset
 from .execution import dump, enrich, read_journal
 from .reporting import POLICY, apply_review, binding, compare_reports, write_artifacts
@@ -20,7 +21,7 @@ from .scoring import check_attempt, detector_checks
 ROOT = Path(__file__).resolve().parents[3]
 
 
-def child_environment(mode):
+def child_environment(mode, provider=None):
     # Do not inherit broker, Telegram, tracing, dotenv or arbitrary application settings.
     allowed = ('PATH', 'SYSTEMROOT', 'TMPDIR', 'SSL_CERT_FILE', 'SSL_CERT_DIR',
                'HTTP_PROXY', 'HTTPS_PROXY', 'ALL_PROXY', 'NO_PROXY',
@@ -28,9 +29,15 @@ def child_environment(mode):
     env = {key: os.environ[key] for key in allowed if key in os.environ}
     env.update(PYTHONPATH=str(ROOT/'src') + os.pathsep + str(ROOT),
                PYTHONDONTWRITEBYTECODE='1', STOCKMAN_OFFLINE='1', STOCKMAN_EXPLICIT_CONFIG='1',
-               GEMINI_API_KEY=os.environ.get('GEMINI_API_KEY', '') if mode == 'live' else '',
+               GEMINI_API_KEY='',
                GOOGLE_API_KEY='', LANGSMITH_TRACING='false', LANGCHAIN_TRACING_V2='false',
                LANGSMITH_API_KEY='', BRIEFING_ENABLED='false')
+    if mode == 'live':
+        provider = provider or 'gemini'
+        key = KEY_NAMES[provider]
+        env[key] = os.environ.get(key, '')
+        if os.getenv('STOCKMAN_MODEL_BASE_URL'):
+            env['STOCKMAN_MODEL_BASE_URL'] = os.environ['STOCKMAN_MODEL_BASE_URL']
     return env
 
 
@@ -41,7 +48,7 @@ def execute(case, options):
         dump(path/'request.json', {'case': case, 'options': options})
         try:
             process = subprocess.run([sys.executable, '-B', '-m', 'stockman.evaluation.execution', str(path/'request.json')],
-                                     cwd=directory, env=child_environment(options['mode']),
+                                     cwd=directory, env=child_environment(options['mode'],options.get('provider')),
                                      capture_output=True, timeout=options['timeout'])
         except subprocess.TimeoutExpired:
             result = {'text': '', 'status': 'timeout', 'error_type': 'EvaluationTimeout'}
@@ -71,13 +78,13 @@ def metadata(data, options):
     evaluator = {str(path.relative_to(ROOT)): path.read_text(encoding='utf-8')
                  for path in sorted((ROOT/'src/stockman/evaluation').glob('*.py'))}
     return {'dataset_version': data['version'], 'dataset_hash': digest(data), 'dataset_case_count': len(data['cases']),
-            'mode': options['mode'], 'model': options['model'], 'policy': POLICY,
+            'mode': options['mode'], 'provider': options.get('provider'), 'model': options['model'], 'policy': POLICY,
             'production_prompt_hash': digest(prompts), 'evaluator_hash': digest(evaluator),
             'git_revision': git_value(['rev-parse', 'HEAD']),
             'working_tree_diff_hash': digest(git_value(['diff', 'HEAD']) or ''),
             'fixed_fixture_clock': sorted({c['clock'] for c in data['cases']}),
             'created_at': datetime.now(timezone.utc).isoformat(),
-            'config': {k: v for k, v in options.items() if k not in ('model', 'mode')},
+            'config': {k: v for k, v in options.items() if k not in ('model', 'mode', 'provider')},
             'tool_source': 'fixed synthetic fixtures; no broker/market/search/Telegram requests',
             'usage_scope': 'all observed logical calls, SDK retries disabled; no provider invoice guarantee'}
 
@@ -128,10 +135,11 @@ def main(argv=None):
     run_parser = commands.add_parser('run')
     modes = run_parser.add_mutually_exclusive_group()
     modes.add_argument('--offline', action='store_true', help='default: replay protocol, never a model quality score')
-    modes.add_argument('--live', action='store_true', help='explicit Gemini calls; synthetic business tools only')
+    modes.add_argument('--live', action='store_true', help='explicit provider calls; synthetic business tools only')
     run_parser.add_argument('--dataset', type=Path, default=ROOT/'evals/cases-v1.json')
     run_parser.add_argument('--output', type=Path, default=Path('runtime/evals'))
     run_parser.add_argument('--model')
+    run_parser.add_argument('--provider', choices=tuple(DEFAULT_URLS))
     run_parser.add_argument('--case', action='append', default=[])
     run_parser.add_argument('--max-cases', type=bounded_integer(1, 24), default=24)
     run_parser.add_argument('--repeat', type=bounded_integer(1, 10), default=1)
@@ -161,20 +169,23 @@ def main(argv=None):
             return 0 if comparison['comparable'] else 2
         if (args.input_rate is None) != (args.output_rate is None):
             parser.error('both --input-rate and --output-rate are required together')
+        provider = None
         if args.live:
-            if not args.model or not args.model.startswith('gemini-') or len(args.model) > 150:
-                parser.error('--live requires an explicitly named supported gemini-* model')
-            if not os.environ.get('GEMINI_API_KEY'):
-                parser.error('set GEMINI_API_KEY in the process environment; eval never loads .env')
-        elif args.model:
-            parser.error('--model is only valid with --live')
+            if not args.model:
+                parser.error('--live requires an explicitly named model')
+            endpoint = ModelEndpoint.from_environment(provider=args.provider,name=args.model)
+            provider = endpoint.provider
+            if not endpoint.key:
+                parser.error(f'set {KEY_NAMES[provider]} in the process environment; eval never loads .env')
+        elif args.model or args.provider:
+            parser.error('--model and --provider are only valid with --live')
         data = load_dataset(args.dataset)
         ids = [c['id'] for c in data['cases']]
         if len(set(args.case)) != len(args.case) or any(identity not in ids for identity in args.case):
             parser.error('unknown or repeated --case ID')
         selected = [identity for identity in ids if not args.case or identity in args.case][:args.max_cases]
         options = dict(mode='live' if args.live else 'offline', model=args.model or 'synthetic-replay',
-                       case_ids=selected, repeat=args.repeat, max_calls=args.max_calls,
+                       provider=provider, case_ids=selected, repeat=args.repeat, max_calls=args.max_calls,
                        timeout=args.timeout, call_timeout=args.call_timeout,
                        input_rate=args.input_rate, output_rate=args.output_rate)
         report = run(data, options)

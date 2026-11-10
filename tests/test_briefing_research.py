@@ -27,6 +27,32 @@ class BriefingResearchTest(unittest.TestCase):
     def setUp(self):
         self.temp=tempfile.TemporaryDirectory();self.store=Store(Path(self.temp.name)/'db')
     def tearDown(self):self.store.close();self.temp.cleanup()
+    def test_deepseek_daily_requires_model_bound_rates_and_uses_json(self):
+        from stockman.model_providers import ModelEndpoint
+        from stockman.stock_briefing.agent import make_model
+        from test_model_providers import intercept, reply
+        requests = []
+
+        def respond(http, request):
+            requests.append(request)
+            self.assertIn(b'"response_format":{"type":"json_object"}',request.content)
+            return http.Response(200,json=reply('deepseek',False),request=request)
+
+        endpoint=ModelEndpoint('deepseek','market-alias','fixture-secret','https://gateway.invalid/llm')
+        task=self.store.create_task('owner','daily')
+        items=StockSource().fetch(2000000000)
+        with intercept('deepseek',respond):
+            missing=BriefingConfig()
+            report=ResearchAgent(self.store,missing,model_factory=lambda:make_model(missing,endpoint))
+            self.assertEqual(report.explain(task,items,Budget(self.store,missing),2000000000),
+                             ([], 'model_rates_unconfigured'))
+            self.assertFalse(requests)
+            priced=BriefingConfig(price_model='market-alias')
+            report=ResearchAgent(self.store,priced,model_factory=lambda:make_model(priced,endpoint))
+            self.assertEqual(report.explain(task,items,Budget(self.store,priced),2000000000),
+                             ([], 'explained'))
+            self.assertEqual(len(requests),1)
+
     def test_invalid_budget_schedule_and_zero_never_calls_model(self):
         for value in ['nan','inf','-1','oops']:
             with self.assertRaises(ValueError):BriefingConfig.load({'BRIEFING_DAILY_BUDGET_USD':value})

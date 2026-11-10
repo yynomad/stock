@@ -21,7 +21,9 @@ def main():
                 assert (ROOT/target.split("#")[0]).is_file(),target
     assert 'gemini-3.5-flash-lite' in (ROOT/'src/stockman/config.py').read_text()
     env=dict(os.environ,STOCKMAN_OFFLINE="1",PYTHONDONTWRITEBYTECODE="1",PYTHONPATH=str(ROOT/'src')+os.pathsep+str(ROOT),
-             GEMINI_API_KEY="",GOOGLE_API_KEY="",TG_BOT_TOKEN="",TG_CHAT_ID="",LANGSMITH_TRACING="false",BRIEFING_ENABLED="false")
+             GEMINI_API_KEY="",DEEPSEEK_API_KEY="",GOOGLE_API_KEY="",TG_BOT_TOKEN="",TG_CHAT_ID="",
+             STOCKMAN_MODEL_PROVIDER="gemini",STOCKMAN_MODEL_BASE_URL="",STOCKMAN_MODEL_NAME="",
+             STOCKMAN_GROUNDING_API_KEY="",LANGSMITH_TRACING="false",BRIEFING_ENABLED="false",BRIEFING_PRICE_MODEL="")
     # Start PostgreSQL before installing the Python network guard. Psycopg uses only the private Unix socket.
     launcher=[sys.executable, str(ROOT/'scripts/test_postgres.py'), '--']
     with tempfile.TemporaryDirectory() as directory:

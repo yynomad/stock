@@ -83,6 +83,7 @@ class ResearchQueries:
 
 STATUS_TEXT = {
     'missing': '缺少可用证据',
+    'source_unconfigured': '未配置 Gemini 新闻搜索凭据',
     'source_failed': '来源调用失败',
     'source_timeout': '来源请求超时',
     'deadline_exceeded': '调查时间已到',

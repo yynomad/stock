@@ -8,6 +8,71 @@ from stockman.harness import ContextOverflow
 from stockman.service_config import ModelConfig
 
 class AgentTest(unittest.TestCase):
+    def test_deepseek_runs_production_tool_chain_through_configured_endpoint(self):
+        from test_model_providers import intercept, reply
+        requests = []
+
+        def respond(http, request):
+            body = json.loads(request.content)
+            requests.append((request,body))
+            last = body['messages'][-1]
+            names = {tool['function']['name'] for tool in body['tools']}
+            child = 'portfolio_tool' in names
+            if last['role'] == 'tool':
+                payload = reply('deepseek',False)
+                payload['choices'][0]['message']['content'] = 'verified fixture evidence'
+            else:
+                payload = reply('deepseek',True)
+                function = payload['choices'][0]['message']['tool_calls'][0]['function']
+                function['name'] = 'portfolio_tool' if child else 'delegate_portfolio'
+                function['arguments'] = '{"request":"portfolio summary"}'
+            return http.Response(200,json=payload,request=request)
+
+        def portfolio(request: str):
+            return 'fixture portfolio evidence'
+
+        settings = ModelConfig(key='fixture-private-key',name='provider/alias',provider='deepseek',
+                               base_url='https://gateway.invalid/llm')
+        with tempfile.TemporaryDirectory() as directory, intercept('deepseek',respond):
+            runtime = AgentRuntime(directory,services={'portfolio':portfolio},settings=settings)
+            try:
+                result = runtime.run('检查持仓')
+                self.assertEqual(result['status'],'completed')
+                self.assertEqual(len(requests),4)
+                self.assertTrue(all(request.url.host=='gateway.invalid' and body['model']=='provider/alias'
+                                    for request,body in requests))
+                self.assertIn('fixture portfolio evidence',repr(requests[2][1]))
+                self.assertNotIn(settings.key,repr([body for _,body in requests]))
+                from stockman.usage import calls
+                usage = calls(runtime.store,result['task_id'])
+                self.assertEqual(len(usage),4)
+                self.assertEqual({(row['provider'],row['model'],row['cached_input_tokens']) for row in usage},
+                                 {('deepseek','provider/alias',2)})
+                self.assertTrue(all(row['extra_cost_unknown'] and row['estimated_micro_usd'] is None for row in usage))
+            finally:
+                runtime.close()
+
+    def test_resume_rejects_changed_gateway_and_keeps_original_task(self):
+        from stockman.model_providers import ModelConfigurationError
+        from dataclasses import replace
+        settings = ModelConfig(key='fixture-private-key',name='market-alias',provider='deepseek',
+                               base_url='https://gateway-a.invalid/llm')
+        with tempfile.TemporaryDirectory() as directory:
+            runtime = AgentRuntime(directory,OfflineModel(),settings=settings)
+            task = runtime.store.create_task('owner','question',runtime.model_route)
+            runtime.store.finish(task,'interrupted')
+            runtime.close()
+            runtime = AgentRuntime(directory,OfflineModel(),settings=replace(settings,base_url='https://gateway-b.invalid/llm'))
+            try:
+                with self.assertRaisesRegex(ModelConfigurationError,'模型配置已改变'):
+                    runtime.resume(task)
+                row = runtime.store.task(task)
+                self.assertEqual(row['status'],'interrupted')
+                self.assertNotIn('gateway-a',repr(row))
+                self.assertNotIn(settings.key,repr(row))
+            finally:
+                runtime.close()
+
     def test_operator_style_memory_survives_restart_and_is_session_scoped(self):
         from scripts.chat import response_style
         from stockman.storage import RESPONSE_STYLES

@@ -62,7 +62,9 @@ def prepare_context(request, limit, now, ttl):
         if any(isinstance(message, ToolMessage) for message in turn):
             evidence += 1
             continue
-        size = sum(sizes[start:end])
+        # Completed text-only turns can cross providers. Keep the active tool chain intact.
+        turn = [type(message)(content=message.text) for message in turn]
+        size = sum(context_bytes(message.model_dump(mode='json',exclude=excluded)) + 1 for message in turn)
         if size > remaining:
             break
         kept.append(turn)

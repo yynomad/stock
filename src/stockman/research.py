@@ -12,6 +12,7 @@ from typing import Literal
 import requests
 from .config import GEMINI_API_KEY,GEMINI_MODEL
 from .harness import fresh
+from .model_providers import DEFAULT_URLS, GEMINI
 from .portfolio import valid_symbol
 from .pa_strategy import analyze_pa
 from .market import YahooMarket
@@ -139,6 +140,15 @@ def parse_grounding(response):
 
 class GoogleNews:
     def __init__(self,api_key=None,model_name=None):self.key=api_key;self.name=model_name
+
+    @property
+    def available(self):
+        return bool(GEMINI_API_KEY if self.key is None else self.key)
+
+    @classmethod
+    def for_endpoint(cls, endpoint, role_name):
+        model = role_name if endpoint.provider == GEMINI and endpoint.official else endpoint.search_model
+        return cls(endpoint.search_key,model)
     def fetch(self,symbol):
         key=GEMINI_API_KEY if self.key is None else self.key
         name=GEMINI_MODEL if self.name is None else self.name
@@ -152,23 +162,27 @@ class GoogleNews:
                 if context.models>=limit:raise CallLimit('搜索模型调用次数达到上限')
                 context.models+=1
         from .usage import price_for, record
-        input_rate,output_rate=price_for(name,context.price_model,context.input_rate,context.output_rate) if context else (None,None)
+        input_rate,output_rate=price_for(name,context.price_model,context.input_rate,context.output_rate,provider='google',price_provider=context.price_provider) if context else (None,None)
         with context.lock if context and context.store and context.budget_micro is not None and input_rate is not None else nullcontext():
             if context and context.store:check_task_cost(context,input_rate,'research')
             if context and context.store:context.store.trace(context.task,'research','grounded_search','start',{})
             started=time.monotonic()
+            attempts=1 if context and context.research_active else 3
             try:
-                attempts=1 if context and context.research_active else 3
-                with genai.Client(api_key=key,http_options=types.HttpOptions(timeout=45000,retry_options=types.HttpRetryOptions(attempts=attempts))) as client:
+                # Grounding always uses the official Gemini endpoint and its own credential.
+                options = types.HttpOptions(base_url=DEFAULT_URLS[GEMINI],api_version='v1beta',
+                    client_args={'follow_redirects':False},async_client_args={'follow_redirects':False},
+                    timeout=45000,retry_options=types.HttpRetryOptions(attempts=attempts))
+                with genai.Client(api_key=key,vertexai=False,http_options=options) as client:
                     response=client.models.generate_content(model=name,
                         contents=f'研究美股或ETF {symbol} 最近7天的重要公开事件。今天为 {date.today().isoformat()}。用中文说明事实、事件日期与发布日期，并给出来源。无法证实时明确说明，不做下单建议。',
                         config=types.GenerateContentConfig(tools=[types.Tool(google_search=types.GoogleSearch())],max_output_tokens=2048))
                 metadata=response.usage_metadata.model_dump(exclude_none=True) if response.usage_metadata else None
-                if context and context.store:
-                    record(context.store,context.task,'research','grounded_search',name,started,metadata,input_rate=input_rate,output_rate=output_rate,extra_unknown=True)
             except Exception:
-                if context and context.store:record(context.store,context.task,'research','grounded_search',name,started,error=True,extra_unknown=True)
+                if context and context.store:record(context.store,context.task,'research','grounded_search',name,started,error=True,extra_unknown=True,provider='google')
                 raise
+            if context and context.store:
+                record(context.store,context.task,'research','grounded_search',name,started,metadata,input_rate=input_rate,output_rate=output_rate,extra_unknown=True,provider='google')
         return parse_grounding(response)
 
 
@@ -242,6 +256,8 @@ class ResearchService:
     def lookup_news(self,symbol: str):
         """Request a Gemini-grounded news attachment. Raw grounded content is delivered separately to the user."""
         def fetch(ticker):
+            if isinstance(self.news,GoogleNews) and not self.news.available:
+                return {'status':'source_unconfigured'}
             bundle=self.news.fetch(ticker)
             CURRENT.get().news.append(bundle)
             return {'status':'ok','symbol':ticker,'source':'Gemini Google Search','fetched_at':bundle.get('queried_at',time.time()),

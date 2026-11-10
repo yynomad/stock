@@ -7,6 +7,7 @@ import os
 from pathlib import Path
 import re
 from .briefing.config import BriefingConfig
+from .model_providers import DEFAULT_MODELS, DEFAULT_URLS, GEMINI, KEY_NAMES, ROLES, ModelEndpoint, model_name
 from .harness import (DEFAULT_CONTEXT_BYTES, DEFAULT_CONTEXT_TTL, MAX_CONTEXT_BYTES,
                       MAX_CONTEXT_TTL, MIN_CONTEXT_BYTES)
 
@@ -43,6 +44,14 @@ class ModelConfig:
     research_timeout:int=90
     context_bytes:int=DEFAULT_CONTEXT_BYTES
     context_ttl:int=DEFAULT_CONTEXT_TTL
+    provider:str=GEMINI
+    base_url:str|None=field(default=None,repr=False)
+    grounding_key:str=field(default='',repr=False)
+
+    @property
+    def endpoint(self):
+        base_url = self.base_url or DEFAULT_URLS.get(self.provider,'')
+        return ModelEndpoint(self.provider,self.name,self.key,base_url,self.grounding_key)
 
 @dataclass(frozen=True)
 class MonitorConfig:
@@ -71,9 +80,13 @@ SCHEMA={
  'broker':{'provider','account_env','client_id_env','consumer_key_env','sync_interval_seconds'},
  'model':{'name','api_key_env','max_calls','max_tools','supervisor_model','portfolio_model','research_model','monitor_model','task_budget_usd','price_model','input_rate','output_rate','max_research_queries','research_timeout_seconds','context_bytes','context_ttl_seconds'},
  'notification':{'provider','token_env','chat_id_env','allowed_users_env','interactive'},
- 'briefing':{'enabled','alerts_enabled','time','daily_budget_usd','max_calls','max_output_tokens','max_events','lookback_hours','retention_days','input_rate','output_rate','max_research_queries','max_report_model_calls','research_timeout_seconds'},
+ 'briefing':{'enabled','alerts_enabled','time','daily_budget_usd','max_calls','max_output_tokens','max_events','lookback_hours','retention_days','input_rate','output_rate','max_research_queries','max_report_model_calls','research_timeout_seconds','price_model'},
  'monitor':{'interval_seconds','buffer_pct','max_daily_alerts','quote_max_age_seconds'},
  'sources':{'file','sec_user_agent_env'}}
+
+for model_provider in DEFAULT_URLS:
+    SCHEMA['model.' + model_provider] = SCHEMA['model'] | {'base_url','grounding_api_key_env'}
+
 
 def load_config(path,env=None):
     env=os.environ if env is None else env
@@ -125,6 +138,9 @@ def load_config(path,env=None):
     allowed=frozenset(int(x.strip()) for x in owners.split(',') if x.strip()) or frozenset({int(target)})
     if int(target) not in allowed:raise ConfigError('private owner must be authorized')
     zone=value('service','timezone','Asia/Shanghai')
+    price_model=parser.get('briefing','price_model',fallback=None)
+    if price_model is not None and not all(parser.has_option('briefing',k) for k in ('input_rate','output_rate')):
+        raise ConfigError('briefing.price_model requires explicit input and output rates')
     try:
         briefing=BriefingConfig(timezone=zone,at=value('briefing','time','08:00'),enabled=boolean('briefing','enabled',False),
           budget=number('briefing','daily_budget_usd',0.20,0,1000000),max_calls=number('briefing','max_calls',8,1,100,True),
@@ -134,26 +150,44 @@ def load_config(path,env=None):
           max_research_queries=number('briefing','max_research_queries',3,1,12,True),
           max_report_model_calls=number('briefing','max_report_model_calls',4,1,20,True),
           research_timeout=number('briefing','research_timeout_seconds',90,1,600,True),
-          alerts_enabled=boolean('briefing','alerts_enabled',False))
+          alerts_enabled=boolean('briefing','alerts_enabled',False),price_model=model_name(price_model) if price_model is not None else None)
     except (ValueError,KeyError):raise ConfigError('invalid briefing/timezone configuration') from None
     level=value('service','log_level','INFO').upper()
     if level not in ('DEBUG','INFO','WARNING','ERROR'):raise ConfigError('invalid service.log_level')
     broker=BrokerConfig(provider,account,client_id,consumer_key,number('broker','sync_interval_seconds',900,1,86400))
-    roles=tuple((role,value('model',role+'_model',value('model','name','gemini-3.5-flash-lite'))) for role in ('supervisor','portfolio','research','monitor'))
-    configured=parser['model'] if parser.has_section('model') else {}
+    model_sections = [name for name in ('model', *(f'model.{p}' for p in DEFAULT_URLS)) if parser.has_section(name)]
+    if len(model_sections) > 1:
+        raise ConfigError('select only one model configuration section')
+    model_section = model_sections[0] if model_sections else 'model'
+    model_provider = model_section.removeprefix('model.') if model_section != 'model' else GEMINI
+    explicit = model_section != 'model'
+    key = secret(model_section,'api_key_env',KEY_NAMES[model_provider])
+    grounding_key = ''
+    if parser.has_option(model_section,'grounding_api_key_env'):
+        grounding_key = secret(model_section,'grounding_api_key_env','GEMINI_API_KEY')
+    name = value(model_section,'name',None if explicit else DEFAULT_MODELS[model_provider])
+    base_url = value(model_section,'base_url',None if explicit else DEFAULT_URLS[model_provider])
+    try:
+        endpoint = ModelEndpoint(model_provider,name,key,base_url,grounding_key)
+        roles = tuple((role,endpoint.validate_name(value(model_section,role+'_model',name))) for role in ROLES)
+    except ValueError as exc:
+        raise ConfigError(f'{model_section}: {exc}') from None
+    configured=parser[model_section] if parser.has_section(model_section) else {}
     has_in='input_rate' in configured
     has_out='output_rate' in configured
-    if has_in != has_out:raise ConfigError('model.input_rate and model.output_rate must be configured together')
-    model=ModelConfig(secret('model','api_key_env','GEMINI_API_KEY'),value('model','name','gemini-3.5-flash-lite'),
-          number('model','max_calls',8,1,100,True),number('model','max_tools',12,1,100,True),roles,
-          number('model','task_budget_usd',1,0.000001,1000000) if 'task_budget_usd' in configured else None,
-          value('model','price_model',value('model','name','gemini-3.5-flash-lite')) if has_in else None,
-          number('model','input_rate',1,0,10000) if has_in else None,
-          number('model','output_rate',1,0,10000) if has_out else None,
-          max_research_queries=number('model','max_research_queries',3,1,12,True),
-          research_timeout=number('model','research_timeout_seconds',90,1,600,True),
-          context_bytes=number('model','context_bytes',DEFAULT_CONTEXT_BYTES,MIN_CONTEXT_BYTES,MAX_CONTEXT_BYTES,True),
-          context_ttl=number('model','context_ttl_seconds',DEFAULT_CONTEXT_TTL,1,MAX_CONTEXT_TTL,True))
+    if has_in != has_out:
+        raise ConfigError(f'{model_section}.input_rate and {model_section}.output_rate must be configured together')
+    model=ModelConfig(key,name,
+          number(model_section,'max_calls',8,1,100,True),number(model_section,'max_tools',12,1,100,True),roles,
+          number(model_section,'task_budget_usd',1,0.000001,1000000) if 'task_budget_usd' in configured else None,
+          value(model_section,'price_model',name) if has_in else None,
+          number(model_section,'input_rate',1,0,10000) if has_in else None,
+          number(model_section,'output_rate',1,0,10000) if has_out else None,
+          max_research_queries=number(model_section,'max_research_queries',3,1,12,True),
+          research_timeout=number(model_section,'research_timeout_seconds',90,1,600,True),
+          context_bytes=number(model_section,'context_bytes',DEFAULT_CONTEXT_BYTES,MIN_CONTEXT_BYTES,MAX_CONTEXT_BYTES,True),
+          context_ttl=number(model_section,'context_ttl_seconds',DEFAULT_CONTEXT_TTL,1,MAX_CONTEXT_TTL,True),
+          provider=model_provider,base_url=endpoint.base_url,grounding_key=grounding_key)
     notification=ChannelConfig(channel,secret('notification','token_env','TG_BOT_TOKEN'),int(target),allowed,boolean('notification','interactive',True))
     monitor=MonitorConfig(number('monitor','interval_seconds',300,1,86400),number('monitor','buffer_pct',0.02,0.000001,1),
           number('monitor','max_daily_alerts',5,1,100,True),number('monitor','quote_max_age_seconds',900,1,86400))

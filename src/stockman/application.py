@@ -7,7 +7,8 @@ import time
 from .config import TG_CHAT_ID,MONITOR_INTERVAL,configure_logging
 from .agents import AgentRuntime
 from .portfolio import PortfolioService
-from .research import ResearchService
+from .research import GoogleNews, ResearchService
+from .model_providers import ModelEndpoint
 from .sec_filings import FilingReader
 from .stock_briefing.sources import PublicHTTP,load_registry
 from .monitoring import MonitoringService
@@ -19,7 +20,11 @@ class Application:
         from .briefing.config import BriefingConfig
         self.briefing_config=BriefingConfig.load()
         self.directory=Path(directory or os.getenv('STOCKMAN_DATA_DIR','runtime'))
-        self.research=research or ResearchService(market=market,filings=FilingReader(load_registry()['issuers'],PublicHTTP()))
+        if research is None:
+            endpoint = ModelEndpoint.from_environment()
+            research = ResearchService(market=market,news=GoogleNews.for_endpoint(endpoint,endpoint.role_name('research')),
+                                       filings=FilingReader(load_registry()['issuers'],PublicHTTP()))
+        self.research = research
         self.runtime=AgentRuntime(self.directory,model,services={
             'portfolio':lambda request:self.portfolio.report(request),
             'research':lambda request:self.research.collect(request),

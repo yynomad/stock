@@ -12,6 +12,7 @@ import uuid
 
 from .dataset import load_suite
 from .scorers import evaluate_case, evidence_for_case
+from stockman.model_providers import provider_of
 
 
 DEFAULT_SUITE = Path(__file__).resolve().parents[3] / "evals" / "datasets" / "v1.json"
@@ -41,7 +42,8 @@ def _live_daily(case: dict, model, directory: Path) -> dict:
     from stockman.storage import Store
     from stockman.stock_briefing.agent import ResearchAgent
 
-    config = BriefingConfig(budget=2.0, max_calls=4, max_events=5)
+    name = getattr(model,"model",None) or getattr(model,"model_name",None)
+    config = BriefingConfig(budget=2.0,max_calls=4,max_events=5,price_model=name)
     store = Store(directory / "daily")
     try:
         items, aliases = evidence_for_case(case)
@@ -141,17 +143,8 @@ def live(case: dict, model) -> dict:
 
 
 def create_model(name: str | None):
-    """V1 supports Gemini only; other providers require issue #10 adapters."""
-    from langchain_google_genai import ChatGoogleGenerativeAI
-    from stockman.config import GEMINI_MODEL
-
-    key = os.getenv("GEMINI_API_KEY")
-    if not key:
-        raise ValueError("GEMINI_API_KEY is required for --mode live")
-    return ChatGoogleGenerativeAI(
-        model=name or GEMINI_MODEL, api_key=key, temperature=0,
-        timeout=45, max_retries=1, max_output_tokens=2048,
-    )
+    from stockman.model_providers import ModelEndpoint
+    return ModelEndpoint.from_environment(name=name).create()
 
 
 def execute(
@@ -219,8 +212,9 @@ def execute(
         "created_at": datetime.now(timezone.utc).isoformat(),
         "suite_version": suite_version,
         "mode": mode,
-        "provenance": "synthetic_recording_no_llm" if mode == "replay" else "real_gemini_fixed_synthetic_tools",
-        "model": None if mode == "replay" else model_name or "configured_default_gemini",
+        "provenance": "synthetic_recording_no_llm" if mode == "replay" else "real_model_fixed_synthetic_tools",
+        "provider": provider_of(model),
+        "model": None if mode == "replay" else model_name or "configured_default",
         "semantic_accuracy": "NOT_ASSESSED_requires_human_or_independent_annotated_judge",
         "summary": summary,
         "results": results,
@@ -240,6 +234,8 @@ def compare(baseline: dict, current: dict) -> dict:
     common = sorted(old.keys() & new.keys())
     return {
         "mode": current["mode"],
+        "baseline_provider": baseline.get("provider"),
+        "current_provider": current.get("provider"),
         "baseline_model": baseline.get("model"),
         "current_model": current.get("model"),
         "common_runs": len(common),
@@ -256,7 +252,7 @@ def main(argv=None) -> int:
     run = commands.add_parser("run")
     run.add_argument("--suite", default=str(DEFAULT_SUITE))
     run.add_argument("--mode", choices=["replay", "live"], default="replay")
-    run.add_argument("--model", help="Gemini model name; live only")
+    run.add_argument("--model", help="Model name; live only")
     run.add_argument("--max-cases", type=int, default=5, help="maximum live cases (default 5)")
     run.add_argument("--repeats", type=int, default=1, help="1..3 real-model repetitions")
     run.add_argument("--case", action="append", help="repeat to select particular case IDs")

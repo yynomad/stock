@@ -8,6 +8,7 @@ import time
 import uuid
 from typing import Any
 
+from ..model_providers import DEEPSEEK, KEY_NAMES, ModelEndpoint
 from .dataset import daily_text, evidence
 
 
@@ -104,17 +105,15 @@ def observed_model(case, options, journal, replay=None):
         target = Replay()
         name = 'synthetic-replay'
     else:
-        from langchain_google_genai import ChatGoogleGenerativeAI
         name = options['model']
-        kwargs = {'response_mime_type': 'application/json'} if case['kind'] == 'daily' else {}
-        target = ChatGoogleGenerativeAI(model=name, api_key=os.environ['GEMINI_API_KEY'],
-                                       temperature=0, timeout=options['call_timeout'], max_retries=1,
-                                       max_output_tokens=2048, **kwargs)
+        endpoint = ModelEndpoint.from_environment(provider=options.get('provider'),name=name)
+        target = endpoint.create(timeout=options['call_timeout'],json_output=case['kind']=='daily')
 
     class Observed(BaseChatModel):
         target: Any
         model_name: str
         max_retries: int = 1
+        stockman_provider: str | None = None
 
         @property
         def _llm_type(self):
@@ -155,7 +154,8 @@ def observed_model(case, options, journal, replay=None):
                                {'text': text, 'tool_calls': response.tool_calls}, ensure_ascii=False))})
             return ChatResult(generations=[ChatGeneration(message=response)])
 
-    return Observed(target=target, model_name=name), state
+    provider = None if replay else endpoint.provider
+    return Observed(target=target,model_name=name,stockman_provider=provider,max_retries=0 if provider==DEEPSEEK else 1), state
 
 
 def run_agent(case, options, journal, directory):
@@ -208,7 +208,7 @@ def run_daily(case, options, journal, directory):
     from stockman.usage import calls
     model, _ = observed_model(case, options, journal)
     # Reservation rates bound the existing daily protocol, not eval invoice estimates.
-    config = BriefingConfig(budget=10, max_calls=min(options['max_calls'], 100), input_rate=1, output_rate=1)
+    config = BriefingConfig(budget=10,max_calls=min(options['max_calls'],100),input_rate=1,output_rate=1,price_model=model.model_name)
     store = Store(Path(directory)/'daily')
     try:
         task = store.create_task('eval', case['task'])
@@ -324,7 +324,8 @@ def worker(request_path):
             raise AssertionError('evaluation offline network attempt')
         socket.socket.connect = denied
         socket.socket.connect_ex = denied
-    journal = Journal(request_path.parent/'journal.jsonl', os.environ.get('GEMINI_API_KEY', ''))
+    key_name = KEY_NAMES[options.get('provider') or 'gemini']
+    journal = Journal(request_path.parent/'journal.jsonl', os.environ.get(key_name, ''))
     directory = request_path.parent/'data'
     directory.mkdir()
     try:

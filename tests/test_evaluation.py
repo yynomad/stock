@@ -175,6 +175,17 @@ class EvaluationTest(unittest.TestCase):
         self.assertEqual(live['STOCKMAN_OFFLINE'], '1')
         self.assertEqual(live['LANGSMITH_API_KEY'], '')
 
+    def test_deepseek_worker_receives_only_selected_provider_credential(self):
+        with patch.dict(os.environ, {'DEEPSEEK_API_KEY':'fixture-deepseek','GEMINI_API_KEY':'fixture-gemini',
+                                     'STOCKMAN_MODEL_BASE_URL':'https://gateway.invalid/v1'}):
+            child = child_environment('live','deepseek')
+            offline = child_environment('offline','deepseek')
+        self.assertEqual(child['DEEPSEEK_API_KEY'],'fixture-deepseek')
+        self.assertFalse(child['GEMINI_API_KEY'])
+        self.assertEqual(child['STOCKMAN_MODEL_BASE_URL'],'https://gateway.invalid/v1')
+        self.assertNotIn('STOCKMAN_MODEL_BASE_URL',offline)
+        self.assertNotIn('DEEPSEEK_API_KEY',offline)
+
     def test_live_adapter_uses_explicit_sdk_not_scripted_replay(self):
         from langchain_core.messages import AIMessage, HumanMessage
         target = MagicMock()
@@ -186,7 +197,9 @@ class EvaluationTest(unittest.TestCase):
             response = model.invoke([HumanMessage(content='Explain compound interest')])
             self.assertEqual(response.content, 'SDK adapter fixture response')
             sdk.assert_called_once_with(model='gemini-test', api_key='sdk-fixture-key', temperature=0,
-                                        timeout=10, max_retries=1, max_output_tokens=2048)
+                                        timeout=10, max_retries=1, max_output_tokens=2048,
+                                        vertexai=False, base_url='https://generativelanguage.googleapis.com',
+                                        api_version='v1beta', client_args={'follow_redirects': False})
             self.assertEqual(len(read_journal(journal.path)), 2)
             self.assertEqual(target.invoke.call_count, 1)
 
