@@ -23,6 +23,8 @@ def monitor_intent(text):
 class MonitoringService:
     def __init__(self,store,portfolio,market=None,in_session=regular_session,settings=None):
         self.store=store;self.portfolio=portfolio;self.market=market or YahooMarket();self.in_session=in_session;self.settings=settings
+        self.store.execute("UPDATE events SET status='interrupted' WHERE status='pending'")
+        self.store.execute("UPDATE events SET status='unknown' WHERE status='sending'")
     def command(self,request: str):
         context=CURRENT.get();action=monitor_intent(context.request) if context else None
         symbols=[valid_symbol(s) for s in re.findall(r'(?<![A-Za-z0-9])([A-Z][A-Z0-9.-]{0,14})(?![A-Za-z0-9])',context.request if action else request) if s not in ('ETF','PA','IBKR','USD')]
@@ -98,10 +100,16 @@ class MonitoringService:
                         result['text']+='\n'+coverage_notice(coverage)
                         if coverage['partial']:result['status']='partial'
                         if result.get('task_id'):runtime.store.finish(result['task_id'],result['status'],result)
-                    status=send(result)
-                    if status not in ('sent','failed','unknown'):status='unknown'
                 except Exception as exc:
-                    status='failed';self.store.trace(event['id'],'monitor','delivery','failed',{'error_type':type(exc).__name__})
+                    self.store.trace(event['id'],'monitor','analysis','failed',{'error_type':type(exc).__name__})
+                    self.store.execute("UPDATE events SET status='failed' WHERE id=?", (event['id'],))
+                    continue
+                self.store.execute("UPDATE events SET status='sending' WHERE id=?", (event['id'],))
+                try:
+                    status=send(result)
+                except Exception:
+                    status='unknown'
+                if status not in ('sent','failed','unknown'):status='unknown'
                 self.store.execute('UPDATE events SET status=? WHERE id=?',(status,event['id']))
             except Exception as exc:self.store.trace('poller','monitor','quote','failed',{'error_type':type(exc).__name__})
         return events

@@ -32,6 +32,7 @@ class Application:
         self.runtime.store.execute('CREATE TABLE IF NOT EXISTS updates(id INTEGER PRIMARY KEY,status TEXT)')
         self.runtime.store.execute('CREATE TABLE IF NOT EXISTS settings(key TEXT PRIMARY KEY,value TEXT)')
         self.runtime.store.execute("UPDATE updates SET status='interrupted' WHERE status='processing'")
+        self.runtime.store.execute("UPDATE updates SET status='unknown' WHERE status='sending'")
         configured=os.getenv('TG_ALLOWED_USERS','')
         self.allowed={int(x.strip()) for x in configured.split(',') if x.strip().isdigit()}
         if not self.allowed and str(TG_CHAT_ID).isdigit() and int(TG_CHAT_ID)>0:self.allowed={int(TG_CHAT_ID)}
@@ -65,15 +66,23 @@ class Application:
             else:
                 self.runtime.store.execute("UPDATE updates SET status='ignored' WHERE id=?",(identity,))
                 return 'ignored'
-            status=self.transport.deliver(result)
-            self.runtime.store.execute('UPDATE updates SET status=? WHERE id=?',(status,identity))
-            return status
+            task_failed = False
         except Exception as exc:
-            self.runtime.store.execute("UPDATE updates SET status='failed' WHERE id=?",(identity,))
             from .agents import TaskBudgetExceeded
             text='本次任务已达到已知费用阈值，剩余调查未完成；未知费用仍可能产生。' if isinstance(exc,TaskBudgetExceeded) else '本次任务未完成：'+type(exc).__name__+'。请检查本机配置与任务记录。'
-            self.transport.deliver({'text':text})
-            return 'failed'
+            result = {'text':text}
+            task_failed = True
+        self.runtime.store.execute("UPDATE updates SET status='sending' WHERE id=?", (identity,))
+        try:
+            status = self.transport.deliver(result)
+        except Exception:
+            status = 'unknown'
+        if status not in ('sent','failed','unknown'):
+            status = 'unknown'
+        if task_failed and status == 'sent':
+            status = 'failed'
+        self.runtime.store.execute('UPDATE updates SET status=? WHERE id=?',(status,identity))
+        return status
 
     def build_daily(self,owner,now,day):
         snapshot=self.portfolio.load(owner)

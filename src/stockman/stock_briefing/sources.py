@@ -41,7 +41,7 @@ class PublicHTTP:
         addresses=socket.getaddrinfo(host,443,type=socket.SOCK_STREAM)
         if not addresses or any(not ipaddress.ip_address(row[4][0]).is_global for row in addresses):raise PermissionError('public hosts only')
         is_sec=host in ('data.sec.gov','www.sec.gov')
-        if is_sec and ('@' not in self.user_agent or len(self.user_agent)<8):raise ValueError('SEC_USER_AGENT must include a real contact email')
+        if is_sec and ('@' not in self.user_agent or len(self.user_agent)<8):raise PermissionError('SEC_USER_AGENT must include a real contact email')
         for attempt in range(3):
             if is_sec:
                 SEC_GATE.wait(sleep=self.sleep)

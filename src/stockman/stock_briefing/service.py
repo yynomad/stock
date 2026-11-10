@@ -71,7 +71,10 @@ class StockBriefing:
                 explained,status=self.research.explain(task,allowed,self.budget,now,relations,holdings['symbols'],holdings['coverage'],investigation)
             else:
                 explained=[]
-                status='model_disabled' if config.budget==0 else ('no_new_evidence' if not candidates else 'no_analyzable_new_evidence')
+                if not candidates:
+                    status = 'no_new_evidence' if health and not missing and all(row['status']=='ok' for row in health) else 'insufficient_sources'
+                else:
+                    status = 'model_disabled' if config.budget==0 else 'no_analyzable_new_evidence'
             research=investigation.queries.summary() if investigation is not None else None
             citations=investigation.filing_citations if investigation is not None else []
             gaps=research_gaps(research) if research is not None else []
@@ -126,13 +129,15 @@ class StockBriefing:
             bill=self.budget.status(day)
             lines.extend([f'分析状态：{status}',f'当日模型费用估算 ${bill["estimated_usd"]:.6f} / 配置 ${config.budget:.4f}；用量未知 {bill["usage_unknown"]} 次。',bill['note']])
             text='\n'.join(lines)
-            meta={'health':health,'holdings':holdings,'asof':now,'status':status,'budget':bill,'relations':relations,'event_groups':len(groups),'selected':len(selected)}
+            partial=failed or missing or gaps or holdings['stale'] or holdings['coverage']['partial'] or status not in ('explained','no_new_evidence')
+            meta={'health':health,'holdings':holdings,'asof':now,'status':status,'budget':bill,'relations':relations,
+                  'event_groups':len(groups),'selected':len(selected),'task_id':task,
+                  'task_status':'partial' if partial else 'completed'}
             if research is not None:meta['research']=research
             if citations:meta['filing_citations']=citations
             can_store_analysis=investigation is None or all(policies[item.source].store_analysis for item in investigation.items.values())
             identity=self.history.save(owner,day,displayed,policies,text,meta,store_analysis=can_store_analysis)
-            partial=failed or missing or gaps or holdings['stale'] or holdings['coverage']['partial'] or status not in ('explained','no_new_evidence')
-            result={'task_id':task,'report_id':identity,'text':text,'status':'partial' if partial else 'completed','meta':meta}
+            result={'task_id':task,'report_id':identity,'text':text,'status':meta['task_status'],'meta':meta}
             self.store.finish(task,result['status'],{'report_id':identity,'budget':bill,'health':health})
             self.history.prune(config.retention_days,now)
             return result

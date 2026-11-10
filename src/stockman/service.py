@@ -49,6 +49,7 @@ class BackendService(Application):
             store.execute('CREATE TABLE IF NOT EXISTS updates(id INTEGER PRIMARY KEY,status TEXT)')
             store.execute('CREATE TABLE IF NOT EXISTS settings(key TEXT PRIMARY KEY,value TEXT)')
             store.execute("UPDATE updates SET status='interrupted' WHERE status='processing'")
+            store.execute("UPDATE updates SET status='unknown' WHERE status='sending'")
             store.execute('CREATE TABLE IF NOT EXISTS service_health(job TEXT PRIMARY KEY,status TEXT,at REAL,error TEXT)')
         except BaseException:self.runtime.close();self.closed=True;raise
 

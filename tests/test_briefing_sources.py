@@ -50,6 +50,26 @@ class BriefingSourcesTest(unittest.TestCase):
             with self.assertRaises(ValueError):http.read('https://www.sec.gov/x',{'www.sec.gov'})
         with patch('socket.getaddrinfo',return_value=[(0,0,0,'',('127.0.0.1',443))]):
             with self.assertRaises(PermissionError):http.read('https://example.com',{'example.com'})
+    def test_collection_classifies_failures_without_request_details(self):
+        from requests import HTTPError, Response, Timeout
+        from unittest.mock import Mock
+        for error, expected in [(Timeout('SECRET_URL'), 'source_timeout'),
+                                (ValueError('SECRET_BODY'), 'invalid_source_data'),
+                                (PermissionError('SECRET_CONFIG'), 'access_denied')]:
+            source = Mock(policy=POLICY)
+            source.fetch.side_effect = error
+            _, _, health = collect([source], 1000)
+            self.assertEqual(health[0]['error_type'], expected)
+            self.assertNotIn('SECRET', str(health))
+        for code, expected in [(429, 'rate_limited'), (503, 'source_unavailable')]:
+            response = Response()
+            response.status_code = code
+            source = Mock(policy=POLICY)
+            source.fetch.side_effect = HTTPError('SECRET_URL', response=response)
+            _, _, health = collect([source], 1000)
+            self.assertEqual(health[0]['error_type'], expected)
+            self.assertNotIn('SECRET', str(health))
+
     def test_relationship_requires_exact_explicit_sentence_not_cooccurrence(self):
         with tempfile.TemporaryDirectory() as d:
             store=Store(Path(d)/'db');relations=Relations(store)

@@ -139,7 +139,7 @@ class ResearchAgent:
                 self.store.trace(task,'research','daily_model','failed',{'error_type':type(exc).__name__})
                 # Invalid output/config is not retried. Transient network failures can retry once,
                 # after a new reservation. Unknown cost of the previous attempt stays reserved.
-                if received or isinstance(exc,ValueError) or retries:return [],'model_unavailable_or_invalid'
+                if received or isinstance(exc,ValueError):return [],'model_output_invalid'
+                if retries:return [],'model_failed'
                 retries+=1
         return [],'model_call_limit'
-        return [],'model_unavailable_or_invalid'

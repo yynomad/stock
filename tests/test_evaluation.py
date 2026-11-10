@@ -145,7 +145,7 @@ class EvaluationTest(unittest.TestCase):
         case = deepcopy(self.cases['C01'])
         case['replay'] = case['controls'][1]['output']
         result = execute(case, options(case_ids=['C01']))
-        self.assertEqual(result['daily_status'], 'model_unavailable_or_invalid')
+        self.assertEqual(result['daily_status'], 'model_output_invalid')
         self.assertEqual(json.loads(result['text']), {'events': []})
         self.assertIn('nonexistent-id', result['raw'][0]['content'])
         checks = check_attempt(case, result)

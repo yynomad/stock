@@ -1,6 +1,8 @@
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from pathlib import Path
+import subprocess
+import sys
 import tempfile
 import unittest
 from zoneinfo import ZoneInfo
@@ -42,6 +44,91 @@ class BriefingScheduleTest(unittest.TestCase):
         self.scheduler.recover();self.assertEqual(self.scheduler.tick(at('2026-10-22T09:00:00'))['status'],'unknown')
         self.store.execute("UPDATE brief_daily SET status='sending'");self.scheduler.recover()
         self.assertEqual(self.scheduler.tick(at('2026-10-22T10:00:00'))['status'],'unknown')
+    def interrupt_child(self, phase, timestamp):
+        program = """
+import os
+from pathlib import Path
+import sys
+from stockman.storage import Store
+from stockman.briefing.budget import Budget
+from stockman.briefing.config import BriefingConfig
+from stockman.briefing.demo import SyntheticSource
+from stockman.briefing.pipeline import preview
+from stockman.briefing.schedule import Scheduler
+directory, phase, timestamp = sys.argv[1:]
+store = Store(Path(directory) / 'db')
+config = BriefingConfig(enabled=True)
+
+def build(owner, now, day):
+    if phase in ('build', 'exhausted'):
+        budget = Budget(store, config)
+        for _ in range(config.max_calls if phase == 'exhausted' else 1):
+            budget.reserve(day, 100)
+        os._exit(71)
+    return preview(store, [SyntheticSource()], owner, day, now)
+
+def send(result):
+    with (Path(directory) / 'outbound').open('a') as handle:
+        handle.write(result['report_id'] + chr(10))
+    if phase == 'send':
+        os._exit(71)
+    return 'sent'
+
+Scheduler(store, config, '123', {'123'}, build, send).tick(float(timestamp))
+os._exit(71)
+"""
+        child = subprocess.run([sys.executable, '-B', '-c', program, self.temp.name, phase, str(timestamp)],
+                               capture_output=True, text=True, timeout=15)
+        self.assertEqual(child.returncode, 71, child.stderr)
+
+    def test_process_interruption_before_send_retries_with_remaining_budget(self):
+        now = at('2026-10-22T08:00:00')
+        self.interrupt_child('build', now)
+        self.scheduler.recover()
+        waiting = self.scheduler.tick(now + 60)
+        self.assertEqual(waiting['error_type'], 'generation_interrupted')
+        self.assertEqual(waiting['attempts'], 1)
+        self.assertEqual(waiting['next_try'], now + 900)
+        self.assertFalse(self.sent)
+        result = self.scheduler.tick(now + 900)
+        self.assertEqual((result['status'], result['attempts']), ('sent', 2))
+        self.assertEqual(len(self.sent), 1)
+        self.assertEqual(len(self.store.execute('SELECT id FROM brief_budget')), 1)
+
+    def test_exhausted_budget_after_generation_interrupt_stops_recovery(self):
+        now = at('2026-10-22T08:00:00')
+        self.interrupt_child('exhausted', now)
+        self.scheduler.recover()
+        result = self.scheduler.tick(now + 900)
+        self.assertEqual((result['status'], result['error_type']), ('failed', 'budget_exhausted'))
+        self.assertIsNone(result['next_try'])
+        self.assertFalse(self.built)
+
+    def test_process_interruption_during_and_after_send_never_replays(self):
+        for phase, day, expected in [('send', '22', 'unknown'), ('sent', '23', 'sent')]:
+            now = at(f'2026-10-{day}T08:00:00')
+            with self.subTest(phase=phase):
+                self.interrupt_child(phase, now)
+                self.scheduler.recover()
+                result = self.scheduler.tick(now + 900)
+                self.assertEqual(result['status'], expected)
+                report = self.store.execute('SELECT status FROM brief_reports WHERE id=?', (result['report_id'],))[0]
+                self.assertEqual(report['status'], expected)
+        self.assertFalse(self.sent)
+        self.assertEqual(len((Path(self.temp.name) / 'outbound').read_text().splitlines()), 2)
+
+    def test_legacy_generation_is_unknown_and_terminal_report_reconciles(self):
+        first = at('2026-10-22T08:00:00')
+        self.store.execute("INSERT INTO brief_daily VALUES('123','2026-10-22',?,?,NULL,'generating',1,0,NULL)", (first, first))
+        self.scheduler.recover()
+        self.assertEqual(self.scheduler.tick(first + 900)['status'], 'unknown')
+        second = at('2026-10-23T08:00:00')
+        self.assertEqual(self.scheduler.tick(second)['status'], 'sent')
+        self.store.execute("UPDATE brief_daily SET status='sending' WHERE day='2026-10-23'")
+        self.scheduler.recover()
+        self.assertEqual(self.scheduler.tick(second + 900)['status'], 'sent')
+        self.assertEqual(len(self.sent), 1)
+
     def test_concurrent_tick_claims_exactly_one_generation(self):
         with ThreadPoolExecutor(max_workers=4) as pool:list(pool.map(lambda _:self.scheduler.tick(at('2026-10-22T08:00:00')),range(4)))
         self.assertEqual(len(self.sent),1);self.assertEqual(len(self.built),1)
