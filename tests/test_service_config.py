@@ -22,6 +22,14 @@ class ServiceConfigTest(unittest.TestCase):
         with self.assertRaises(ConfigError):
             load_config(self.path, ENV)
 
+    def test_database_url_requires_direct_tls_and_hides_values(self):
+        self.assertIn('db.invalid', self.config.database_url)
+        self.assertNotIn('synthetic-database-secret', repr(self.config))
+        for dsn in ('', 'sqlite:///private-secret', 'postgresql://user:private-secret@host/db?sslmode=disable'):
+            with self.subTest(dsn=dsn), self.assertRaises(ConfigError) as error:
+                load_config(self.path, {**ENV, 'STOCKMAN_DATABASE_URL':dsn})
+            self.assertNotIn('private-secret', str(error.exception))
+
     def test_context_budget_is_optional_and_validated(self):
         prefix = self.original.replace('context_bytes = 49152\n', '')
         self.path.write_text(prefix)

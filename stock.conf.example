@@ -5,6 +5,9 @@ data_dir = runtime
 timezone = Asia/Shanghai
 log_level = INFO
 
+[database]
+url_env = STOCKMAN_DATABASE_URL
+
 [broker]
 provider = snaptrade
 account_env = SNAPTRADE_ACCOUNT_ID

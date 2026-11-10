@@ -61,9 +61,11 @@ class ServiceConfig:
     briefing:BriefingConfig
     monitor:MonitorConfig
     sec_user_agent:str=field(repr=False,default='')
+    database_url:str=field(repr=False,default='')
 
 SCHEMA={
  'service':{'data_dir','timezone','log_level'},
+ 'database':{'url_env'},
  'broker':{'provider','account_env','client_id_env','consumer_key_env','sync_interval_seconds'},
  'model':{'name','api_key_env','max_calls','max_tools','supervisor_model','portfolio_model','research_model','monitor_model','task_budget_usd','price_model','input_rate','output_rate','max_research_queries','research_timeout_seconds','context_bytes'},
  'notification':{'provider','token_env','chat_id_env','allowed_users_env','interactive'},
@@ -158,5 +160,9 @@ def load_config(path,env=None):
         registry=json.loads(sources.read_text(encoding='utf-8'))
         if not isinstance(registry,dict) or not isinstance(registry.get('issuers'),dict) or not isinstance(registry.get('rss'),list):raise ValueError()
     except (OSError,UnicodeError,ValueError):raise ConfigError('invalid sources.file registry') from None
+    database_url=secret('database','url_env','STOCKMAN_DATABASE_URL')
+    from .database import validate_url
+    try:validate_url(database_url)
+    except ValueError:raise ConfigError('database.url_env requires a direct TLS PostgreSQL URL') from None
     return ServiceConfig(path,relative(value('service','data_dir','runtime')),sources,level,broker,notification,model,briefing,monitor,
-          secret('sources','sec_user_agent_env','SEC_USER_AGENT',False))
+          secret('sources','sec_user_agent_env','SEC_USER_AGENT',False),database_url)
