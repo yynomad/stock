@@ -21,6 +21,8 @@ api_key_env = GEMINI_API_KEY
 max_calls = 8
 max_tools = 12
 context_bytes = 49152
+# Same-session history and symbol carryover, in seconds.
+context_ttl_seconds = 86400
 max_research_queries = 3
 research_timeout_seconds = 90
 # Optional soft threshold per interactive task (USD); omit to disable.

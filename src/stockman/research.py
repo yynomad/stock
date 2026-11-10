@@ -11,6 +11,7 @@ import time
 from typing import Literal
 import requests
 from .config import GEMINI_API_KEY,GEMINI_MODEL
+from .harness import fresh
 from .portfolio import valid_symbol
 from .pa_strategy import analyze_pa
 from .market import YahooMarket
@@ -35,17 +36,22 @@ def symbol_from_request(request):
     return valid_symbol(next(iter(symbols)))
 
 
-def task_symbol(store, task, session, request):
+def task_symbol(store, task, session, request, now, ttl):
     """Use the owner's text and the same session's prior owner text as scope."""
     if mentioned_symbols(request):
         try:return symbol_from_request(request)
         except ValueError:return None
     if not re.search(r'它|这只|该股|刚才|上一|上个|呢|\bit\b|\bits\b',request,re.IGNORECASE):
         return None
-    rows=store.execute("SELECT input FROM tasks WHERE session=%s AND id<>%s AND status IN ('completed','partial') ORDER BY created DESC,seq DESC LIMIT 20",(session,task))
+    rows=store.execute("""SELECT input,created,status FROM tasks
+        WHERE session=%s AND seq<(SELECT seq FROM tasks WHERE id=%s)
+        ORDER BY seq DESC LIMIT 20""", (session,task))
     for row in rows:
         previous=json.loads(row['input'])
         if isinstance(previous,str) and mentioned_symbols(previous):
+            # A later correction or ambiguous request supersedes the previous symbol.
+            if row['status'] not in ('completed','partial') or not fresh(row['created'], now, ttl):
+                return None
             try:return symbol_from_request(previous)
             except ValueError:return None
     return None

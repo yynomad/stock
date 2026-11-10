@@ -11,6 +11,14 @@ class ServiceConfigTest(unittest.TestCase):
         self.temp=tempfile.TemporaryDirectory();self.config=fixture(self.temp.name);self.path=self.config.path;self.original=self.path.read_text()
     def tearDown(self):self.temp.cleanup()
 
+    def test_context_ttl_configuration(self):
+        self.assertEqual(load_config(self.path, ENV).model.context_ttl, 86400)
+        self.path.write_text(self.original.replace('context_ttl_seconds = 86400','context_ttl_seconds = 3600'))
+        self.assertEqual(load_config(self.path, ENV).model.context_ttl, 3600)
+        self.path.write_text(self.original.replace('context_ttl_seconds = 86400','context_ttl_seconds = 0'))
+        with self.assertRaisesRegex(ConfigError, 'context_ttl_seconds'):
+            load_config(self.path, ENV)
+
     def test_daily_alerts_are_disabled_for_legacy_config_and_require_opt_in(self):
         self.assertFalse(self.config.briefing.alerts_enabled)
         prefix = self.original.replace('alerts_enabled = false\n', '')

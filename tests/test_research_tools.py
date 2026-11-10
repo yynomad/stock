@@ -94,6 +94,43 @@ class ResearchToolTest(unittest.TestCase):
             finally:
                 runtime.close()
 
+    def test_followup_refreshes_quote_and_rejects_expired_or_conflicting_symbols(self):
+        from stockman.service_config import ModelConfig
+        market = Mock(quote_age=900)
+        now = time.time()
+        market.info.return_value = {'regularMarketPrice': 100, 'regularMarketTime': now}
+        settings = ModelConfig(key='', context_ttl=60)
+        research = ResearchService(market, Mock(), Mock())
+        with TemporaryDirectory() as directory:
+            with patch('time.time', return_value=now):
+                runtime = AgentRuntime(directory, OfflineModel(), research=research, settings=settings)
+                runtime.run('AAPL 最新价格', 'owner')
+                runtime.run('AAPL 最新价格', 'another')
+                runtime.close()
+            market.info.side_effect = TimeoutError('fixture')
+            with patch('time.time', return_value=now + 60):
+                runtime = AgentRuntime(directory, OfflineModel(), research=research, settings=settings)
+                try:
+                    fresh = runtime.run('它当前价格呢', 'owner')
+                    self.assertEqual(fresh['research']['outcomes'], [{'tool':'lookup_quote','status':'source_timeout'}])
+                    self.assertEqual(fresh['research']['evidence'], [])
+                    self.assertEqual(market.info.call_count, 3)
+                    runtime.run('比较 AAPL 和 MSFT 的价格', 'owner')
+                    conflict = runtime.run('它当前价格呢', 'owner')
+                    self.assertEqual(conflict['research']['queries'], 0)
+                    self.assertIn('请明确提供', conflict['text'])
+                finally:
+                    runtime.close()
+            with patch('time.time', return_value=now + 61):
+                runtime = AgentRuntime(directory, OfflineModel(), research=research, settings=settings)
+                try:
+                    expired = runtime.run('它当前价格呢', 'another')
+                    self.assertEqual(expired['research']['queries'], 0)
+                    self.assertIn('请明确提供', expired['text'])
+                    self.assertEqual(market.info.call_count, 3)
+                finally:
+                    runtime.close()
+
     def test_telegram_entry_uses_research_tools(self):
         transport = Mock(chat=123)
         transport.deliver.return_value = 'sent'
