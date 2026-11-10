@@ -43,16 +43,16 @@ def status(directory):
     with sqlite3.connect(path.as_uri()+'?mode=ro',uri=True) as conn:
         conn.row_factory=sqlite3.Row
         names={r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
-        daily=[dict(r) for r in conn.execute('SELECT * FROM brief_daily ORDER BY day DESC LIMIT 10')] if 'brief_daily' in names else []
-        reports=[dict(r) for r in conn.execute('SELECT id,owner,day,status,meta FROM brief_reports ORDER BY at DESC LIMIT 10')] if 'brief_reports' in names else []
+        daily=[dict(r) for r in conn.execute('SELECT day,status,report,attempts,scheduled,actual,next_try FROM brief_daily ORDER BY day DESC LIMIT 10')] if 'brief_daily' in names else []
+        reports=[dict(r) for r in conn.execute('SELECT id,day,status,at FROM brief_reports ORDER BY at DESC LIMIT 10')] if 'brief_reports' in names else []
         return {'daily':daily,'reports':reports,'note':'unknown requires manual Telegram verification; never auto-replayed'}
 
 def live(args):
     # dotenv is loaded through the existing config, then the daily config is validated.
     from .. import config as existing_config
-    config=BriefingConfig.load()
     directory=args.data_dir or os.getenv('STOCKMAN_DATA_DIR','runtime')
     if args.status:return status(directory)
+    config=BriefingConfig.load()
     lock=DirectoryLock(directory);store=None
     try:
         store=Store(Path(directory)/'stockman.sqlite')

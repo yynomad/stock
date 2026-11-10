@@ -27,8 +27,9 @@ class History:
     def save(self,owner,day,items,policies,text,meta,*,store_analysis=True):
         identity=uuid.uuid4().hex
         can_store=store_analysis and all(policies[i.source].store_analysis for i in items)
+        stored_meta = meta if can_store else {key:value for key,value in meta.items() if key not in ('research','filing_citations')}
         with self.store.lock,self.store.conn:
-            self.store.conn.execute('INSERT INTO brief_reports VALUES(?,?,?,?,?,?,?)',(identity,owner,day,'preview',text if can_store else '[analysis display-only: source policy]',json.dumps(meta,ensure_ascii=False),meta.get('asof',time.time())))
+            self.store.conn.execute('INSERT INTO brief_reports VALUES(?,?,?,?,?,?,?)',(identity,owner,day,'preview',text if can_store else '[analysis display-only: source policy]',json.dumps(stored_meta,ensure_ascii=False),meta.get('asof',time.time())))
             for item in items:
                 policy=policies[item.source];policy.validate()
                 self.store.conn.execute('INSERT OR REPLACE INTO brief_evidence VALUES(?,?,?,?,?)',(item.identity,item.fingerprint,item.event_key,json.dumps(item.metadata(policy),ensure_ascii=False),time.time()))

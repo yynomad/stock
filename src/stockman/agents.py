@@ -295,10 +295,7 @@ class AgentRuntime:
                 span = current.tools
             name = request.tool.name if request.tool is not None else 'unregistered'
             start=time.monotonic()
-            trace_args = {'span': span, 'parent_tool': PARENT_TOOL.get()}
-            if request.tool is not None and not name.startswith('lookup_'):
-                trace_args['args'] = request.tool_call.get('args')
-            self.store.trace(current.task,agent,name,'start',trace_args)
+            self.store.trace(current.task,agent,name,'start',{'span':span,'parent_tool':PARENT_TOOL.get()})
             parent = PARENT_TOOL.set(span)
             try:
                 result=handler(request)
