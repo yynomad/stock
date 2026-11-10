@@ -295,6 +295,7 @@ class AgentRuntime:
                 span = current.tools
             name = request.tool.name if request.tool is not None else 'unregistered'
             start=time.monotonic()
+            # Trace the call hierarchy without persisting model-supplied tool arguments.
             self.store.trace(current.task,agent,name,'start',{'span':span,'parent_tool':PARENT_TOOL.get()})
             parent = PARENT_TOOL.set(span)
             try:

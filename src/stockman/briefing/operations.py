@@ -38,6 +38,7 @@ class DailyOperations:
         store.execute("""CREATE TABLE IF NOT EXISTS brief_alerts(
             day TEXT NOT NULL, kind TEXT NOT NULL, status TEXT NOT NULL, at REAL NOT NULL,
             PRIMARY KEY(day,kind))""")
+        # A previous alert may have reached Telegram before its outcome was recorded.
         with store.lock, store.conn:
             rows = store.conn.execute("SELECT day,kind FROM brief_alerts WHERE status='sending'").fetchall()
             store.conn.execute("UPDATE brief_alerts SET status='unknown' WHERE status='sending'")
@@ -81,6 +82,7 @@ class DailyOperations:
             return {}
         if not isinstance(meta, dict):
             return {}
+        # Report metadata can contain holdings and source text. Log only the safe summary below.
         raw_state = meta.get('status')
         state = raw_state.split(';', 1)[0] if isinstance(raw_state, str) else None
         result = {'analysis':state if state in ANALYSIS_STATES else 'unknown'}
@@ -113,6 +115,7 @@ class DailyOperations:
         reason = result.get('error_type')
         next_try = result.get('next_try')
         report = result.get('report_id')
+        # Polling the same outcome should not repeat the log. Alert deduplication lives in SQLite.
         key = (day, status, reason, next_try, result['attempts'], report)
         if key == self.last_daily:
             return
@@ -124,6 +127,7 @@ class DailyOperations:
         elif status == 'failed':
             stage = 'generation'
             reason = reason if reason in GENERATION_ERRORS else 'generation_failed'
+            # Alert only when the scheduler has stopped retrying this generation failure.
             if next_try is None:
                 alert = 'daily_failed'
         else:
@@ -138,6 +142,7 @@ class DailyOperations:
         self.last_daily = key
 
     def _alert(self, day, kind, now):
+        # Commit the day-and-kind claim first so even a crash during send cannot replay the alert.
         with self.store.lock, self.store.conn:
             claimed = self.store.conn.execute("INSERT OR IGNORE INTO brief_alerts VALUES(?,?,'sending',?)",
                                               (day, kind, now))

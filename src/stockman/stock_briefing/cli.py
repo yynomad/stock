@@ -43,6 +43,7 @@ def status(directory):
     with sqlite3.connect(path.as_uri()+'?mode=ro',uri=True) as conn:
         conn.row_factory=sqlite3.Row
         names={r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+        # Status queries omit report bodies, owner IDs, and raw diagnostics.
         daily=[dict(r) for r in conn.execute('SELECT day,status,report,attempts,scheduled,actual,next_try FROM brief_daily ORDER BY day DESC LIMIT 10')] if 'brief_daily' in names else []
         reports=[dict(r) for r in conn.execute('SELECT id,day,status,at FROM brief_reports ORDER BY at DESC LIMIT 10')] if 'brief_reports' in names else []
         return {'daily':daily,'reports':reports,'note':'unknown requires manual Telegram verification; never auto-replayed'}

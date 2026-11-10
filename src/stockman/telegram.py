@@ -26,6 +26,7 @@ class TelegramReceiveError(RuntimeError):
 
 
 def _delivery_result(response, delivered):
+    # A rejected later chunk can leave the overall message partially delivered.
     if 400 <= response.status_code < 500 and response.status_code != 408:
         return 'unknown' if delivered else 'failed'
     if response.status_code != 200:
@@ -55,6 +56,7 @@ class Telegram:
                 raise ValueError('invalid Telegram response')
             return payload['result']
         except (requests.RequestException, ValueError):
+            # The original exception may include the URL with the bot token.
             raise TelegramReceiveError('Telegram update request failed') from None
     def deliver(self,result):
         delivered=False

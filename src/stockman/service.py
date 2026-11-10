@@ -158,5 +158,6 @@ def read_status(config):
                 from .storage import decode_snapshot
                 from .brokers.coverage import coverage_info
                 info=coverage_info(decode_snapshot(dict(rows[0])))
+                # Keep aggregate coverage counts while withholding the excluded tickers.
                 coverage={key:value for key,value in info.items() if key!='excluded'}
         return {'status':'recorded_state','jobs':jobs,'broker':broker,'daily':daily,'holdings_coverage':coverage,'note':'记录时间请自行核对；unknown 需人工核实，记录不证明进程仍存活。'}

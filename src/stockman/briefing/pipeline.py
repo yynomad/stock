@@ -7,6 +7,7 @@ from requests import HTTPError, Timeout
 from .history import History
 
 def source_error(exc):
+    # Requests treats a 4xx or 5xx response as false even when it contains a useful status code.
     if isinstance(exc, HTTPError) and exc.response is not None:
         code = exc.response.status_code
         if code == 429:
@@ -40,6 +41,7 @@ def collect(sources,now=None,lookback=86400):
                 try:
                     item.validate(now)
                     if item.source!=policy.source:raise ValueError('source identity mismatch')
+                    # A valid older item still tells us how current the feed is.
                     if item.published <= now:
                         data_asof = max(data_asof or 0, item.published)
                     if now-lookback<=item.published<=now:accepted.append(item)

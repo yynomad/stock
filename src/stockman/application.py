@@ -72,6 +72,7 @@ class Application:
             text='本次任务已达到已知费用阈值，剩余调查未完成；未知费用仍可能产生。' if isinstance(exc,TaskBudgetExceeded) else '本次任务未完成：'+type(exc).__name__+'。请检查本机配置与任务记录。'
             result = {'text':text}
             task_failed = True
+        # An ambiguous send stays unknown. Sending an error reply could duplicate the response.
         self.runtime.store.execute("UPDATE updates SET status='sending' WHERE id=?", (identity,))
         try:
             status = self.transport.deliver(result)

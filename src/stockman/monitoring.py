@@ -23,6 +23,7 @@ def monitor_intent(text):
 class MonitoringService:
     def __init__(self,store,portfolio,market=None,in_session=regular_session,settings=None):
         self.store=store;self.portfolio=portfolio;self.market=market or YahooMarket();self.in_session=in_session;self.settings=settings
+        # The legacy pending state covered analysis and delivery, so its outcome is ambiguous.
         self.store.execute("UPDATE events SET status='interrupted' WHERE status='analyzing'")
         self.store.execute("UPDATE events SET status='unknown' WHERE status IN ('pending','sending')")
     def command(self,request: str):

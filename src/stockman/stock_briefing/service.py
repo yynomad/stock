@@ -73,6 +73,7 @@ class StockBriefing:
                 explained,status=self.research.explain(task,allowed,self.budget,now,relations,holdings['symbols'],holdings['coverage'],investigation)
             else:
                 explained=[]
+                # Only a successful collection can support a clean no-news result.
                 if not candidates:
                     status = 'no_new_evidence' if health and not missing and all(row['status']=='ok' for row in health) else 'insufficient_sources'
                 else:

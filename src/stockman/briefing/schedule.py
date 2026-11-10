@@ -28,10 +28,12 @@ class Scheduler:
         with self.store.lock, self.store.conn:
             conn = self.store.conn
             conn.execute("""UPDATE brief_reports SET status='unknown' WHERE status='sending'""")
+            # A linked terminal report can resolve a legacy claim left in flight.
             conn.execute("""UPDATE brief_daily SET status=COALESCE(
                 (SELECT status FROM brief_reports WHERE id=brief_daily.report AND owner=brief_daily.owner
                  AND day=brief_daily.day AND status IN ('sent','failed','unknown')), 'unknown'),
                 error=NULL, next_try=0 WHERE status IN ('generating','sending')""")
+            # An unlinked building claim proves the send boundary was never reached.
             conn.execute("""UPDATE brief_daily SET status='failed', error='generation_interrupted',
                 next_try=CASE WHEN attempts < ? THEN actual + ? ELSE 0 END
                 WHERE status='building' AND report IS NULL""", (MAX_ATTEMPTS, RETRY_SECONDS))
@@ -51,10 +53,12 @@ class Scheduler:
     def _claim(self, day, scheduled, now):
         with self.store.lock:
             conn = self.store.conn
+            # Lock the claim across SQLite connections before checking for an existing run.
             conn.execute('BEGIN IMMEDIATE')
             try:
                 row = conn.execute('SELECT * FROM brief_daily WHERE owner=? AND day=?', (self.owner, day)).fetchone()
                 if row:
+                    # An interrupted model call may still have a reservation in the daily ledger.
                     if row['error'] == 'generation_interrupted' and row['next_try'] and self._budget_exhausted(conn, day):
                         conn.execute("UPDATE brief_daily SET next_try=0,error='budget_exhausted' WHERE owner=? AND day=?",
                                      (self.owner, day))
@@ -114,6 +118,7 @@ class Scheduler:
                 raise ValueError('report owner, date or state mismatch')
             meta = json.loads(row['meta'])
             meta.update(metadata)
+            # Scheduling metadata may be stored even when source policy bars storing the report text.
             persisted = row['text'] if row['text'].startswith('[analysis display-only:') else text
             conn.execute("UPDATE brief_reports SET text=?,meta=?,status='sending' WHERE id=?",
                          (persisted, json.dumps(meta), identity))
@@ -141,6 +146,7 @@ class Scheduler:
             header = '延迟补发（仅当天）' if delayed else ('手动生成' if now < scheduled else '按时日报')
             header += f'；计划 {datetime.fromtimestamp(scheduled, local.tzinfo).isoformat()}；实际开始 {local.isoformat()}。\n'
             result = {**result, 'text':header + result['text']}
+            # Commit both sending markers before calling the external transport.
             self._begin_delivery(day, identity, result['text'],
                                  {'scheduled':scheduled, 'actual_start':now, 'delayed':delayed})
         except Exception as exc:
@@ -152,6 +158,7 @@ class Scheduler:
             status = 'unknown'
         if status not in DELIVERY_RESULTS:
             status = 'unknown'
+        # Keep the report and scheduler outcome in sync if the process stops during the write.
         with self.store.lock, self.store.conn:
             self.store.conn.execute('UPDATE brief_reports SET status=? WHERE id=?', (status, identity))
             self.store.conn.execute('UPDATE brief_daily SET status=? WHERE owner=? AND day=?', (status, self.owner, day))

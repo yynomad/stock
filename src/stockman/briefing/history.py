@@ -27,6 +27,7 @@ class History:
     def save(self,owner,day,items,policies,text,meta,*,store_analysis=True):
         identity=uuid.uuid4().hex
         can_store=store_analysis and all(policies[i.source].store_analysis for i in items)
+        # Display-only analysis can also appear in metadata, including excerpts and research notes.
         stored_meta = meta if can_store else {key:value for key,value in meta.items() if key not in ('research','filing_citations')}
         with self.store.lock,self.store.conn:
             self.store.conn.execute('INSERT INTO brief_reports VALUES(?,?,?,?,?,?,?)',(identity,owner,day,'preview',text if can_store else '[analysis display-only: source policy]',json.dumps(stored_meta,ensure_ascii=False),meta.get('asof',time.time())))
