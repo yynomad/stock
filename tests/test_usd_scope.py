@@ -279,7 +279,7 @@ class USDScopeTest(unittest.TestCase):
         from stockman.service import read_status
         from stockman.service_demo import fixture
         with tempfile.TemporaryDirectory() as directory:
-            config=fixture(directory);store=Store(config.directory/'stockman.sqlite')
+            config=fixture(directory);store=Store(config.directory/'stockman')
             BrokerService(store,SnapTradeBroker(Config(),mixed_client())).load(force=True);store.close()
             result=read_status(config)
             self.assertEqual(result['holdings_coverage']['excluded_positions'],1)

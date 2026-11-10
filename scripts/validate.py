@@ -22,9 +22,11 @@ def main():
     assert 'gemini-3.5-flash-lite' in (ROOT/'src/stockman/config.py').read_text()
     env=dict(os.environ,STOCKMAN_OFFLINE="1",PYTHONDONTWRITEBYTECODE="1",PYTHONPATH=str(ROOT/'src')+os.pathsep+str(ROOT),
              GEMINI_API_KEY="",GOOGLE_API_KEY="",TG_BOT_TOKEN="",TG_CHAT_ID="",LANGSMITH_TRACING="false",BRIEFING_ENABLED="false")
+    # Start PostgreSQL before installing the Python network guard. Psycopg uses only the private Unix socket.
+    launcher=[sys.executable, str(ROOT/'scripts/test_postgres.py'), '--']
     with tempfile.TemporaryDirectory() as directory:
         env['STOCKMAN_DATA_DIR']=directory
-        result=subprocess.run([sys.executable,"-B","-c", "import socket,sys,unittest; socket.socket.connect=lambda *a,**k: (_ for _ in ()).throw(AssertionError('offline network attempt')); suite=unittest.defaultTestLoader.discover(sys.argv[1]); result=unittest.TextTestRunner(verbosity=2).run(suite); sys.exit(not result.wasSuccessful())",str(ROOT/'tests')],cwd=directory,env=env)
+        result=subprocess.run(launcher+[sys.executable,"-B","-c", "import socket,sys,unittest; socket.socket.connect=lambda *a,**k: (_ for _ in ()).throw(AssertionError('offline network attempt')); suite=unittest.defaultTestLoader.discover(sys.argv[1]); result=unittest.TextTestRunner(verbosity=2).run(suite); sys.exit(not result.wasSuccessful())",str(ROOT/'tests')],cwd=directory,env=env)
     if result.returncode:
         return result.returncode
     return subprocess.run([sys.executable,"-m","pip","check"],env=env).returncode

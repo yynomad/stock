@@ -1,13 +1,17 @@
 """Bound the model's view without rewriting the LangGraph checkpoint."""
 import json
+import math
 
-from langchain_core.messages import AIMessage, HumanMessage
+from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 from langchain_core.utils.function_calling import convert_to_openai_tool
 
 
 DEFAULT_CONTEXT_BYTES = 48 * 1024
 MIN_CONTEXT_BYTES = 4 * 1024
 MAX_CONTEXT_BYTES = 1024 * 1024
+DEFAULT_CONTEXT_TTL = 86400
+MAX_CONTEXT_TTL = 30 * 86400
+CONTEXT_TIMESTAMP = "stockman_created_at"
 
 
 class ContextOverflow(ValueError):
@@ -18,7 +22,11 @@ def context_bytes(value):
     return len(json.dumps(value, ensure_ascii=False, separators=(',', ':')).encode('utf-8'))
 
 
-def prepare_context(request, limit):
+def fresh(created, now, ttl):
+    return type(created) in (float, int) and math.isfinite(created) and 0 <= now - created <= ttl
+
+
+def prepare_context(request, limit, now, ttl):
     """Keep the current turn intact and fit the newest complete turns before it.
 
     Account for model-visible tool arguments and results as well as prompts and
@@ -41,16 +49,26 @@ def prepare_context(request, limit):
 
     remaining = limit - active
     kept = []
+    expired = evidence = 0
     for start, end in reversed(list(zip(turns, turns[1:]))):
         last = messages[end - 1]
         if not isinstance(last, AIMessage) or last.tool_calls or last.invalid_tool_calls:
             continue
+        turn = messages[start:end]
+        if not fresh(turn[0].response_metadata.get(CONTEXT_TIMESTAMP), now, ttl):
+            expired += 1
+            continue
+        # Keep prior evidence in the checkpoint. The next request must use its own tool results.
+        if any(isinstance(message, ToolMessage) for message in turn):
+            evidence += 1
+            continue
         size = sum(sizes[start:end])
         if size > remaining:
             break
-        kept.append(messages[start:end])
+        kept.append(turn)
         remaining -= size
 
     selected = [message for turn in reversed(kept) for message in turn] + messages[current:]
-    stats.update(after_bytes=limit - remaining, omitted_messages=len(messages) - len(selected))
+    stats.update(after_bytes=limit - remaining, omitted_messages=len(messages) - len(selected),
+                 expired_turns=expired, evidence_turns=evidence)
     return selected, stats

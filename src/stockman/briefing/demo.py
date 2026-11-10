@@ -12,7 +12,7 @@ class SyntheticSource:
 
 def run(scenario,directory):
     if scenario!='pipeline':raise ValueError('generic demo only supports pipeline; Stock demos have their own module')
-    store=Store(Path(directory)/'stockman.sqlite')
+    store=Store(Path(directory)/'stockman')
     try:
         result=preview(store,[SyntheticSource()],now=2000000000)
         sent=[]

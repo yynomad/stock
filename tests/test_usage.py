@@ -144,7 +144,7 @@ class UsageTest(unittest.TestCase):
             runtime=AgentRuntime(d,OfflineModel())
             try:
                 result=runtime.run("hello")
-                row=runtime.store.execute("SELECT limit_micro_usd FROM task_budget_limits WHERE task_id=?",(result["task_id"],))[0]
+                row=runtime.store.execute("SELECT limit_micro_usd FROM task_budget_limits WHERE task_id=%s",(result["task_id"],))[0]
                 self.assertEqual(row["limit_micro_usd"],29)
             finally:runtime.close()
 

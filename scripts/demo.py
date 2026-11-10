@@ -25,7 +25,7 @@ def main():
         if args.scenario=='monitor':
             from stockman.monitoring import MonitoringService
             service=MonitoringService(runtime.store,None,in_session=lambda now:True)
-            runtime.store.execute('INSERT INTO rules(symbol,spec) VALUES(?,?)',('AAPL',json.dumps({'support':100,'resistance':120,'buffer':0.02})))
+            runtime.store.execute('INSERT INTO rules(symbol,spec) VALUES(%s,%s)',('AAPL',json.dumps({'support':100,'resistance':120,'buffer':0.02})))
             quote={'price':125,'asof':1000,'kind':'regular','valid':True}
             event=service.check('AAPL',quote,1001)
             assert event and service.check('AAPL',quote,1002) is None

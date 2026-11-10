@@ -18,13 +18,13 @@ def record(store, task, role, kind, model, started, usage=None, error=None, inpu
     if inputs is not None and outputs is not None and input_rate is not None and output_rate is not None:
         cost = math.ceil(inputs * input_rate + outputs * output_rate)
     store.execute("""INSERT INTO usage_calls(task_id,role,kind,provider,model,elapsed_ms,input_tokens,output_tokens,total_tokens,estimated_micro_usd,extra_cost_unknown,status,at)
-        VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+        VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
         (task, role, kind, "google" if isinstance(model,str) and model.startswith("gemini") else None,
          model if isinstance(model,str) and len(model)<200 else None, max(0, round((time.monotonic()-started)*1000)),
          inputs,outputs,total,cost,int(extra_unknown),"failed" if error else "success",time.time()))
 
 def calls(store, task):
-    return store.execute("SELECT role,kind,provider,model,elapsed_ms,input_tokens,output_tokens,total_tokens,estimated_micro_usd,extra_cost_unknown,status,at FROM usage_calls WHERE task_id=? ORDER BY id", (task,))
+    return store.execute("SELECT role,kind,provider,model,elapsed_ms,input_tokens,output_tokens,total_tokens,estimated_micro_usd,extra_cost_unknown,status,at FROM usage_calls WHERE task_id=%s ORDER BY id", (task,))
 
 
 def summary(rows):

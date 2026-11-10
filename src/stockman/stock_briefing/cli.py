@@ -2,15 +2,15 @@
 import json
 import os
 from pathlib import Path
-import sqlite3
 import time
 from ..briefing.config import BriefingConfig
 from ..briefing.locking import DirectoryLock
 from ..briefing.schedule import Scheduler
+from ..database import Database
 from ..storage import Store
 from .service import StockBriefing
 
-def execute(args,store,config,service=None,portfolio=None,transport=None,now=None):
+def execute(args,store,config,service=None,portfolio=None,transport=None,now=None,writer_check=None):
     from ..portfolio import PortfolioService,valid_symbol
     now=time.time() if now is None else now
     owner=args.session or os.getenv('TG_CHAT_ID') or 'local'
@@ -33,30 +33,38 @@ def execute(args,store,config,service=None,portfolio=None,transport=None,now=Non
         from ..telegram import Telegram
         transport=Telegram()
     if str(transport.chat)!=owner:raise PermissionError('transport destination mismatch')
-    scheduler=Scheduler(store,config,owner,allowed,build,transport.deliver)
+    def deliver(payload):
+        if writer_check is not None:writer_check()
+        return transport.deliver(payload)
+    scheduler=Scheduler(store,config,owner,allowed,build,deliver)
     scheduler.recover()
     return scheduler.tick(now,force=True)
 
 def status(directory):
-    path=(Path(directory)/'stockman.sqlite').resolve()
-    if not path.is_file():return {'daily':[],'reports':[],'note':'no briefing database yet'}
-    with sqlite3.connect(path.as_uri()+'?mode=ro',uri=True) as conn:
-        conn.row_factory=sqlite3.Row
-        names={r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
-        daily=[dict(r) for r in conn.execute('SELECT * FROM brief_daily ORDER BY day DESC LIMIT 10')] if 'brief_daily' in names else []
-        reports=[dict(r) for r in conn.execute('SELECT id,owner,day,status,meta FROM brief_reports ORDER BY at DESC LIMIT 10')] if 'brief_reports' in names else []
+    with Database(Path(directory)/'stockman').read_only() as conn:
+        names={r['tablename'] for r in conn.execute('SELECT tablename FROM pg_tables WHERE schemaname=current_schema()')}
+        if 'brief_daily' not in names and 'brief_reports' not in names:
+            return {'daily':[],'reports':[],'note':'no briefing database yet'}
+        # Status queries omit report bodies, owner IDs, and raw diagnostics.
+        daily=[dict(r) for r in conn.execute('SELECT day,status,report,attempts,scheduled,actual,next_try FROM brief_daily ORDER BY day DESC LIMIT 10')] if 'brief_daily' in names else []
+        reports=[dict(r) for r in conn.execute('SELECT id,day,status,at FROM brief_reports ORDER BY at DESC LIMIT 10')] if 'brief_reports' in names else []
         return {'daily':daily,'reports':reports,'note':'unknown requires manual Telegram verification; never auto-replayed'}
 
 def live(args):
     # dotenv is loaded through the existing config, then the daily config is validated.
     from .. import config as existing_config
-    config=BriefingConfig.load()
     directory=args.data_dir or os.getenv('STOCKMAN_DATA_DIR','runtime')
     if args.status:return status(directory)
-    lock=DirectoryLock(directory);store=None
+    config=BriefingConfig.load()
+    lock=DirectoryLock(directory)
     try:
-        store=Store(Path(directory)/'stockman.sqlite')
-        return execute(args,store,config)
+        path=Path(directory)/'stockman'
+        database=Database(path)
+        with database.writer() as lease:
+            store=Store(path,database)
+            try:
+                return execute(args,store,config,writer_check=lease.check)
+            finally:
+                store.close()
     finally:
-        if store:store.close()
         lock.close()

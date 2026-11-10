@@ -24,7 +24,7 @@ def child_environment(mode):
     # Do not inherit broker, Telegram, tracing, dotenv or arbitrary application settings.
     allowed = ('PATH', 'SYSTEMROOT', 'TMPDIR', 'SSL_CERT_FILE', 'SSL_CERT_DIR',
                'HTTP_PROXY', 'HTTPS_PROXY', 'ALL_PROXY', 'NO_PROXY',
-               'http_proxy', 'https_proxy', 'all_proxy', 'no_proxy')
+               'http_proxy', 'https_proxy', 'all_proxy', 'no_proxy', 'STOCKMAN_TEST_PG_SOCKET')
     env = {key: os.environ[key] for key in allowed if key in os.environ}
     env.update(PYTHONPATH=str(ROOT/'src') + os.pathsep + str(ROOT),
                PYTHONDONTWRITEBYTECODE='1', STOCKMAN_OFFLINE='1', STOCKMAN_EXPLICIT_CONFIG='1',

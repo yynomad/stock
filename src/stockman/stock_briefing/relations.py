@@ -5,7 +5,7 @@ import re
 class Relations:
     def __init__(self,store):
         self.store=store
-        store.execute('CREATE TABLE IF NOT EXISTS brief_relations(held TEXT,related TEXT,kind TEXT,evidence TEXT,verified REAL,published REAL,PRIMARY KEY(held,related,kind))')
+        store.execute('CREATE TABLE IF NOT EXISTS brief_relations(held TEXT,related TEXT,kind TEXT,evidence TEXT,verified DOUBLE PRECISION,published DOUBLE PRECISION,PRIMARY KEY(held,related,kind))')
     def verify(self,proposal,items,policies,issuers,now):
         held=proposal.get('held');related=proposal.get('related');kind=proposal.get('kind')
         if held==related or held not in issuers or related not in issuers or kind not in ('supplier','customer','competitor'):return False
@@ -21,7 +21,7 @@ class Relations:
                   'competitor':fr'{b} (?:is a competitor of|competes with) {a}'}
         if not re.fullmatch(patterns[kind]+r'[.]?',quote,re.IGNORECASE):return False
         record={'quote':quote,'url':item.url,'source':item.source,'evidence_id':item.identity}
-        self.store.execute('INSERT OR REPLACE INTO brief_relations VALUES(?,?,?,?,?,?)',(held,related,kind,json.dumps(record),now,item.published))
+        self.store.execute('INSERT INTO brief_relations VALUES(%s,%s,%s,%s,%s,%s) ON CONFLICT(held,related,kind) DO UPDATE SET evidence=excluded.evidence,verified=excluded.verified,published=excluded.published',(held,related,kind,json.dumps(record),now,item.published))
         return True
     def discover(self,holdings,items,policies,issuers,now):
         accepted=0

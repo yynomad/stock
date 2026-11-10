@@ -72,6 +72,48 @@ class AgentTest(unittest.TestCase):
             finally:
                 runtime.close()
 
+    def test_context_expires_and_drops_prior_tool_evidence_across_restart(self):
+        import time
+        from langchain_core.messages import HumanMessage
+        observed = []
+
+        class ObservedModel(OfflineModel):
+            def _generate(self, messages, **kwargs):
+                observed.append(list(messages))
+                return super()._generate(messages, **kwargs)
+
+        def collect(request: str):
+            return 'OLD_PRIVATE_QUOTE'
+
+        settings = ModelConfig(key='', context_ttl=60)
+        now = time.time()
+        with tempfile.TemporaryDirectory() as directory:
+            with patch('time.time', return_value=now - 61):
+                runtime = AgentRuntime(directory, ObservedModel(), settings=settings)
+                runtime.run('过期问答', 'owner')
+            with patch('time.time', return_value=now - 10):
+                runtime.run('保留近期约束', 'owner')
+                runtime.close()
+                runtime = AgentRuntime(directory, ObservedModel(), {'research': collect}, settings=settings)
+                runtime.run('研究 AAPL', 'owner')
+                runtime.close()
+            with patch('time.time', return_value=now):
+                runtime = AgentRuntime(directory, ObservedModel(), settings=settings)
+                try:
+                    result = runtime.run('继续说明', 'owner')
+                    model_input = repr(observed[-1])
+                    self.assertNotIn('OLD_PRIVATE_QUOTE', model_input)
+                    self.assertNotIn('过期问答', model_input)
+                    self.assertIn('保留近期约束', model_input)
+                    checkpoint = runtime.agent.get_state({'configurable': {'thread_id': 'owner'}})
+                    self.assertIn('OLD_PRIVATE_QUOTE', repr(checkpoint.values['messages']))
+                    self.assertIn('过期问答', [m.content for m in checkpoint.values['messages'] if isinstance(m, HumanMessage)])
+                    stats = next(json.loads(row['payload']) for row in runtime.store.traces(result['task_id'])
+                                 if row['tool'] == 'context')
+                    self.assertEqual((stats['expired_turns'], stats['evidence_turns']), (1, 1))
+                finally:
+                    runtime.close()
+
     def test_oversized_question_is_blocked_before_model_provider(self):
         with tempfile.TemporaryDirectory() as directory:
             runtime = AgentRuntime(directory, OfflineModel(), settings=ModelConfig(key='', context_bytes=4096))
@@ -152,7 +194,7 @@ class AgentTest(unittest.TestCase):
             task=runtime.store.create_task('owner','检查截图持仓')
             runtime.store.execute('CREATE TABLE task_context(task_id TEXT PRIMARY KEY,snapshot TEXT)')
             snapshot=runtime.store.snapshot('image','owner',{'NVDA':{'shares':2}})
-            runtime.store.execute('INSERT INTO task_context VALUES(?,?)',(task,snapshot))
+            runtime.store.execute('INSERT INTO task_context VALUES(%s,%s)',(task,snapshot))
             runtime.store.finish(task,'interrupted');runtime.close()
             runtime=AgentRuntime(d,OfflineModel())
             try:
@@ -172,7 +214,7 @@ class AgentTest(unittest.TestCase):
                 task=runtime.store.create_task('owner','研究 AAPL')
                 if legacy_table:
                     runtime.store.execute('CREATE TABLE task_context(task_id TEXT PRIMARY KEY,snapshot TEXT)')
-                    runtime.store.execute('INSERT INTO task_context VALUES(?,NULL)',(task,))
+                    runtime.store.execute('INSERT INTO task_context VALUES(%s,NULL)',(task,))
                 runtime.store.finish(task,'interrupted')
                 def invoke(payload,config):
                     scope=CURRENT.get();observed.append((scope.session,scope.request))

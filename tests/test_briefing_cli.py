@@ -13,7 +13,7 @@ from stockman.stock_briefing.demo import end_to_end
 
 class BriefingCLITest(unittest.TestCase):
     def setUp(self):
-        self.temp=tempfile.TemporaryDirectory();self.store=Store(Path(self.temp.name)/'stockman.sqlite')
+        self.temp=tempfile.TemporaryDirectory();self.store=Store(Path(self.temp.name)/'stockman')
         self.args=Namespace(send=False,session='123',public_symbols=['AAPL'],data_dir=self.temp.name)
     def tearDown(self):self.store.close();self.temp.cleanup()
     def test_public_preview_never_uses_broker_or_telegram_and_source_is_explicit(self):
@@ -32,6 +32,19 @@ class BriefingCLITest(unittest.TestCase):
     def test_read_only_status_does_not_create_missing_database(self):
         missing=Path(self.temp.name)/'missing'
         self.assertEqual(status(missing)['reports'],[]);self.assertFalse(missing.exists())
+    def test_status_does_not_publish_private_report_fields(self):
+        from stockman.briefing.history import History
+        from stockman.briefing.schedule import Scheduler
+        Scheduler(self.store, BriefingConfig(), '986541', {'986541'}, None, None)
+        History(self.store).save('986541', '2026-11-10', [], {}, 'PRIVATE REPORT',
+                                 {'holdings': {'symbols': ['PRIVATE_TICKER']}, 'asof': 1000})
+        self.store.execute("INSERT INTO brief_daily VALUES('986541','2026-11-10',0,0,NULL,'failed',1,0,'PRIVATE_TOKEN')")
+        result = status(self.temp.name)
+        self.assertEqual(result['reports'][0]['status'], 'preview')
+        self.assertEqual(result['daily'][0]['status'], 'failed')
+        for private in ('986541', 'PRIVATE REPORT', 'PRIVATE_TICKER', 'PRIVATE_TOKEN'):
+            self.assertNotIn(private, str(result))
+
     def test_stock_end_to_end_uses_no_network(self):
         with tempfile.TemporaryDirectory() as d,patch('socket.socket.connect',side_effect=AssertionError('network')):
             result=end_to_end(d)

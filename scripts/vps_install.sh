@@ -22,7 +22,7 @@ export PYTHONPATH="$PWD/src:$PWD:$PWD/scripts"
 # Fail closed if any probe attempts an external connection. Source/credentials
 # are separate, and every probe uses synthetic data in temporary directories.
 venv/bin/python scripts/validate.py > acceptance/validate.log 2>&1
-venv/bin/python - <<'PY' > acceptance/scenarios.log 2>&1
+venv/bin/python scripts/test_postgres.py -- venv/bin/python - <<'PY' > acceptance/scenarios.log 2>&1
 import runpy
 import socket
 import sys

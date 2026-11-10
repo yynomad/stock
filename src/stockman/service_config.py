@@ -7,7 +7,8 @@ import os
 from pathlib import Path
 import re
 from .briefing.config import BriefingConfig
-from .harness import DEFAULT_CONTEXT_BYTES, MAX_CONTEXT_BYTES, MIN_CONTEXT_BYTES
+from .harness import (DEFAULT_CONTEXT_BYTES, DEFAULT_CONTEXT_TTL, MAX_CONTEXT_BYTES,
+                      MAX_CONTEXT_TTL, MIN_CONTEXT_BYTES)
 
 class ConfigError(ValueError):pass
 
@@ -41,6 +42,7 @@ class ModelConfig:
     max_research_queries:int=3
     research_timeout:int=90
     context_bytes:int=DEFAULT_CONTEXT_BYTES
+    context_ttl:int=DEFAULT_CONTEXT_TTL
 
 @dataclass(frozen=True)
 class MonitorConfig:
@@ -61,13 +63,15 @@ class ServiceConfig:
     briefing:BriefingConfig
     monitor:MonitorConfig
     sec_user_agent:str=field(repr=False,default='')
+    database_url:str=field(repr=False,default='')
 
 SCHEMA={
  'service':{'data_dir','timezone','log_level'},
+ 'database':{'url_env'},
  'broker':{'provider','account_env','client_id_env','consumer_key_env','sync_interval_seconds'},
- 'model':{'name','api_key_env','max_calls','max_tools','supervisor_model','portfolio_model','research_model','monitor_model','task_budget_usd','price_model','input_rate','output_rate','max_research_queries','research_timeout_seconds','context_bytes'},
+ 'model':{'name','api_key_env','max_calls','max_tools','supervisor_model','portfolio_model','research_model','monitor_model','task_budget_usd','price_model','input_rate','output_rate','max_research_queries','research_timeout_seconds','context_bytes','context_ttl_seconds'},
  'notification':{'provider','token_env','chat_id_env','allowed_users_env','interactive'},
- 'briefing':{'enabled','time','daily_budget_usd','max_calls','max_output_tokens','max_events','lookback_hours','retention_days','input_rate','output_rate','max_research_queries','max_report_model_calls','research_timeout_seconds'},
+ 'briefing':{'enabled','alerts_enabled','time','daily_budget_usd','max_calls','max_output_tokens','max_events','lookback_hours','retention_days','input_rate','output_rate','max_research_queries','max_report_model_calls','research_timeout_seconds'},
  'monitor':{'interval_seconds','buffer_pct','max_daily_alerts','quote_max_age_seconds'},
  'sources':{'file','sec_user_agent_env'}}
 
@@ -129,7 +133,8 @@ def load_config(path,env=None):
           input_rate=number('briefing','input_rate',0.30,0.000001,10000),output_rate=number('briefing','output_rate',2.50,0.000001,10000),
           max_research_queries=number('briefing','max_research_queries',3,1,12,True),
           max_report_model_calls=number('briefing','max_report_model_calls',4,1,20,True),
-          research_timeout=number('briefing','research_timeout_seconds',90,1,600,True))
+          research_timeout=number('briefing','research_timeout_seconds',90,1,600,True),
+          alerts_enabled=boolean('briefing','alerts_enabled',False))
     except (ValueError,KeyError):raise ConfigError('invalid briefing/timezone configuration') from None
     level=value('service','log_level','INFO').upper()
     if level not in ('DEBUG','INFO','WARNING','ERROR'):raise ConfigError('invalid service.log_level')
@@ -147,7 +152,8 @@ def load_config(path,env=None):
           number('model','output_rate',1,0,10000) if has_out else None,
           max_research_queries=number('model','max_research_queries',3,1,12,True),
           research_timeout=number('model','research_timeout_seconds',90,1,600,True),
-          context_bytes=number('model','context_bytes',DEFAULT_CONTEXT_BYTES,MIN_CONTEXT_BYTES,MAX_CONTEXT_BYTES,True))
+          context_bytes=number('model','context_bytes',DEFAULT_CONTEXT_BYTES,MIN_CONTEXT_BYTES,MAX_CONTEXT_BYTES,True),
+          context_ttl=number('model','context_ttl_seconds',DEFAULT_CONTEXT_TTL,1,MAX_CONTEXT_TTL,True))
     notification=ChannelConfig(channel,secret('notification','token_env','TG_BOT_TOKEN'),int(target),allowed,boolean('notification','interactive',True))
     monitor=MonitorConfig(number('monitor','interval_seconds',300,1,86400),number('monitor','buffer_pct',0.02,0.000001,1),
           number('monitor','max_daily_alerts',5,1,100,True),number('monitor','quote_max_age_seconds',900,1,86400))
@@ -157,5 +163,9 @@ def load_config(path,env=None):
         registry=json.loads(sources.read_text(encoding='utf-8'))
         if not isinstance(registry,dict) or not isinstance(registry.get('issuers'),dict) or not isinstance(registry.get('rss'),list):raise ValueError()
     except (OSError,UnicodeError,ValueError):raise ConfigError('invalid sources.file registry') from None
+    database_url=secret('database','url_env','STOCKMAN_DATABASE_URL')
+    from .database import validate_url
+    try:validate_url(database_url)
+    except ValueError:raise ConfigError('database.url_env requires a direct TLS PostgreSQL URL') from None
     return ServiceConfig(path,relative(value('service','data_dir','runtime')),sources,level,broker,notification,model,briefing,monitor,
-          secret('sources','sec_user_agent_env','SEC_USER_AGENT',False))
+          secret('sources','sec_user_agent_env','SEC_USER_AGENT',False),database_url)

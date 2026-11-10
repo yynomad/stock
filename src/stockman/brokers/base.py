@@ -37,7 +37,7 @@ class BrokerAdapter(Protocol):
 class BrokerService:
     def __init__(self,store,adapter,interval=900):
         self.store=store;self.adapter=adapter;self.interval=interval;self.lock=threading.RLock();self.last_attempt=None;self.last_result=None
-        store.execute('CREATE TABLE IF NOT EXISTS broker_health(provider TEXT,scope TEXT,status TEXT,last_attempt REAL,last_success REAL,error TEXT,PRIMARY KEY(provider,scope))')
+        store.execute('CREATE TABLE IF NOT EXISTS broker_health(provider TEXT,scope TEXT,status TEXT,last_attempt DOUBLE PRECISION,last_success DOUBLE PRECISION,error TEXT,PRIMARY KEY(provider,scope))')
     def _row(self,row,now,cached,error=None):
         row=dict(row);row.update(cached=cached,age_seconds=max(0,now-row['asof']),stale=now-row['asof']>86400,provider=self.adapter.provider)
         if error:row['sync_error']=error
@@ -66,21 +66,21 @@ class BrokerService:
                         self.store.snapshot(adapter.provider,adapter.account,positions,asof=snapshot.asof,identity=cached['id'],coverage=snapshot.coverage)
                         cached=self.store.latest(adapter.provider,adapter.account)
                     self.last_result='ok'
-                    self.store.execute('INSERT OR REPLACE INTO broker_health VALUES(?,?,?,?,?,?)',(adapter.provider,adapter.account,self._health_status(snapshot),now,now,None))
+                    self.store.execute('INSERT INTO broker_health VALUES(%s,%s,%s,%s,%s,%s) ON CONFLICT(provider,scope) DO UPDATE SET status=excluded.status,last_attempt=excluded.last_attempt,last_success=excluded.last_success,error=excluded.error',(adapter.provider,adapter.account,self._health_status(snapshot),now,now,None))
                     return self._row(cached,now,True)
                 self.store.snapshot(adapter.provider,adapter.account,positions,asof=snapshot.asof,coverage=snapshot.coverage)
                 self.last_result='ok'
-                self.store.execute('INSERT OR REPLACE INTO broker_health VALUES(?,?,?,?,?,?)',(adapter.provider,adapter.account,self._health_status(snapshot),now,now,None))
+                self.store.execute('INSERT INTO broker_health VALUES(%s,%s,%s,%s,%s,%s) ON CONFLICT(provider,scope) DO UPDATE SET status=excluded.status,last_attempt=excluded.last_attempt,last_success=excluded.last_success,error=excluded.error',(adapter.provider,adapter.account,self._health_status(snapshot),now,now,None))
                 return self._row(self.store.latest(adapter.provider,adapter.account),now,False)
             except Exception as exc:
                 self.last_result='failed'
                 previous=self.health()
                 error=exc.code if isinstance(exc,BrokerError) else type(exc).__name__
-                self.store.execute('INSERT OR REPLACE INTO broker_health VALUES(?,?,?,?,?,?)',(adapter.provider,adapter.account,'failed',now,previous.get('last_success'),error))
+                self.store.execute('INSERT INTO broker_health VALUES(%s,%s,%s,%s,%s,%s) ON CONFLICT(provider,scope) DO UPDATE SET status=excluded.status,last_attempt=excluded.last_attempt,last_success=excluded.last_success,error=excluded.error',(adapter.provider,adapter.account,'failed',now,previous.get('last_success'),error))
                 if cached:return self._row(cached,now,True,error)
                 raise BrokerError('broker unavailable; no snapshot for configured account',code=error) from None
     def health(self):
-        rows=self.store.execute('SELECT status,last_attempt,last_success,error FROM broker_health WHERE provider=? AND scope=?',(self.adapter.provider,self.adapter.account))
+        rows=self.store.execute('SELECT status,last_attempt,last_success,error FROM broker_health WHERE provider=%s AND scope=%s',(self.adapter.provider,self.adapter.account))
         return rows[0] if rows else {'status':'not_synced'}
     @staticmethod
     def _health_status(snapshot):

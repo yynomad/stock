@@ -11,15 +11,19 @@ from stockman.storage import RESPONSE_STYLES, Store
 
 def response_style(directory, session, action):
     from stockman.briefing.locking import DirectoryLock
+    from stockman.database import Database
     lock = DirectoryLock(directory)
     try:
-        store = Store(Path(directory) / 'stockman.sqlite')
-        try:
-            if action != 'show':
-                store.set_response_style(session, None if action == 'clear' else action)
-            return {'response_style': store.response_style(session)}
-        finally:
-            store.close()
+        location = Path(directory) / 'stockman'
+        database = Database(location)
+        with database.writer():
+            store = Store(location,database)
+            try:
+                if action != 'show':
+                    store.set_response_style(session, None if action == 'clear' else action)
+                return {'response_style': store.response_style(session)}
+            finally:
+                store.close()
     finally:
         lock.close()
 

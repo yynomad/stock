@@ -7,27 +7,31 @@ class BudgetExceeded(RuntimeError):pass
 class Budget:
     def __init__(self,store,config):
         self.store=store;self.config=config
-        store.execute('CREATE TABLE IF NOT EXISTS brief_budget(id TEXT PRIMARY KEY,day TEXT,reserved INTEGER,charge INTEGER,state TEXT,input_tokens INTEGER,output_tokens INTEGER)')
+        store.execute('CREATE TABLE IF NOT EXISTS brief_budget(id TEXT PRIMARY KEY,day TEXT,reserved BIGINT,charge BIGINT,state TEXT,input_tokens INTEGER,output_tokens INTEGER)')
     def cost(self,inputs,outputs):
         # micro-USD: USD/token * 1e6 cancels the per-million rate.
         return math.ceil(inputs*self.config.input_rate+outputs*self.config.output_rate)
     def reserve(self,day,input_upper):
         amount=self.cost(input_upper,self.config.max_output)
-        with self.store.lock:
-            self.store.conn.execute('BEGIN IMMEDIATE')
-            try:
-                row=self.store.conn.execute('SELECT COALESCE(SUM(charge),0),COUNT(*) FROM brief_budget WHERE day=?',(day,)).fetchone()
-                if self.config.budget==0 or row[0]+amount>math.floor(self.config.budget*1000000) or row[1]>=self.config.max_calls:raise BudgetExceeded('daily model budget/call cap reached')
-                identity=uuid.uuid4().hex
-                self.store.conn.execute('INSERT INTO brief_budget VALUES(?,?,?,?,?,?,?)',(identity,day,amount,amount,'reserved',None,None))
-                self.store.conn.commit();return identity
-            except BaseException:self.store.conn.rollback();raise
+        with self.store.lock, self.store.conn.transaction():
+            # A per-day lock protects the aggregate even before the first reservation exists.
+            self.store.lock_transaction('budget:' + day)
+            row=self.store.conn.execute('SELECT COALESCE(SUM(charge),0) AS total,COUNT(*) AS calls FROM brief_budget WHERE day=%s',(day,)).fetchone()
+            if self.config.budget==0 or row['total']+amount>math.floor(self.config.budget*1000000) or row['calls']>=self.config.max_calls:
+                raise BudgetExceeded('daily model budget/call cap reached')
+            identity=uuid.uuid4().hex
+            self.store.conn.execute('INSERT INTO brief_budget VALUES(%s,%s,%s,%s,%s,%s,%s)',(identity,day,amount,amount,'reserved',None,None))
+            return identity
     def settle(self,identity,usage=None):
         valid=isinstance(usage,dict) and all(type(usage.get(k)) is int and usage[k]>=0 for k in ('input_tokens','output_tokens'))
         if valid:
             cost=self.cost(usage['input_tokens'],usage['output_tokens'])
-            self.store.execute("UPDATE brief_budget SET charge=?,state='usage_reported',input_tokens=?,output_tokens=? WHERE id=? AND state='reserved'",(cost,usage['input_tokens'],usage['output_tokens'],identity))
-        else:self.store.execute("UPDATE brief_budget SET state='usage_unknown' WHERE id=? AND state='reserved'",(identity,))
+            self.store.execute("UPDATE brief_budget SET charge=%s,state='usage_reported',input_tokens=%s,output_tokens=%s WHERE id=%s AND state='reserved'",(cost,usage['input_tokens'],usage['output_tokens'],identity))
+        else:self.store.execute("UPDATE brief_budget SET state='usage_unknown' WHERE id=%s AND state='reserved'",(identity,))
     def status(self,day):
-        rows=self.store.execute('SELECT state,charge FROM brief_budget WHERE day=?',(day,))
-        return {'estimated_usd':sum(r['charge'] for r in rows)/1000000,'calls':len(rows),'usage_unknown':sum(r['state']!='usage_reported' for r in rows),'limit_usd':self.config.budget,'note':'应用估算，含未知调用预留；不是供应商账单硬封顶'}
+        rows=self.store.execute('SELECT state,charge FROM brief_budget WHERE day=%s',(day,))
+        return {'estimated_usd':sum(r['charge'] for r in rows)/1000000,
+                'known_estimated_usd':sum(r['charge'] for r in rows if r['state']=='usage_reported')/1000000,
+                'calls':len(rows),'call_limit':self.config.max_calls,
+                'usage_unknown':sum(r['state']!='usage_reported' for r in rows),
+                'limit_usd':self.config.budget,'note':'应用估算，含未知调用预留；不是供应商账单硬封顶'}

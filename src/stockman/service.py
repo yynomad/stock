@@ -4,6 +4,7 @@ import threading
 import time
 from .application import Application
 from .agents import AgentRuntime
+from .database import Database, DatabaseUnavailable
 from .brokers import BrokerService,create_broker
 from .channels import create_channel
 from .portfolio import PortfolioService
@@ -12,6 +13,7 @@ from .sec_filings import FilingReader
 from .market import YahooMarket
 from .monitoring import MonitoringService
 from .briefing.schedule import Scheduler
+from .briefing.operations import DailyOperations
 from .stock_briefing.service import StockBriefing
 from .stock_briefing.sources import PublicHTTP,load_registry
 from .stock_briefing.agent import make_model
@@ -32,7 +34,8 @@ class BackendService(Application):
             'portfolio':lambda request:self.portfolio.report(request),
             'research':lambda request:self.research.collect(request),
             'monitor':lambda request:self.monitor.command(request)},settings=config.model,
-            research=self.research if callable(getattr(self.research,'tools',None)) else None)
+            research=self.research if callable(getattr(self.research,'tools',None)) else None,
+            database_url=config.database_url)
         try:
             store=self.runtime.store
             self.broker=BrokerService(store,broker or create_broker(config.broker),config.broker.sync_interval)
@@ -44,18 +47,22 @@ class BackendService(Application):
             self.sources=sources
             self.briefing=StockBriefing(store,config.briefing,daily_model,registry,http,
                 model_factory=lambda:make_model(config.briefing,config.model.key,dict(config.model.roles)['research']))
-            self.daily=Scheduler(store,config.briefing,str(config.channel.chat),self.allowed,self.build_daily,self.transport.deliver)
+            self.daily=Scheduler(store,config.briefing,str(config.channel.chat),self.allowed,self.build_daily,self.deliver)
             self.daily.recover()
-            store.execute('CREATE TABLE IF NOT EXISTS updates(id INTEGER PRIMARY KEY,status TEXT)')
+            send_alert = self.deliver if config.briefing.alerts_enabled else None
+            self.daily_operations = DailyOperations(store, self.logger, self.briefing.budget, send_alert)
+            store.execute('CREATE TABLE IF NOT EXISTS updates(id BIGINT PRIMARY KEY,status TEXT)')
             store.execute('CREATE TABLE IF NOT EXISTS settings(key TEXT PRIMARY KEY,value TEXT)')
-            store.execute("UPDATE updates SET status='interrupted' WHERE status='processing'")
-            store.execute('CREATE TABLE IF NOT EXISTS service_health(job TEXT PRIMARY KEY,status TEXT,at REAL,error TEXT)')
+            store.execute("UPDATE updates SET status='interrupted' WHERE status='handling'")
+            store.execute("UPDATE updates SET status='unknown' WHERE status IN ('processing','sending')")
+            store.execute('CREATE TABLE IF NOT EXISTS service_health(job TEXT PRIMARY KEY,status TEXT,at DOUBLE PRECISION,error TEXT)')
         except BaseException:self.runtime.close();self.closed=True;raise
 
     def record(self,job,status,now,error=None):
-        self.runtime.store.execute('INSERT OR REPLACE INTO service_health VALUES(?,?,?,?)',(job,status,now,error))
+        self.runtime.store.execute('INSERT INTO service_health VALUES(%s,%s,%s,%s) ON CONFLICT(job) DO UPDATE SET status=excluded.status,at=excluded.at,error=excluded.error',(job,status,now,error))
 
     def sync_once(self,now=None,force=False):
+        self.runtime.database_lease.check()
         now=time.time() if now is None else now
         try:
             result=self.broker.load(now=now,force=force)
@@ -65,16 +72,27 @@ class BackendService(Application):
 
     def build_daily(self,owner,now,day):
         snapshot=self.broker.load(now=now)
-        return self.briefing.generate(owner,snapshot,now,day,sources=self.sources)
+        return self.briefing.generate(owner,snapshot,now,day,sources=self.sources,
+                                      observe_sources=self.daily_operations.observe_sources)
+
+    def tick_daily(self, now):
+        self.runtime.database_lease.check()
+        try:
+            result = self.daily.tick(now)
+            self.record('daily', result['status'], now, result.get('error_type'))
+            self.daily_operations.observe_daily(result, now)
+            return result
+        except Exception:
+            self.daily_operations.observe_scheduler_error()
+            raise
 
     def tick(self,now=None):
         now=time.time() if now is None else now
         if now>=self.next_sync:
             self.sync_once(now);self.next_sync=now+self.config.broker.sync_interval
-        result=self.daily.tick(now)
-        self.record('daily',result['status'],now,result.get('error_type'))
+        result=self.tick_daily(now)
         if now>=self.next_price:
-            try:self.monitor.tick(self.runtime,self.transport.deliver,session=str(self.transport.chat),now=now)
+            try:self.monitor.tick(self.runtime,self.deliver,session=str(self.transport.chat),now=now)
             except Exception as exc:self.record('prices','failed',now,type(exc).__name__)
             self.next_price=now+self.config.monitor.interval
         return result
@@ -83,8 +101,13 @@ class BackendService(Application):
         while not self.stop_event.is_set():
             now=time.time()
             try:
+                self.runtime.database_lease.check()
                 result=action(now)
-                if job!='sync':self.record(job,result.get('status','ok') if isinstance(result,dict) else 'ok',now)
+                if job not in ('sync','daily'):self.record(job,result.get('status','ok') if isinstance(result,dict) else 'ok',now)
+            except DatabaseUnavailable:
+                self.logger.error('StockMan lost the database writer lease')
+                self.stop_event.set()
+                break
             except Exception as exc:self.record(job,'failed',now,type(exc).__name__)
             self.stop_event.wait(interval)
 
@@ -93,11 +116,12 @@ class BackendService(Application):
         return super().handle_event(event)
 
     def receive_once(self,offset):
+        self.runtime.database_lease.check()
         for event in self.transport.receive(offset):
             if self.stop_event.is_set():break
             self.handle_event(event)
             offset=event.identity+1
-            self.runtime.store.execute("INSERT OR REPLACE INTO settings VALUES('telegram_offset',?)",(str(offset),))
+            self.runtime.store.execute("INSERT INTO settings VALUES('telegram_offset',%s) ON CONFLICT(key) DO UPDATE SET value=excluded.value",(str(offset),))
         return offset
 
     def run(self):
@@ -105,8 +129,8 @@ class BackendService(Application):
             self.sync_once(force=True)
             self.logger.info('Backend started; configured background jobs are active')
             jobs=[('sync',self.config.broker.sync_interval,self.sync_once),
-                  ('daily',30,self.daily.tick),
-                  ('prices',self.config.monitor.interval,lambda now:self.monitor.tick(self.runtime,self.transport.deliver,str(self.transport.chat),now))]
+                  ('daily',30,self.tick_daily),
+                  ('prices',self.config.monitor.interval,lambda now:self.monitor.tick(self.runtime,self.deliver,str(self.transport.chat),now))]
             for name,interval,action in jobs:
                 worker=threading.Thread(target=self._loop,args=(name,interval,action),name='service-'+name,daemon=True)
                 self.workers.append(worker);worker.start()
@@ -115,6 +139,9 @@ class BackendService(Application):
             while not self.stop_event.is_set():
                 if not self.config.channel.interactive:self.stop_event.wait(1);continue
                 try:offset=self.receive_once(offset);self.record('incoming','ok',time.time())
+                except DatabaseUnavailable:
+                    self.logger.error('StockMan lost the database writer lease')
+                    self.stop_event.set()
                 except Exception as exc:self.record('incoming','failed',time.time(),type(exc).__name__);self.stop_event.wait(5)
         except KeyboardInterrupt:pass
         finally:self.close()
@@ -128,20 +155,19 @@ class BackendService(Application):
 
 def read_status(config):
     """Read-only monitoring is safe while the service holds its writer lock."""
-    import sqlite3
-    path=config.directory/'stockman.sqlite'
-    if not path.is_file():return {'status':'not_started','jobs':[],'daily':[]}
-    with sqlite3.connect(path.resolve().as_uri()+'?mode=ro',uri=True) as conn:
-        conn.row_factory=sqlite3.Row
-        tables={r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
-        jobs=[dict(r) for r in conn.execute('SELECT * FROM service_health ORDER BY job')] if 'service_health' in tables else []
-        broker=[dict(r) for r in conn.execute('SELECT status,last_attempt,last_success,error FROM broker_health WHERE provider=? AND scope=?',(config.broker.provider,config.broker.account))] if 'broker_health' in tables else []
-        daily=[dict(r) for r in conn.execute('SELECT day,status,report,attempts,error FROM brief_daily WHERE owner=? ORDER BY day DESC LIMIT 10',(str(config.channel.chat),))] if 'brief_daily' in tables else []
+    with Database(config.directory/'stockman',config.database_url).read_only() as conn:
+        tables={r['tablename'] for r in conn.execute('SELECT tablename FROM pg_tables WHERE schemaname=current_schema()')}
+        if 'tasks' not in tables:return {'status':'not_started','jobs':[],'daily':[]}
+        jobs=[dict(r) for r in conn.execute('SELECT job,status,at FROM service_health ORDER BY job')] if 'service_health' in tables else []
+        broker=[dict(r) for r in conn.execute('SELECT status,last_attempt,last_success FROM broker_health WHERE provider=%s AND scope=%s',(config.broker.provider,config.broker.account))] if 'broker_health' in tables else []
+        daily=[dict(r) for r in conn.execute('SELECT day,status,report,attempts,scheduled,actual,next_try FROM brief_daily WHERE owner=%s ORDER BY day DESC LIMIT 10',(str(config.channel.chat),))] if 'brief_daily' in tables else []
         coverage=None
         if 'snapshots' in tables:
-            rows=conn.execute('SELECT * FROM snapshots WHERE source=? AND scope=? ORDER BY asof DESC,rowid DESC LIMIT 1',(config.broker.provider,config.broker.account)).fetchall()
+            rows=conn.execute('SELECT * FROM snapshots WHERE source=%s AND scope=%s ORDER BY asof DESC,seq DESC LIMIT 1',(config.broker.provider,config.broker.account)).fetchall()
             if rows:
                 from .storage import decode_snapshot
                 from .brokers.coverage import coverage_info
-                coverage=coverage_info(decode_snapshot(dict(rows[0])))
+                info=coverage_info(decode_snapshot(dict(rows[0])))
+                # Keep aggregate coverage counts while withholding the excluded tickers.
+                coverage={key:value for key,value in info.items() if key!='excluded'}
         return {'status':'recorded_state','jobs':jobs,'broker':broker,'daily':daily,'holdings_coverage':coverage,'note':'记录时间请自行核对；unknown 需人工核实，记录不证明进程仍存活。'}

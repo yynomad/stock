@@ -4,7 +4,7 @@ import tempfile
 from .service_config import load_config
 from .brokers.coverage import make_coverage
 
-ENV={'SNAPTRADE_ACCOUNT_ID':'11111111-1111-4111-8111-111111111111','SNAPTRADE_CLIENT_ID':'synthetic-client','SNAPTRADE_CONSUMER_KEY':'synthetic-secret','GEMINI_API_KEY':'synthetic-model-key','TG_BOT_TOKEN':'synthetic-bot-token','TG_CHAT_ID':'123'}
+ENV={'SNAPTRADE_ACCOUNT_ID':'11111111-1111-4111-8111-111111111111','SNAPTRADE_CLIENT_ID':'synthetic-client','SNAPTRADE_CONSUMER_KEY':'synthetic-secret','GEMINI_API_KEY':'synthetic-model-key','TG_BOT_TOKEN':'synthetic-bot-token','TG_CHAT_ID':'123','STOCKMAN_DATABASE_URL':'postgresql://synthetic:synthetic-database-secret@db.invalid/stockman'}
 
 def fixture(directory):
     root=Path(__file__).resolve().parents[2]

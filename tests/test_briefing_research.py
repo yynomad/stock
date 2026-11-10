@@ -36,7 +36,7 @@ class BriefingResearchTest(unittest.TestCase):
         self.assertIn('model_disabled',result['text']);self.assertFalse(self.store.execute('SELECT * FROM brief_budget'))
     def test_atomic_budget_across_connections_days_and_unknown_usage(self):
         config=BriefingConfig(budget=0.006,max_calls=8,max_output=2048)
-        other=Store(self.store.path);b1=Budget(self.store,config);b2=Budget(other,config)
+        other=Store(self.temp.name,self.store.database);b1=Budget(self.store,config);b2=Budget(other,config)
         try:
             def reserve(b):
                 try:return b.reserve('d1',100)
@@ -60,7 +60,7 @@ class BriefingResearchTest(unittest.TestCase):
         self.assertNotIn('avg_cost',str(self.store.traces(result['task_id'])))
         self.assertEqual(result['meta']['budget']['calls'],1)
         self.assertEqual(result['meta']['budget']['usage_unknown'],0)
-        usage=self.store.execute('SELECT * FROM usage_calls WHERE task_id=?',(result['task_id'],))
+        usage=self.store.execute('SELECT * FROM usage_calls WHERE task_id=%s',(result['task_id'],))
         self.assertEqual(len(usage),1)
         self.assertEqual((usage[0]['input_tokens'],usage[0]['output_tokens']),(100,100))
         self.assertEqual(usage[0]['estimated_micro_usd'],280)
@@ -85,7 +85,7 @@ class BriefingResearchTest(unittest.TestCase):
         rows=self.store.execute('SELECT * FROM brief_budget')
         self.assertEqual(len(rows),2);self.assertTrue(all(r['state']=='usage_unknown' and r['charge']>0 for r in rows))
         self.assertNotIn('secret',str(self.store.traces(task)))
-        usage=self.store.execute('SELECT * FROM usage_calls WHERE task_id=?',(task,))
+        usage=self.store.execute('SELECT * FROM usage_calls WHERE task_id=%s',(task,))
         self.assertEqual(len(usage),2)
         self.assertTrue(all(row['estimated_micro_usd'] is None and row['status']=='failed' for row in usage))
 

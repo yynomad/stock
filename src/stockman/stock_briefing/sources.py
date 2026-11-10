@@ -41,7 +41,7 @@ class PublicHTTP:
         addresses=socket.getaddrinfo(host,443,type=socket.SOCK_STREAM)
         if not addresses or any(not ipaddress.ip_address(row[4][0]).is_global for row in addresses):raise PermissionError('public hosts only')
         is_sec=host in ('data.sec.gov','www.sec.gov')
-        if is_sec and ('@' not in self.user_agent or len(self.user_agent)<8):raise ValueError('SEC_USER_AGENT must include a real contact email')
+        if is_sec and ('@' not in self.user_agent or len(self.user_agent)<8):raise PermissionError('SEC_USER_AGENT must include a real contact email')
         for attempt in range(3):
             if is_sec:
                 SEC_GATE.wait(sleep=self.sleep)
@@ -62,6 +62,7 @@ class PublicHTTP:
         raise RuntimeError('source unavailable')
 
 class SECSource:
+    kind = 'sec'
     def __init__(self,symbol,cik,http):
         if not re.fullmatch(r'[A-Z][A-Z0-9.-]{0,14}',symbol) or not re.fullmatch(r'[0-9]{1,10}',str(cik)):raise ValueError('invalid SEC issuer')
         self.symbol=symbol;self.cik=str(int(cik));self.http=http
@@ -82,6 +83,7 @@ class SECSource:
         return result
 
 class RSSSource:
+    kind = 'rss'
     def __init__(self,source,url,policy,entities,http,macro=False):
         if policy.source!=source:raise ValueError('RSS policy identity mismatch')
         policy.validate();self.url=canonical_url(url);self.policy=policy;self.entities=tuple(entities);self.http=http;self.macro=macro

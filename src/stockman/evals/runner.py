@@ -42,7 +42,7 @@ def _live_daily(case: dict, model, directory: Path) -> dict:
     from stockman.stock_briefing.agent import ResearchAgent
 
     config = BriefingConfig(budget=2.0, max_calls=4, max_events=5)
-    store = Store(directory / "daily.sqlite")
+    store = Store(directory / "daily")
     try:
         items, aliases = evidence_for_case(case)
         task = store.create_task("eval", case["request"])
@@ -112,6 +112,8 @@ def _live_agent(case: dict, model, directory: Path) -> dict:
 
 def live(case: dict, model) -> dict:
     """Calls a real LLM; its only available business tools return fixed test data."""
+    if os.getenv("STOCKMAN_OFFLINE") != "1" or not os.getenv("STOCKMAN_TEST_PG_SOCKET"):
+        raise ValueError("run synthetic live evaluation with scripts/test_postgres.py")
     start = time.perf_counter()
     with tempfile.TemporaryDirectory(prefix="stockman-eval-") as temporary:
         directory = Path(temporary)

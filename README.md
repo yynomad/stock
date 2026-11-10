@@ -2,7 +2,7 @@
 
 配置驱动的美股／ETF 持仓信息助手。通过 SnapTrade 只读同步 IBKR 持仓，结合公开资料生成中文日报、回答研究问题，并通过 Telegram 推送价格提醒。
 
-后台任务独立运行，不依赖用户发消息。项目使用 Python、LangChain、Gemini 和 SQLite，面向单机、单用户、单券商账户；没有网页界面或自动交易功能。
+后台任务独立运行，不依赖用户发消息。项目使用 Python、LangChain、Gemini 和 PostgreSQL，面向单机、单用户、单券商账户；没有网页界面或自动交易功能。
 
 ## 功能
 
@@ -10,7 +10,7 @@
 - **每日简报**：采集配置的 SEC／RSS 来源，去重并解释重要新增，默认每天北京时间 08:00 生成；恢复后只补当天一份。
 - **按需研究**：围绕单只美股或 ETF 选择报价、日线、SEC 财务、申报正文和新闻工具，保留来源、时间、已有证据和缺失资料。
 - **价格监控**：按交易日历检查有效报价，达到规则条件时才调用模型并推送；规则与提醒状态持久保存。
-- **本地可观察性**：SQLite 保存任务、调用记录、会话检查点、预算估算和投递状态；提供无凭据的离线演示。
+- **本地可观察性**：PostgreSQL 保存任务、调用记录、会话检查点、预算估算和投递状态；提供无凭据的离线演示。
 
 项目处于开发阶段：离线流程已有自动化验收，真实 SnapTrade/IBKR、模型、数据源及 Telegram 连接和报告质量仍需在自己的环境中核对。离线演示使用合成数据，不能证明真实持仓或研究效果。
 
@@ -35,10 +35,10 @@ cd stock
 python3 -m venv venv
 venv/bin/python -m pip install -r requirements.txt
 venv/bin/python -m pip install -e .
-venv/bin/stockman --offline --scenario end-to-end
+venv/bin/python scripts/test_postgres.py -- venv/bin/stockman --offline --scenario end-to-end
 ```
 
-演示无需密钥，不访问真实券商、行情或模型，也不发送消息。`synthetic: true` 表示外部依赖已替换为合成实现。
+离线验证需要本机 PostgreSQL 的 `initdb` 和 `pg_ctl`。若命令不在 PATH，请设置 `STOCKMAN_POSTGRES_BIN` 指向其目录。测试启动器在临时目录启动仅监听 Unix socket 的数据库，命令退出后清理。演示无需密钥，不访问真实券商、行情或模型，也不发送消息。`synthetic: true` 表示外部依赖已替换为合成实现。
 
 `requirements.txt` 是完整的精确依赖锁定；[pyproject.toml](pyproject.toml) 声明包信息和直接依赖下限。先安装锁定依赖，再安装当前包。安装后 `stockman` 命令与根 `service.py` 共用同一个 CLI，参数一致；跨目录运行时使用虚拟环境中命令的完整路径和配置文件路径。
 
@@ -55,10 +55,11 @@ cp stock.conf.example stock.conf
 | 配置组 | 主要内容与示例默认值 |
 | --- | --- |
 | `[service]` | 数据目录 `runtime`、时区 `Asia/Shanghai`、日志级别 |
+| `[database]` | Neon TLS 直连 PostgreSQL URI 的环境变量名 |
 | `[broker]` | `provider=snaptrade`，Personal API 凭据与目标账户环境变量名；每 900 秒尝试同步 |
 | `[model]` | Gemini 模型名、API key 环境变量名；每任务最多 8 次逻辑模型／12 次工具调用 |
 | `[notification]` | `provider=telegram`，token、chat ID、授权用户的环境变量名；`interactive=true` 接收文字提问 |
-| `[briefing]` | 日报开关、08:00、预算估算目标、调用／输出限制、资料窗口与历史保留 |
+| `[briefing]` | 日报开关、08:00、预算估算目标、调用／输出限制、资料窗口、历史保留及可选运维告警 |
 | `[monitor]` | 300 秒检查间隔、2% 突破缓冲、每标的每天最多 5 条、报价最长 900 秒 |
 | `[sources]` | 来源配置文件及 SEC 联系身份的环境变量名 |
 
@@ -68,6 +69,7 @@ cp stock.conf.example stock.conf
 
 | 环境变量 | 用途 |
 | --- | --- |
+| `STOCKMAN_DATABASE_URL` | 空的应用专用 Neon 数据库的直连 URI，启动时创建 `stockman` schema |
 | `SNAPTRADE_CLIENT_ID` | SnapTrade Personal API 的 Client ID |
 | `SNAPTRADE_CONSUMER_KEY` | SnapTrade Personal API 的 Consumer Key |
 | `SNAPTRADE_ACCOUNT_ID` | SnapTrade 中目标账户 UUID；须核对联名账户 |
@@ -76,6 +78,8 @@ cp stock.conf.example stock.conf
 | `TG_CHAT_ID` | 本人目标私聊的正数数字 ID |
 | `TG_ALLOWED_USERS` | 可选，逗号分隔的授权用户 ID；本人私聊可默认使用目标 ID |
 | `SEC_USER_AGENT` | 应用名与可联系邮箱，例如 `StockMan your-email@example.com` |
+
+使用 Neon 的直连地址。应用会验证 TLS 主机名并用数据库会话锁保证同库单写入者。首次切换需核对旧服务与当天的日报投递，停用旧实例后再启用新实例。历史 SQLite 文件可独立留档。
 
 这些环境变量名可在 `.conf` 中调整。密钥、真实 `stock.conf`、数据库和日志不要提交 Git 或粘贴到 Issue。
 
@@ -140,18 +144,20 @@ AAPL 最近一季营收
 
 一次研究一个明确股票代码。监控规则只有在本次用户文字明确要求开始或停止时才变更，工具结果和新闻中的指令不构成授权。配置 `interactive=false` 可只推送、不接收提问。图片消息被忽略，不下载、保存或调用识图模型。
 
-研究 Agent 按问题选择只读工具。同一会话的明确追问可沿用上一只标的。问最新价格通常只需 Yahoo 报价，问最近一季营收可直接取 SEC 季度事实，新闻搜索保留原文及关联搜索建议附件。默认每项任务最多三次研究查询，其中 Gemini 接地搜索最多一次并计入模型调用额度。相同查询复用本次结果，失败查询计入额度。来源超时、缺失、范围拒绝或预算耗尽时，返回缺口和已取得的可核对证据。
+研究 Agent 按问题选择只读工具。同一会话的明确追问可在 `context_ttl_seconds` 内沿用上一只明确标的；过期、缺失或标的冲突时需重新指定。问最新价格通常只需 Yahoo 报价，问最近一季营收可直接取 SEC 季度事实，新闻搜索保留原文及关联搜索建议附件。默认每项任务最多三次研究查询，其中 Gemini 接地搜索最多一次并计入模型调用额度。相同查询复用本次结果，失败查询计入额度。来源超时、缺失、范围拒绝或预算耗尽时，返回缺口和已取得的可核对证据。
 
 ### 本地问答与任务记录
 
 ```sh
-venv/bin/python scripts/chat.py --offline "研究 QQQ"
-venv/bin/python scripts/tasks.py --data-dir runtime/offline
+venv/bin/python scripts/test_postgres.py -- sh -c '
+  venv/bin/python scripts/chat.py --offline "研究 QQQ" &&
+  venv/bin/python scripts/tasks.py --data-dir runtime/offline
+'
 ```
 
-`chat.py --offline` 使用合成依赖及 `runtime/offline`，输出 `task_id`、模型／工具调用次数、任务状态和本次研究结果。用 `scripts/tasks.py --data-dir runtime/offline --task <任务编号>` 查看角色、工具、耗时和错误。任务详情还会列出本地模型和搜索逻辑调用的用量、耗时及可计算的估算费用，未知值为 null。日报调用使用其配置费率。问答和搜索可按指定模型费率估算，搜索附加费用仍标为未知。
+`chat.py --offline` 使用合成依赖及 `runtime/offline` 对应的隔离 PostgreSQL schema，输出 `task_id`、模型／工具调用次数、任务状态和本次研究结果。用 `scripts/tasks.py --data-dir runtime/offline --task <任务编号>` 查看角色、工具、耗时和错误。任务详情还会列出本地模型和搜索逻辑调用的用量、耗时及可计算的估算费用，未知值为 null。日报调用使用其配置费率。问答和搜索可按指定模型费率估算，搜索附加费用仍标为未知。
 
-去掉 `--offline` 可进行真实本地问答，结果打印到终端，不发送 Telegram。单次脚本沿用环境配置：可将 [env.template](env.template) 复制为 `.env`，已有文件只补必要字段。它与后台 `.conf` 的加载方式不同；代理、模型角色覆盖和日报参数以模板为准。
+去掉 `--offline` 可进行真实本地问答，结果打印到终端，不发送 Telegram。单次脚本沿用环境配置：可将 [env.template](env.template) 复制为 `.env`，已有文件只补必要字段。它与后台 `.conf` 的加载方式不同；代理、模型角色覆盖和日报参数以模板为准。`scripts/tasks.py` 从进程环境读取 `STOCKMAN_DATABASE_URL`。
 
 ### 日报预览与手动发送
 
@@ -200,7 +206,7 @@ Yahoo 提供行情与日线；SEC 提供适用的公司财务披露。按需 Goo
 | `retention_days` | `BRIEFING_RETENTION_DAYS` | `30` |
 | `input_rate` / `output_rate` | `BRIEFING_INPUT_USD_PER_MILLION` / `BRIEFING_OUTPUT_USD_PER_MILLION` | 模板中可调的每百万 token 估算费率 |
 
-预算通过 SQLite 原子预留，超时保留未知用量估算。日报模型每次 SDK 只尝试一次，最多一次应用重试且重新预留；实际用量可得时结算。
+预算在 PostgreSQL 事务中原子预留，超时保留未知用量估算。日报模型每次 SDK 只尝试一次，最多一次应用重试且重新预留；实际用量可得时结算。
 
 **主动问答任务费用阈值（可选）**：在 stock.conf 的 [model] 中设置 task_budget_usd，并按需一起设置 input_rate 和 output_rate（单位：每百万 Token 美元）。price_model 指定费率适用的精确模型名，省略时使用 [model] 的 name；其他模型和未配置费率的调用显示未知。首次调用结束后按返回用量估算，达到阈值后阻止后续可估价模型调用并提示未完成。无法估算的调用及搜索附加费用仍可继续并标记未知；单次调用可能超过阈值，内部重试可能不可见，不能保证账单封顶。任务内可估价模型调用串行检查；搜索附加费不计入已知金额。默认不启用该阈值。
 
@@ -215,19 +221,23 @@ Yahoo 提供行情与日线；SEC 提供适用的公司财务披露。按需 Goo
 - **持仓故障**：不保存声明范围内损坏、错账户、未来或乱序快照。非美元资产作为有记录的范围排除，不声称完整账户覆盖；同时间戳却持仓或排除信息变化时拒绝覆盖缓存。只使用同账户缓存，超过 24 小时标旧；无缓存不能冒充空组合。
 - **价格监控**：依 XNYS 日历处理交易日、夏令时和提早收盘，仅接受有时间戳的有效常规时段报价；默认超过 15 分钟不提醒。每标的纽约自然日最多 5 条提醒，休眠后不补发伪实时事件。
 - **关键位**：从创建规则时的 Yahoo 调整后日线计算，记录 K 线日期；不会自动每日刷新，再次“开始监控 AAPL”可重算。普通轮询不调用模型。
-- **延迟日报**：按配置的本地自然日运行，含周末；恢复后只补当天一份。生成前失败每 15 分钟最多尝试三次，不排队补多天历史。
-- **未知投递**：超时、部分发送或重启可能留下 `unknown`，先核对 Telegram 和本地状态，程序不盲目重发。网络故障下不能保证绝对一次送达。
+- **延迟日报**：按配置时区的自然日运行，含周末。可重试的生成失败间隔 15 分钟，每天最多尝试三次。重启后，仅在确认尚未进入发送、仍是当天且额度允许时恢复生成，保留已用次数与预算。
+- **未知投递**：发送后超时、部分送达或中断时记为 `unknown`，先核对 Telegram 中是否已有原日报。旧版本的模糊中断状态也按未知处理，程序不会自动重发。
 - **任务恢复**：任务有 `running/completed/partial/failed/interrupted` 状态。只有确有待执行检查点、且同会话没有后续任务的 `interrupted` 任务可用 `scripts/chat.py --resume-task <任务编号>` 恢复；`completed` 仍需阅读缺失项。
 
-`stockman.sqlite` 保存任务、快照、规则、来源、日报、预算和投递状态，`checkpoints.sqlite` 保存主控会话执行状态。报告历史默认保留 30 天，预算账本与日投递索引保留审计。原始新闻不持久保存，恢复后的输出不保证带有中断前的新闻附件。
+排障时查看服务日志中的 `daily_run`、`daily_source` 和 `daily_alert`。记录包括日期、失败阶段、原因码、尝试次数、下次重试时间（如有）及预算估算。来源使用不含标的的代号。前台运行时直接查看终端，托管运行时查看运行环境收集的日志，由运行环境管理保留与轮转。
+
+如需日报运维提醒，在本地 `stock.conf` 的 `[briefing]` 中显式设 `alerts_enabled = true` 并重启服务。默认关闭。重试耗尽、确定无法重试或日报送达未知时，服务向已配置的授权 Telegram 私聊尝试发送一条提醒。按日报日期与提醒类型去重。告警失败或送达未知记入服务日志。
+
+PostgreSQL 保存任务、快照、规则、来源、日报、预算和投递状态；LangGraph PostgresSaver 在同一 schema 保存主控会话执行状态。报告历史默认保留 30 天，预算账本与日投递索引保留审计。原始新闻不持久保存，恢复后的输出不保证带有中断前的新闻附件。
 
 ### Agent Harness
 
 问答主控和子 Agent 在模型调用前为上下文设置输入预算。后台通过 `[model] context_bytes` 配置，本地问答通过 `STOCKMAN_CONTEXT_BYTES` 配置，默认 49,152 字节。预算估算包含系统提示、工具 schema、消息、工具调用参数与结果。它使用 UTF-8 JSON 大小，供应商 token 用量仍取自独立的用量记录。
 
-当前问题及其工具调用链整体保留。剩余预算按最近顺序容纳已完成的历史轮次，超限或未完成的历史轮次可从本轮输入省略，原检查点保持完整。当前问题和证据自身超限时，在调用供应商前停止。`scripts/tasks.py --task <任务编号>` 的 `context` 轨迹记录前后字节数、上限与省略消息数。恢复和新任务共用会话锁，有后续任务时拒绝恢复旧任务。日报保留独立的证据和预算处理。
+当前问题及其工具调用链整体保留。剩余预算按最近顺序容纳仍有效、已完成且无工具证据的历史轮次。默认有效期为 24 小时，后台使用 `[model] context_ttl_seconds`，本地问答使用 `STOCKMAN_CONTEXT_TTL_SECONDS`。旧工具结果保留在原检查点，最新行情、当前持仓与最新财务在当前任务重新取证。当前问题和证据自身超限时，在调用供应商前停止。`scripts/tasks.py --task <任务编号>` 的 `context` 轨迹记录前后字节数、上限与省略消息数。恢复和新任务共用会话锁，有后续任务时拒绝恢复旧任务。日报保留独立的证据和预算处理。
 
-会话级排版偏好保存在 SQLite，重启后仍可读取。由本机操作员设置，只有该会话的主控读取，模型没有写入工具。离线操作示例：
+会话级排版偏好保存在 PostgreSQL，重启后仍可读取。由本机操作员设置，只有该会话的主控读取，模型没有写入工具。在 `venv/bin/python scripts/test_postgres.py -- sh` 启动的同一临时数据库会话中，按顺序执行：
 
 ```sh
 venv/bin/python scripts/chat.py --offline --session demo --response-style detailed
@@ -263,7 +273,7 @@ stockman / service.py → 配置校验 → BackendService
 
 模型只负责按需决策和证据解释；指标、时间、权限、预算、去重及投递状态由普通代码校验。主控按需选择分支，不要求每次调用全部子 Agent；日报直接复用研究角色，没有手写 LangGraph 编排图。
 
-离线模型通过 LangChain 工具协议运行，可用 `scripts/demo.py --offline --scenario routing` 观察委派，用 `scripts/tasks.py` 查看记录。运行 `STOCKMAN_MAX_MODEL_CALLS=1 venv/bin/python scripts/chat.py --offline "研究 AAPL"` 可看到模型调用额度用尽时的 `partial` 结果。
+离线模型通过 LangChain 工具协议运行，可用 `scripts/demo.py --offline --scenario routing` 观察委派，用 `scripts/tasks.py` 查看记录。在临时数据库会话中运行 `STOCKMAN_MAX_MODEL_CALLS=1 venv/bin/python scripts/chat.py --offline "研究 AAPL"` 可看到模型调用额度用尽时的 `partial` 结果。
 
 ## 开发与验证
 
@@ -275,7 +285,7 @@ venv/bin/python scripts/validate.py
 
 统一检查解析 Python AST、检查 README 结构及本地链接、在临时目录禁用网络并运行全部单元测试，最后执行 `pip check`。新拉取的仓库不需要任何本地开发计划或交接文件即可验证。
 
-可按功能运行离线场景，每个场景名分别传入 `--scenario`：
+按功能运行离线场景时，在下列命令前加 `venv/bin/python scripts/test_postgres.py --`，再传入一个 `--scenario`：
 
 | 命令 | 场景 |
 | --- | --- |
@@ -307,7 +317,7 @@ PR 和 `main` 的推送会在 Ubuntu 上打包源码，并从解包目录安装�
 | 环境变量 | `STOCKMAN_SSH_KNOWN_HOSTS` | 目标主机已经核实的 `known_hosts` 记录 |
 | 环境密钥 | `STOCKMAN_SSH_KEY` | 为 GitHub Actions 单独授权的 SSH 私钥，公钥添加到目标 SSH 用户 |
 
-服务器须已安装 Python 3.10+ 和 `venv` 模块，并允许 Actions runner 访问 SSH 端口。首次从 **Actions → StockMan CI/CD → Run workflow** 选择 `main` 安装并验收。首次验收通过后，可在仓库的 **Settings → Secrets and variables → Actions → Variables** 设置仓库变量 `STOCKMAN_AUTO_DEPLOY=true`，让 `main` 每次通过构建后自动部署。
+服务器须已安装 Python 3.10+、`venv` 模块及 PostgreSQL 的 `initdb` 和 `pg_ctl`，并允许 Actions runner 访问 SSH 端口。首次从 **Actions → StockMan CI/CD → Run workflow** 选择 `main` 安装并验收。首次验收通过后，可在仓库的 **Settings → Secrets and variables → Actions → Variables** 设置仓库变量 `STOCKMAN_AUTO_DEPLOY=true`，让 `main` 每次通过构建后自动部署。
 
 这个流程只安装和验证版本。常驻服务启动、真实凭据配置及 Zilliz 联调各自验收。
 
@@ -330,9 +340,9 @@ venv/bin/python scripts/vps.py deploy --host ubuntu@YOUR_VPS_IP --identity ~/.ss
 默认执行离线协议回放，禁止网络，每次在临时目录运行；结果保存在被忽略的 `runtime/evals/<本次运行>/`：
 
 ```sh
-venv/bin/python scripts/evaluate.py run --offline --output runtime/evals
+venv/bin/python scripts/test_postgres.py -- venv/bin/python scripts/evaluate.py run --offline --output runtime/evals
 # 只检查指定案例；重复的每次尝试都保留，不择优挑选
-venv/bin/python scripts/evaluate.py run --offline --case C01 --case F03 --repeat 2
+venv/bin/python scripts/test_postgres.py -- venv/bin/python scripts/evaluate.py run --offline --case C01 --case F03 --repeat 2
 ```
 
 每次生成 `report.json`、可直接打开的 `report.html` 和 `review-template.json`。报告包含数据集版本/hash、Git 与代码/提示词标识、固定资料时钟、模型、全部调用/错误/降级、tokens、费用未知和耗时分布。离线响应和 tokens 是预设测试数据；`offline_replay_pass` 只证明流程与检测器通过，不能证明真实模型分析质量。超时或无 usage 不视为免费，SDK 重试关闭，日报仍最多进行一次有记录的应用重试。
@@ -342,7 +352,7 @@ venv/bin/python scripts/evaluate.py run --offline --case C01 --case F03 --repeat
 真实模型评测必须显式指定 `--live` 和 Gemini 型号，并在当前进程环境设置自己的 `GEMINI_API_KEY`。以下命令会产生供应商费用，业务工具仍是同一组合成资料，不是实盘联调：
 
 ```sh
-venv/bin/python scripts/evaluate.py run --live --model gemini-3.5-flash-lite --max-cases 4 --repeat 1 --max-calls 12 --call-timeout 30 --timeout 120
+venv/bin/python scripts/test_postgres.py -- venv/bin/python scripts/evaluate.py run --live --model gemini-3.5-flash-lite --max-cases 4 --repeat 1 --max-calls 12 --call-timeout 30 --timeout 120
 ```
 
 `--max-calls` 限制每个案例尝试的总模型调用；`--call-timeout` 为单次供应商超时，`--timeout` 为整次隔离执行超时。可同时提供 `--input-rate` 与 `--output-rate`，单位为指定型号每百万 token 的美元估算费率；未提供时费用明确标记未知。估算、调用数和超时不是供应商账单硬上限。鉴权及阈值 guard 始终使用假模型，真实报告将其模拟用量与供应商用量分开。

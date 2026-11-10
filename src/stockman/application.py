@@ -29,9 +29,10 @@ class Application:
         self.monitor=MonitoringService(self.runtime.store,self.portfolio,market=market)
         self.transport=transport
         self.stop_event=threading.Event()
-        self.runtime.store.execute('CREATE TABLE IF NOT EXISTS updates(id INTEGER PRIMARY KEY,status TEXT)')
+        self.runtime.store.execute('CREATE TABLE IF NOT EXISTS updates(id BIGINT PRIMARY KEY,status TEXT)')
         self.runtime.store.execute('CREATE TABLE IF NOT EXISTS settings(key TEXT PRIMARY KEY,value TEXT)')
-        self.runtime.store.execute("UPDATE updates SET status='interrupted' WHERE status='processing'")
+        self.runtime.store.execute("UPDATE updates SET status='interrupted' WHERE status='handling'")
+        self.runtime.store.execute("UPDATE updates SET status='unknown' WHERE status IN ('processing','sending')")
         configured=os.getenv('TG_ALLOWED_USERS','')
         self.allowed={int(x.strip()) for x in configured.split(',') if x.strip().isdigit()}
         if not self.allowed and str(TG_CHAT_ID).isdigit() and int(TG_CHAT_ID)>0:self.allowed={int(TG_CHAT_ID)}
@@ -41,9 +42,13 @@ class Application:
                 from .briefing.schedule import Scheduler
                 from .stock_briefing.service import StockBriefing
                 self.briefing=StockBriefing(self.runtime.store,self.briefing_config)
-                self.daily=Scheduler(self.runtime.store,self.briefing_config,str(self.transport.chat),self.allowed,self.build_daily,self.transport.deliver)
+                self.daily=Scheduler(self.runtime.store,self.briefing_config,str(self.transport.chat),self.allowed,self.build_daily,self.deliver)
                 self.daily.recover()
             except BaseException:self.runtime.close();raise
+
+    def deliver(self,result):
+        self.runtime.database_lease.check()
+        return self.transport.deliver(result)
 
     def handle(self,text,session='local'):
         return self.runtime.run(text,session)
@@ -54,26 +59,35 @@ class Application:
 
     def handle_event(self,event):
         identity=event.identity;user=event.sender;chat=event.target
-        with self.runtime.store.lock,self.runtime.store.conn:
-            cursor=self.runtime.store.conn.execute("INSERT OR IGNORE INTO updates VALUES(?,'processing')",(identity,))
+        with self.runtime.store.lock,self.runtime.store.conn.transaction():
+            cursor=self.runtime.store.conn.execute("INSERT INTO updates VALUES(%s,'handling') ON CONFLICT(id) DO NOTHING",(identity,))
             if not cursor.rowcount:return 'duplicate'
         if user not in self.allowed or chat!=self.transport.chat:
-            self.runtime.store.execute("UPDATE updates SET status='ignored' WHERE id=?",(identity,));return 'unauthorized'
+            self.runtime.store.execute("UPDATE updates SET status='ignored' WHERE id=%s",(identity,));return 'unauthorized'
         try:
             if event.text:
                 result=self.handle(event.text,str(chat))
             else:
-                self.runtime.store.execute("UPDATE updates SET status='ignored' WHERE id=?",(identity,))
+                self.runtime.store.execute("UPDATE updates SET status='ignored' WHERE id=%s",(identity,))
                 return 'ignored'
-            status=self.transport.deliver(result)
-            self.runtime.store.execute('UPDATE updates SET status=? WHERE id=?',(status,identity))
-            return status
+            task_failed = False
         except Exception as exc:
-            self.runtime.store.execute("UPDATE updates SET status='failed' WHERE id=?",(identity,))
             from .agents import TaskBudgetExceeded
             text='本次任务已达到已知费用阈值，剩余调查未完成；未知费用仍可能产生。' if isinstance(exc,TaskBudgetExceeded) else '本次任务未完成：'+type(exc).__name__+'。请检查本机配置与任务记录。'
-            self.transport.deliver({'text':text})
-            return 'failed'
+            result = {'text':text}
+            task_failed = True
+        # An ambiguous send stays unknown. Sending an error reply could duplicate the response.
+        self.runtime.store.execute("UPDATE updates SET status='sending' WHERE id=%s", (identity,))
+        try:
+            status = self.deliver(result)
+        except Exception:
+            status = 'unknown'
+        if status not in ('sent','failed','unknown'):
+            status = 'unknown'
+        if task_failed and status == 'sent':
+            status = 'failed'
+        self.runtime.store.execute('UPDATE updates SET status=%s WHERE id=%s',(status,identity))
+        return status
 
     def build_daily(self,owner,now,day):
         snapshot=self.portfolio.load(owner)
@@ -87,7 +101,7 @@ class Application:
 
     def poll_prices(self):
         while not self.stop_event.is_set():
-            self.monitor.tick(self.runtime,self.transport.deliver,session=str(self.transport.chat))
+            self.monitor.tick(self.runtime,self.deliver,session=str(self.transport.chat))
             self.stop_event.wait(MONITOR_INTERVAL*60)
 
     def run(self):
@@ -103,7 +117,7 @@ class Application:
                     for update in self.transport.updates(offset):
                         self.handle_update(update)
                         offset=update['update_id']+1
-                        self.runtime.store.execute("INSERT OR REPLACE INTO settings VALUES('telegram_offset',?)",(str(offset),))
+                        self.runtime.store.execute("INSERT INTO settings VALUES('telegram_offset',%s) ON CONFLICT(key) DO UPDATE SET value=excluded.value",(str(offset),))
                 except Exception as exc:
                     self.runtime.store.trace('telegram','transport','poll','failed',{'error_type':type(exc).__name__})
                     self.stop_event.wait(5)
@@ -111,7 +125,7 @@ class Application:
         finally:
             self.stop_event.set()
             for worker in workers:worker.join(timeout=30)
-            # Do not close SQLite underneath a still-running network/tool call.
+            # Do not close the database underneath a still-running network/tool call.
             if not any(worker.is_alive() for worker in workers):self.runtime.close()
 
 

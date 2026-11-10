@@ -5,6 +5,9 @@ data_dir = runtime
 timezone = Asia/Shanghai
 log_level = INFO
 
+[database]
+url_env = STOCKMAN_DATABASE_URL
+
 [broker]
 provider = snaptrade
 account_env = SNAPTRADE_ACCOUNT_ID
@@ -18,6 +21,8 @@ api_key_env = GEMINI_API_KEY
 max_calls = 8
 max_tools = 12
 context_bytes = 49152
+# Same-session history and symbol carryover, in seconds.
+context_ttl_seconds = 86400
 max_research_queries = 3
 research_timeout_seconds = 90
 # Optional soft threshold per interactive task (USD); omit to disable.
@@ -35,6 +40,8 @@ allowed_users_env = TG_ALLOWED_USERS
 interactive = true
 
 [briefing]
+# Optional operator alert sent to the configured private Telegram chat.
+alerts_enabled = false
 # Starts automatically on schedule when YOU launch the configured service.
 enabled = true
 time = 08:00
