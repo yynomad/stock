@@ -11,6 +11,24 @@ class ServiceConfigTest(unittest.TestCase):
         self.temp=tempfile.TemporaryDirectory();self.config=fixture(self.temp.name);self.path=self.config.path;self.original=self.path.read_text()
     def tearDown(self):self.temp.cleanup()
 
+    def test_explicit_model_sections_choose_adapter_and_validate_offline(self):
+        config = load_config(self.path, ENV)
+        self.assertEqual(config.model.provider, 'gemini')
+        self.assertTrue(config.model.endpoint.official)
+        text = self.original.replace('[model]\nname = gemini-3.5-flash-lite\napi_key_env = GEMINI_API_KEY',
+            '[model.deepseek]\nbase_url = https://gateway.invalid/v1\nname = company/alias\napi_key_env = TEAM_API_KEY')
+        self.path.write_text(text)
+        with self.assertRaisesRegex(ConfigError, 'model.deepseek.api_key_env'):
+            load_config(self.path, ENV)
+        config = load_config(self.path, {**ENV, 'TEAM_API_KEY':'fixture-provider-secret'})
+        self.assertEqual((config.model.provider,config.model.name,config.model.base_url),
+                         ('deepseek','company/alias','https://gateway.invalid/v1'))
+        self.assertNotIn('fixture-provider-secret', repr(config))
+        self.assertFalse(config.model.endpoint.search_key)
+        self.path.write_text(text + '\n[model.gemini]\n')
+        with self.assertRaisesRegex(ConfigError, 'select only one'):
+            load_config(self.path, ENV)
+
     def test_context_ttl_configuration(self):
         self.assertEqual(load_config(self.path, ENV).model.context_ttl, 86400)
         self.path.write_text(self.original.replace('context_ttl_seconds = 86400','context_ttl_seconds = 3600'))

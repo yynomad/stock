@@ -22,6 +22,7 @@ class BriefingConfig:
     max_report_model_calls:int=4
     research_timeout:int=90
     alerts_enabled:bool=False
+    price_model:str|None=None
     def __post_init__(self):
         for name in ('budget','input_rate','output_rate'):
             value=getattr(self,name)
@@ -42,6 +43,9 @@ class BriefingConfig:
         if source!='snaptrade':raise ValueError('BRIEFING_PORTFOLIO_SOURCE: 不支持旧持仓来源；请配置 SnapTrade')
         enabled=env.get('BRIEFING_ENABLED','false').lower()
         if enabled not in ('true','false'):raise ValueError('BRIEFING_ENABLED must be true or false')
+        price_model = env.get('BRIEFING_PRICE_MODEL') or None
+        if price_model and not all(env.get(k) for k in ('BRIEFING_INPUT_USD_PER_MILLION','BRIEFING_OUTPUT_USD_PER_MILLION')):
+            raise ValueError('briefing price model requires explicit input and output rates')
         return cls(budget=float(env.get('BRIEFING_DAILY_BUDGET_USD','0.20')),
             max_calls=int(env.get('BRIEFING_MAX_MODEL_CALLS','8')),max_output=int(env.get('BRIEFING_MAX_OUTPUT_TOKENS','2048')),
             max_events=int(env.get('BRIEFING_MAX_EVENTS','5')),lookback_hours=int(env.get('BRIEFING_LOOKBACK_HOURS','24')),
@@ -50,4 +54,4 @@ class BriefingConfig:
             input_rate=float(env.get('BRIEFING_INPUT_USD_PER_MILLION','0.30')),output_rate=float(env.get('BRIEFING_OUTPUT_USD_PER_MILLION','2.50')),
             max_research_queries=int(env.get('BRIEFING_MAX_RESEARCH_QUERIES','3')),
             max_report_model_calls=int(env.get('BRIEFING_MAX_REPORT_MODEL_CALLS','4')),
-            research_timeout=int(env.get('BRIEFING_RESEARCH_TIMEOUT_SECONDS','90')))
+            research_timeout=int(env.get('BRIEFING_RESEARCH_TIMEOUT_SECONDS','90')),price_model=price_model)

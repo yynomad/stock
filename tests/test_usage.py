@@ -14,6 +14,11 @@ from stockman.usage import calls, record
 
 
 class UsageTest(unittest.TestCase):
+    def test_same_model_alias_does_not_reuse_another_provider_rate(self):
+        from stockman.usage import price_for
+        self.assertEqual(price_for('shared','shared',1,2,provider='deepseek',price_provider='google'), (None,None))
+        self.assertEqual(price_for('shared','shared',1,2,provider='deepseek',price_provider='deepseek'), (1,2))
+
     def test_known_and_unknown_usage_are_not_conflated(self):
         with tempfile.TemporaryDirectory() as d:
             store=Store(Path(d)/"stockman.sqlite")

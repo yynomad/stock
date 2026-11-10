@@ -19,7 +19,15 @@ def main():
             task=[dict(r) for r in conn.execute('SELECT * FROM tasks WHERE id=%s',(args.task,))]
             traces=[dict(r) for r in conn.execute('SELECT * FROM traces WHERE task_id=%s ORDER BY id',(args.task,))]
             tables=conn.execute("SELECT to_regclass('usage_calls') IS NOT NULL AS present").fetchone()['present']
-            usage=[dict(r) for r in conn.execute("SELECT role,kind,provider,model,elapsed_ms,input_tokens,output_tokens,total_tokens,estimated_micro_usd,extra_cost_unknown,status,at FROM usage_calls WHERE task_id=%s ORDER BY id",(args.task,))] if tables else []
+            if tables:
+                columns={r['column_name'] for r in conn.execute(
+                    "SELECT column_name FROM information_schema.columns WHERE table_schema=current_schema() AND table_name='usage_calls'")}
+                cache_column='cached_input_tokens' if 'cached_input_tokens' in columns else 'NULL AS cached_input_tokens'
+                usage=[dict(r) for r in conn.execute(f"""SELECT role,kind,provider,model,elapsed_ms,input_tokens,output_tokens,
+                    total_tokens,estimated_micro_usd,extra_cost_unknown,status,at,{cache_column}
+                    FROM usage_calls WHERE task_id=%s ORDER BY id""",(args.task,))]
+            else:
+                usage=[]
             data=redact({'task':task,'traces':traces})
             from stockman.usage import summary
             data['usage_calls']=usage

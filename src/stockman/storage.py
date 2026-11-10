@@ -53,6 +53,8 @@ class Store:
         CREATE TABLE IF NOT EXISTS tasks(id TEXT PRIMARY KEY,session TEXT,input TEXT,status TEXT,result TEXT,error TEXT,created DOUBLE PRECISION,updated DOUBLE PRECISION,seq BIGINT GENERATED ALWAYS AS IDENTITY);
         CREATE TABLE IF NOT EXISTS traces(id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,task_id TEXT,agent TEXT,tool TEXT,phase TEXT,payload TEXT,at DOUBLE PRECISION);
         CREATE TABLE IF NOT EXISTS usage_calls(id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,task_id TEXT,role TEXT,kind TEXT,provider TEXT,model TEXT,elapsed_ms INTEGER,input_tokens INTEGER,output_tokens INTEGER,total_tokens INTEGER,estimated_micro_usd BIGINT,extra_cost_unknown INTEGER NOT NULL,status TEXT,at DOUBLE PRECISION);
+        ALTER TABLE usage_calls ADD COLUMN IF NOT EXISTS cached_input_tokens INTEGER;
+        ALTER TABLE tasks ADD COLUMN IF NOT EXISTS model_route TEXT;
         CREATE TABLE IF NOT EXISTS task_budget_limits(task_id TEXT PRIMARY KEY,limit_micro_usd BIGINT NOT NULL);
         CREATE TABLE IF NOT EXISTS session_preferences(session TEXT PRIMARY KEY,response_style TEXT NOT NULL);
 
@@ -69,10 +71,10 @@ class Store:
         self.conn.execute('SELECT pg_advisory_xact_lock(hashtextextended(%s, 0))',
                           (self.database.schema + ':' + key,))
 
-    def create_task(self, session, text):
+    def create_task(self, session, text, model_route=None):
         task=uuid.uuid4().hex
         now=time.time()
-        self.execute("INSERT INTO tasks(id,session,input,status,result,error,created,updated) VALUES(%s,%s,%s,'running',NULL,NULL,%s,%s)",(task,session,json.dumps(redact(text),ensure_ascii=False),now,now))
+        self.execute("INSERT INTO tasks(id,session,input,status,result,error,created,updated,model_route) VALUES(%s,%s,%s,'running',NULL,NULL,%s,%s,%s)",(task,session,json.dumps(redact(text),ensure_ascii=False),now,now,model_route))
         return task
 
     def finish(self, task, status, result=None, error=None):

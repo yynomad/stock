@@ -57,7 +57,8 @@ def main():
     except Exception as exc:
         notes = {'TaskBudgetExceeded': '已知费用达到任务阈值，剩余调查未完成；未知费用仍可能产生',
                  'ContextOverflow': '当前问题与证据超出上下文容量，请缩小调查范围'}
-        note = notes.get(type(exc).__name__, '查看本地任务记录')
+        from stockman.model_providers import ModelConfigurationError
+        note = str(exc) if isinstance(exc,ModelConfigurationError) else notes.get(type(exc).__name__, '查看本地任务记录')
         print(json.dumps({'status':'failed','error_type':type(exc).__name__,'note':note},ensure_ascii=False));return 2
     finally:
         if app:app.runtime.close()

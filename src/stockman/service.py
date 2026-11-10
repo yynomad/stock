@@ -28,7 +28,9 @@ class BackendService(Application):
         self.market=market or YahooMarket(proxy='',quote_age=config.monitor.quote_age)
         registry=load_registry(config.sources)
         http=PublicHTTP(config.sec_user_agent)
-        self.research=research or ResearchService(self.market,SECClient(config.sec_user_agent),GoogleNews(config.model.key,dict(config.model.roles)['research']),
+        endpoint = config.model.endpoint
+        research_model = dict(config.model.roles).get('research',endpoint.name)
+        self.research=research or ResearchService(self.market,SECClient(config.sec_user_agent),GoogleNews.for_endpoint(endpoint,research_model),
                                                 filings=FilingReader(registry['issuers'],http))
         self.runtime=AgentRuntime(self.directory,model,services={
             'portfolio':lambda request:self.portfolio.report(request),
@@ -46,7 +48,7 @@ class BackendService(Application):
             self.monitor=MonitoringService(store,self.portfolio,self.market,settings=config.monitor)
             self.sources=sources
             self.briefing=StockBriefing(store,config.briefing,daily_model,registry,http,
-                model_factory=lambda:make_model(config.briefing,config.model.key,dict(config.model.roles)['research']))
+                model_factory=lambda:make_model(config.briefing,endpoint,research_model))
             self.daily=Scheduler(store,config.briefing,str(config.channel.chat),self.allowed,self.build_daily,self.deliver)
             self.daily.recover()
             send_alert = self.deliver if config.briefing.alerts_enabled else None

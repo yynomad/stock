@@ -187,7 +187,7 @@ def compare_reports(baseline, candidate):
     a, b = summarize(baseline), summarize(candidate)
     if not a['coverage_complete'] or not b['coverage_complete']:
         reasons.append('incomplete dataset coverage')
-    changed = [key for key in ('model', 'production_prompt_hash', 'git_revision', 'working_tree_diff_hash', 'evaluator_hash')
+    changed = [key for key in ('provider', 'model', 'production_prompt_hash', 'git_revision', 'working_tree_diff_hash', 'evaluator_hash')
                if baseline['metadata'].get(key) != candidate['metadata'].get(key)]
     return {'comparable': not reasons, 'reasons': reasons, 'changed_variables': changed,
             'baseline': a, 'candidate': b,

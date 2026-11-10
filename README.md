@@ -2,7 +2,7 @@
 
 配置驱动的美股／ETF 持仓信息助手。通过 SnapTrade 只读同步 IBKR 持仓，结合公开资料生成中文日报、回答研究问题，并通过 Telegram 推送价格提醒。
 
-后台任务独立运行，不依赖用户发消息。项目使用 Python、LangChain、Gemini 和 PostgreSQL，面向单机、单用户、单券商账户；没有网页界面或自动交易功能。
+后台任务独立运行，不依赖用户发消息。项目使用 Python、LangChain 和 PostgreSQL，模型支持 Gemini 与 DeepSeek，面向单机、单用户、单券商账户；没有网页界面或自动交易功能。
 
 ## 功能
 
@@ -57,13 +57,24 @@ cp stock.conf.example stock.conf
 | `[service]` | 数据目录 `runtime`、时区 `Asia/Shanghai`、日志级别 |
 | `[database]` | Neon TLS 直连 PostgreSQL URI 的环境变量名 |
 | `[broker]` | `provider=snaptrade`，Personal API 凭据与目标账户环境变量名；每 900 秒尝试同步 |
-| `[model]` | Gemini 模型名、API key 环境变量名；每任务最多 8 次逻辑模型／12 次工具调用 |
+| `[model.gemini]` / `[model.deepseek]` | API 地址、模型名、密钥环境变量名。旧版 `[model]` 继续按 Gemini 加载 |
 | `[notification]` | `provider=telegram`，token、chat ID、授权用户的环境变量名；`interactive=true` 接收文字提问 |
 | `[briefing]` | 日报开关、08:00、预算估算目标、调用／输出限制、资料窗口、历史保留及可选运维告警 |
 | `[monitor]` | 300 秒检查间隔、2% 突破缓冲、每标的每天最多 5 条、报价最长 900 秒 |
 | `[sources]` | 来源配置文件及 SEC 联系身份的环境变量名 |
 
-默认模型为 `gemini-3.5-flash-lite`，使用前需确认自己的 API 账户支持该型号。
+为 Gemini 或 DeepSeek 选择一个模型配置段。使用 DeepSeek 时，可把现有 `[model]` 段换成以下配置。
+
+```ini
+[model.deepseek]
+base_url = https://api.deepseek.com
+api_key_env = DEEPSEEK_API_KEY
+name = deepseek-flash
+```
+
+Gemini 版本对应 `[model.gemini]`、`https://generativelanguage.googleapis.com`、`GEMINI_API_KEY` 和所选 Gemini 模型名。把自己申请的 API Key 放进该环境变量。地址也可填同协议 HTTPS 网关的基础路径，网关须支持工具调用及日报所用的 JSON 输出。SDK 会添加 API 路径，`base_url` 填服务地址或网关前缀即可。每个服务实例只启用一个模型配置段。
+
+使用官方 Gemini 模型时，新闻接地沿用该配置。DeepSeek 或自定义网关可选配 `grounding_api_key_env` 指向独立的 Gemini Key，以调用官方 Gemini 新闻接地。
 
 服务从**启动进程的环境**读取配置引用的值，**不自动加载 `.env`**。示例配置引用：
 
@@ -73,7 +84,8 @@ cp stock.conf.example stock.conf
 | `SNAPTRADE_CLIENT_ID` | SnapTrade Personal API 的 Client ID |
 | `SNAPTRADE_CONSUMER_KEY` | SnapTrade Personal API 的 Consumer Key |
 | `SNAPTRADE_ACCOUNT_ID` | SnapTrade 中目标账户 UUID；须核对联名账户 |
-| `GEMINI_API_KEY` | 模型及按需 Google 搜索接地 |
+| `GEMINI_API_KEY` | Gemini 模型认证及官方 Google 搜索接地 |
+| `DEEPSEEK_API_KEY` | 使用 DeepSeek 时的模型认证 |
 | `TG_BOT_TOKEN` | Telegram Bot token |
 | `TG_CHAT_ID` | 本人目标私聊的正数数字 ID |
 | `TG_ALLOWED_USERS` | 可选，逗号分隔的授权用户 ID；本人私聊可默认使用目标 ID |
@@ -155,9 +167,9 @@ venv/bin/python scripts/test_postgres.py -- sh -c '
 '
 ```
 
-`chat.py --offline` 使用合成依赖及 `runtime/offline` 对应的隔离 PostgreSQL schema，输出 `task_id`、模型／工具调用次数、任务状态和本次研究结果。用 `scripts/tasks.py --data-dir runtime/offline --task <任务编号>` 查看角色、工具、耗时和错误。任务详情还会列出本地模型和搜索逻辑调用的用量、耗时及可计算的估算费用，未知值为 null。日报调用使用其配置费率。问答和搜索可按指定模型费率估算，搜索附加费用仍标为未知。
+`chat.py --offline` 使用合成依赖及 `runtime/offline` 对应的隔离 PostgreSQL schema，输出 `task_id`、模型／工具调用次数、任务状态和本次研究结果。用 `scripts/tasks.py --data-dir runtime/offline --task <任务编号>` 查看角色、工具、耗时和错误。任务详情还会列出本地模型和搜索逻辑调用的供应商、型号、用量、耗时及可计算的估算费用，未知值为 null。日报调用使用其配置费率。问答和搜索可按指定模型费率估算，搜索附加费用仍标为未知。
 
-去掉 `--offline` 可进行真实本地问答，结果打印到终端，不发送 Telegram。单次脚本沿用环境配置：可将 [env.template](env.template) 复制为 `.env`，已有文件只补必要字段。它与后台 `.conf` 的加载方式不同；代理、模型角色覆盖和日报参数以模板为准。`scripts/tasks.py` 从进程环境读取 `STOCKMAN_DATABASE_URL`。
+去掉 `--offline` 可进行真实本地问答，结果打印到终端，不发送 Telegram。单次脚本沿用环境配置：可将 [env.template](env.template) 复制为 `.env`，已有文件只补必要字段。它与后台 `.conf` 的加载方式不同；用 `STOCKMAN_MODEL_PROVIDER`、`STOCKMAN_MODEL_BASE_URL` 和 `STOCKMAN_MODEL_NAME` 选择模型，Key 放在 `GEMINI_API_KEY` 或 `DEEPSEEK_API_KEY`。独立新闻接地 Key 可放在 `STOCKMAN_GROUNDING_API_KEY`。原 Gemini 配置仍可用。`scripts/tasks.py` 从进程环境读取 `STOCKMAN_DATABASE_URL`。
 
 ### 日报预览与手动发送
 
@@ -206,7 +218,7 @@ Yahoo 提供行情与日线；SEC 提供适用的公司财务披露。按需 Goo
 | `retention_days` | `BRIEFING_RETENTION_DAYS` | `30` |
 | `input_rate` / `output_rate` | `BRIEFING_INPUT_USD_PER_MILLION` / `BRIEFING_OUTPUT_USD_PER_MILLION` | 模板中可调的每百万 token 估算费率 |
 
-预算在 PostgreSQL 事务中原子预留，超时保留未知用量估算。日报模型每次 SDK 只尝试一次，最多一次应用重试且重新预留；实际用量可得时结算。
+使用 DeepSeek 生成日报时，在 `[briefing]` 填 `price_model` 和对应的 `input_rate`、`output_rate`。本地脚本对应 `BRIEFING_PRICE_MODEL` 和模板中的输入输出费率变量。费率缺失或型号不匹配时，日报使用来源整理流程。预算在 PostgreSQL 事务中原子预留，超时保留未知用量估算。日报模型每次 SDK 只尝试一次，最多一次应用重试且重新预留；实际用量可得时结算。
 
 **主动问答任务费用阈值（可选）**：在 stock.conf 的 [model] 中设置 task_budget_usd，并按需一起设置 input_rate 和 output_rate（单位：每百万 Token 美元）。price_model 指定费率适用的精确模型名，省略时使用 [model] 的 name；其他模型和未配置费率的调用显示未知。首次调用结束后按返回用量估算，达到阈值后阻止后续可估价模型调用并提示未完成。无法估算的调用及搜索附加费用仍可继续并标记未知；单次调用可能超过阈值，内部重试可能不可见，不能保证账单封顶。任务内可估价模型调用串行检查；搜索附加费不计入已知金额。默认不启用该阈值。
 
@@ -214,7 +226,7 @@ Yahoo 提供行情与日线；SEC 提供适用的公司财务披露。按需 Goo
 
 本地 scripts/chat.py 使用环境变量 STOCKMAN_TASK_BUDGET_USD、STOCKMAN_TASK_PRICE_MODEL、STOCKMAN_TASK_INPUT_RATE 和 STOCKMAN_TASK_OUTPUT_RATE；输入与输出费率须同时设置。任务详情中的 usage_summary 汇总已知费用和费用未知调用；旧任务没有记录时不代表免费。日报继续使用独立的 [briefing] 配置。费用为估算，不能硬性封顶整个供应商账户账单；按需聊天／搜索另计。模型、费率和费用以自己的供应商配置与账单核对。
 
-持仓、必要股数／成本及公开资料可能进入按需模型请求；日报模型只接收公开材料、股票标识和关系证据。账户编号和券商密码不进入模型，LangSmith 云端追踪被禁用，执行记录保存在本机。
+持仓、必要股数／成本及公开资料可能进入按需模型请求；日报模型只接收公开材料、股票标识和关系证据。持仓上下文发往选定的模型 API。凭据只用于客户端认证，执行记录保存在 PostgreSQL。
 
 ## 运行状态与恢复
 
@@ -349,10 +361,10 @@ venv/bin/python scripts/test_postgres.py -- venv/bin/python scripts/evaluate.py 
 
 `tool_contract` 按问答案例尝试计算，检查预期工具的使用或省略、角色作用域、适用的标的参数，以及是否尝试未经授权的变更。报告给出通过数和分母，单次调用的语义正确性由案例证据和人工评审补充。
 
-真实模型评测必须显式指定 `--live` 和 Gemini 型号，并在当前进程环境设置自己的 `GEMINI_API_KEY`。以下命令会产生供应商费用，业务工具仍是同一组合成资料，不是实盘联调：
+真实模型评测显式指定 `--live`、`--provider` 和型号，并在当前进程环境提供该供应商的 Key。自定义地址读取 `STOCKMAN_MODEL_BASE_URL`。以下命令会产生供应商费用，业务工具仍是同一组合成资料，不是实盘联调：
 
 ```sh
-venv/bin/python scripts/test_postgres.py -- venv/bin/python scripts/evaluate.py run --live --model gemini-3.5-flash-lite --max-cases 4 --repeat 1 --max-calls 12 --call-timeout 30 --timeout 120
+venv/bin/python scripts/test_postgres.py -- venv/bin/python scripts/evaluate.py run --live --provider deepseek --model deepseek-flash --max-cases 4 --repeat 1 --max-calls 12 --call-timeout 30 --timeout 120
 ```
 
 `--max-calls` 限制每个案例尝试的总模型调用；`--call-timeout` 为单次供应商超时，`--timeout` 为整次隔离执行超时。可同时提供 `--input-rate` 与 `--output-rate`，单位为指定型号每百万 token 的美元估算费率；未提供时费用明确标记未知。估算、调用数和超时不是供应商账单硬上限。鉴权及阈值 guard 始终使用假模型，真实报告将其模拟用量与供应商用量分开。
@@ -364,9 +376,9 @@ venv/bin/python scripts/evaluate.py review --report runtime/evals/<本次运行>
 venv/bin/python scripts/evaluate.py compare --baseline runtime/evals/<基线>/report.json --candidate runtime/evals/<候选>/report.json
 ```
 
-导入会更新 JSON/HTML 并保留评审历史；评审与运行记录绑定，修改执行内容后不能套用旧评审。对比要求数据集、模式、阈值、运行配置一致且覆盖完整；模型或提示词变化会列出，不混排离线和真实成绩。
+导入会更新 JSON/HTML 并保留评审历史；评审与运行记录绑定，修改执行内容后不能套用旧评审。对比要求数据集、模式、阈值、运行配置一致且覆盖完整；供应商、模型或提示词变化会列出，不混排离线和真实成绩。
 
-通过标准：离线检查及错误回答控制样本全部通过；越权、泄密、已检出的事实/引用错误等关键失败为零容忍；真实模式普通任务完成率至少 95%，事实支持与不确定性人工评审不得失败。关键词/原文匹配只能发现部分错误，语义支持必须人工复核。少跑案例、运行错误或人工待评都不能宣称完整真实基线通过；真实待评退出 3，执行/判定失败退出 2。首版成本和延迟只做观测，不设置未经测量的费用或 P95 保证。小型合成案例集的结果不代表生产准确率，DeepSeek 等未接入模型不在当前支持范围。
+通过标准：离线检查及错误回答控制样本全部通过；越权、泄密、已检出的事实/引用错误等关键失败为零容忍；真实模式普通任务完成率至少 95%，事实支持与不确定性人工评审不得失败。关键词/原文匹配只能发现部分错误，语义支持必须人工复核。少跑案例、运行错误或人工待评都不能宣称完整真实基线通过；真实待评退出 3，执行/判定失败退出 2。首版成本和延迟只做观测，不设置未经测量的费用或 P95 保证。小型合成案例集的结果只覆盖所用配置和样例。
 
 ## 限制与许可证
 
