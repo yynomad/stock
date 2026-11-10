@@ -35,6 +35,8 @@ allowed_users_env = TG_ALLOWED_USERS
 interactive = true
 
 [briefing]
+# Optional operator alert sent to the configured private Telegram chat.
+alerts_enabled = false
 # Starts automatically on schedule when YOU launch the configured service.
 enabled = true
 time = 08:00

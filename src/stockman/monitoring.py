@@ -23,8 +23,8 @@ def monitor_intent(text):
 class MonitoringService:
     def __init__(self,store,portfolio,market=None,in_session=regular_session,settings=None):
         self.store=store;self.portfolio=portfolio;self.market=market or YahooMarket();self.in_session=in_session;self.settings=settings
-        self.store.execute("UPDATE events SET status='interrupted' WHERE status='pending'")
-        self.store.execute("UPDATE events SET status='unknown' WHERE status='sending'")
+        self.store.execute("UPDATE events SET status='interrupted' WHERE status='analyzing'")
+        self.store.execute("UPDATE events SET status='unknown' WHERE status IN ('pending','sending')")
     def command(self,request: str):
         context=CURRENT.get();action=monitor_intent(context.request) if context else None
         symbols=[valid_symbol(s) for s in re.findall(r'(?<![A-Za-z0-9])([A-Z][A-Z0-9.-]{0,14})(?![A-Za-z0-9])',context.request if action else request) if s not in ('ETF','PA','IBKR','USD')]
@@ -80,7 +80,7 @@ class MonitoringService:
             if count>=(self.settings.max_alerts if self.settings else int(os.getenv('MONITOR_MAX_DAILY_ALERTS','5'))):return None
             identity=hashlib.sha256(f'{symbol}:{state}:{stamp}'.encode()).hexdigest()
             payload={'symbol':symbol,'event':state,'quote':quote,'levels':spec}
-            cursor=self.store.conn.execute("INSERT OR IGNORE INTO events VALUES(?,?,?,'pending',?,?)",(identity,symbol,day,json.dumps(payload),now))
+            cursor=self.store.conn.execute("INSERT OR IGNORE INTO events VALUES(?,?,?,'analyzing',?,?)",(identity,symbol,day,json.dumps(payload),now))
             return {'id':identity,**payload} if cursor.rowcount else None
 
     def tick(self,runtime,send,session='owner',now=None):

@@ -38,6 +38,22 @@ class BriefingCoreTest(unittest.TestCase):
                 self.assertEqual(preview(store,[SyntheticSource()],now=1002)['item_count'],0)
                 self.assertEqual(preview(store,[SyntheticSource()],owner='other',now=1002)['item_count'],1)
             finally:store.close()
+    def test_display_only_analysis_does_not_leak_through_report_metadata(self):
+        with tempfile.TemporaryDirectory() as directory:
+            store = Store(Path(directory) / 'db.sqlite')
+            try:
+                item = SyntheticSource().fetch(1000)[0]
+                policy = replace(SyntheticSource().policy, store_analysis=False)
+                history = History(store)
+                history.save('local', 'demo', [item], {item.source:policy}, 'PRIVATE_ANALYSIS',
+                             {'asof':1000, 'status':'partial', 'research':{'hidden':'PRIVATE_CANDIDATE'},
+                              'filing_citations':[{'quote':'PRIVATE_CITATION'}]})
+                row = store.execute('SELECT text,meta FROM brief_reports')[0]
+                self.assertEqual(json.loads(row['meta'])['status'], 'partial')
+                self.assertNotIn('PRIVATE_', str(row))
+            finally:
+                store.close()
+
     def test_same_url_new_facts_remain_new(self):
         item=SyntheticSource().fetch(1000)[0]
         self.assertNotEqual(item.fingerprint,replace(item,body='New factual update 42').fingerprint)

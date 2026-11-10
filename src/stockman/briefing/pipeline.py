@@ -18,7 +18,7 @@ def source_error(exc):
         return 'source_timeout'
     if isinstance(exc, PermissionError):
         return 'access_denied'
-    if isinstance(exc, (ValueError, TypeError, ParseError)):
+    if isinstance(exc, (ValueError, TypeError, KeyError, AttributeError, ParseError)):
         return 'invalid_source_data'
     return 'source_unavailable'
 
@@ -30,6 +30,8 @@ def collect(sources,now=None,lookback=86400):
         policy=source.policy
         if policy.source in policies:raise ValueError('duplicate source identifier')
         policies[policy.source]=policy
+        kind = getattr(source, 'kind', None)
+        kind = kind if kind in ('sec','rss') else 'configured'
         try:
             policy.validate();rows=source.fetch(now)
             accepted=[];rejected=0
@@ -44,11 +46,11 @@ def collect(sources,now=None,lookback=86400):
                 except (ValueError,TypeError):rejected+=1
             items.extend(accepted)
             health.append({'source':policy.source,'status':'partial' if rejected else 'ok','accepted':len(accepted),
-                           'invalid':rejected,'attempted_at':now,'data_asof':data_asof,
+                           'invalid':rejected,'source_type':kind,'attempted_at':now,'data_asof':data_asof,
                            'freshness':'unknown' if data_asof is None else ('stale' if data_asof < now-lookback else 'fresh')})
         except Exception as exc:
             health.append({'source':policy.source,'status':'failed','error_type':source_error(exc),
-                           'attempted_at':now,'data_asof':None,'freshness':'unknown'})
+                           'source_type':kind,'attempted_at':now,'data_asof':None,'freshness':'unknown'})
     return items,policies,health
 
 def preview(store,sources,owner='local',day='demo',now=None):

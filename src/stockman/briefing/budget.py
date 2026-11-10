@@ -30,4 +30,8 @@ class Budget:
         else:self.store.execute("UPDATE brief_budget SET state='usage_unknown' WHERE id=? AND state='reserved'",(identity,))
     def status(self,day):
         rows=self.store.execute('SELECT state,charge FROM brief_budget WHERE day=?',(day,))
-        return {'estimated_usd':sum(r['charge'] for r in rows)/1000000,'calls':len(rows),'usage_unknown':sum(r['state']!='usage_reported' for r in rows),'limit_usd':self.config.budget,'note':'应用估算，含未知调用预留；不是供应商账单硬封顶'}
+        return {'estimated_usd':sum(r['charge'] for r in rows)/1000000,
+                'known_estimated_usd':sum(r['charge'] for r in rows if r['state']=='usage_reported')/1000000,
+                'calls':len(rows),'call_limit':self.config.max_calls,
+                'usage_unknown':sum(r['state']!='usage_reported' for r in rows),
+                'limit_usd':self.config.budget,'note':'应用估算，含未知调用预留；不是供应商账单硬封顶'}

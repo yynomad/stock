@@ -1,18 +1,149 @@
 from dataclasses import replace
+from datetime import datetime
+import json
 from pathlib import Path
 import os
 import tempfile
 import time
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock,patch
 from stockman.service_demo import fixture,build_synthetic,service_demo
 from stockman.channels.telegram import decode
+
+
+def daily_logs(records, event):
+    prefix = event + " "
+    return [json.loads(record.getMessage()[len(prefix):]) for record in records if record.getMessage().startswith(prefix)]
 
 class ServiceRuntimeTest(unittest.TestCase):
     def setUp(self):
         self.temp=tempfile.TemporaryDirectory();cfg=fixture(self.temp.name)
         self.config=replace(cfg,briefing=replace(cfg.briefing,at='00:00'))
     def tearDown(self):self.temp.cleanup()
+    def test_service_log_distinguishes_clean_empty_from_stale_and_source_failure(self):
+        from requests import HTTPError, Response
+        from stockman.briefing.models import SourcePolicy
+        now = datetime.fromisoformat('2026-11-10T08:00:00+08:00').timestamp()
+        app = build_synthetic(self.config)
+        existing = app.sources[0]
+        sensitive = 'PRIVATE_TICKER_872'
+        policy = SourcePolicy('sec:'+sensitive, 'https://example.com/policy', True, True, True)
+        older = replace(existing.fetch(now)[0], source=policy.source, published=now-90000)
+        source = Mock(policy=policy, kind='sec')
+        source.fetch.return_value = [older]
+        app.sources = [source]
+        try:
+            with self.assertLogs(app.logger, level='INFO') as logs:
+                with patch('time.time', return_value=now):
+                    self.assertEqual(app.tick(now)['status'], 'sent')
+                    app.tick(now+1)
+                response = Response()
+                response.status_code = 429
+                source.fetch.side_effect = HTTPError('PRIVATE_API_KEY https://example.com/secret', response=response)
+                with patch('time.time', return_value=now+86400):
+                    self.assertEqual(app.tick(now+86400)['status'], 'sent')
+            sources = daily_logs(logs.records, 'daily_source')
+            self.assertEqual([row['freshness'] for row in sources], ['stale','unknown'])
+            self.assertEqual([row['last_success'] for row in sources], [now,now])
+            self.assertEqual(sources[0]['source_ref'], sources[1]['source_ref'])
+            self.assertEqual(sources[1]['reason'], 'rate_limited')
+            runs = daily_logs(logs.records, 'daily_run')
+            self.assertEqual([row['analysis'] for row in runs], ['no_new_evidence','insufficient_sources'])
+            self.assertEqual([row['task_status'] for row in runs], ['completed','partial'])
+            self.assertEqual(runs[0]['budget']['calls'], 0)
+            for value in (sensitive, 'PRIVATE_API_KEY', 'https://example.com/secret',
+                          self.config.broker.account, self.config.channel.token, 'AAPL'):
+                self.assertNotIn(value, str(logs.output))
+        finally:
+            app.close()
+
+    def test_terminal_failure_alert_logs_rejection_and_never_replays_after_restart(self):
+        now = datetime.fromisoformat('2026-11-10T08:00:00+08:00').timestamp()
+        config = replace(self.config, briefing=replace(self.config.briefing, alerts_enabled=True))
+        app = build_synthetic(config)
+        channel = app.transport
+        channel.outcome = 'failed'
+        app.daily.build = Mock(side_effect=TimeoutError('SECRET_BROKER_ERROR'))
+        try:
+            with self.assertLogs(app.logger, level='INFO') as logs:
+                with patch('time.time', return_value=now):
+                    for offset in (0, 30, 900, 1200):
+                        self.assertEqual(app.tick(now+offset)['status'], 'failed')
+                    self.assertEqual(channel.sent, [])
+                    self.assertEqual(app.tick(now+1800)['status'], 'failed')
+                    app.tick(now+1900)
+            self.assertEqual(len(channel.sent), 1)
+            self.assertIn('请查看 StockMan 服务日志', channel.sent[0]['text'])
+            self.assertEqual([row['status'] for row in daily_logs(logs.records, 'daily_run')],
+                             ['retry_pending','retry_pending','failed'])
+            alerts = daily_logs(logs.records, 'daily_alert')
+            self.assertEqual([(row['kind'],row['reason']) for row in alerts], [('daily_failed','alert_rejected')])
+            self.assertNotIn('SECRET_BROKER_ERROR', str(logs.output))
+            app.close()
+            app = build_synthetic(config, channel)
+            self.assertEqual(app.tick_daily(now+2000)['status'], 'failed')
+            self.assertEqual(len(channel.sent), 1)
+        finally:
+            app.close()
+
+    def test_unknown_primary_delivery_alerts_once_and_never_resends_either_message(self):
+        now = datetime.fromisoformat('2026-11-10T08:00:00+08:00').timestamp()
+        config = replace(self.config, briefing=replace(self.config.briefing, alerts_enabled=True))
+        app = build_synthetic(config)
+        channel = app.transport
+        channel.outcome = 'unknown'
+        try:
+            with self.assertLogs(app.logger, level='INFO') as logs:
+                with patch('time.time', return_value=now):
+                    self.assertEqual(app.tick(now)['status'], 'unknown')
+                    app.tick(now+30)
+            self.assertEqual(len(channel.sent), 2)
+            self.assertIn('是否已有当日原日报', channel.sent[1]['text'])
+            self.assertEqual(daily_logs(logs.records, 'daily_alert')[0]['status'], 'unknown')
+            app.close()
+            app = build_synthetic(config, channel)
+            self.assertEqual(app.tick_daily(now+60)['status'], 'unknown')
+            self.assertEqual(len(channel.sent), 2)
+        finally:
+            app.close()
+
+    def test_restart_retains_ambiguous_legacy_deliveries_and_alert_claim(self):
+        now = datetime.fromisoformat('2026-11-10T08:00:00+08:00').timestamp()
+        config = replace(self.config, briefing=replace(self.config.briefing, alerts_enabled=True))
+        app = build_synthetic(config)
+        channel = app.transport
+        channel.outcome = 'unknown'
+        store = app.runtime.store
+        store.execute("INSERT INTO updates VALUES(900,'processing')")
+        store.execute("INSERT INTO updates VALUES(901,'handling')")
+        store.execute("INSERT INTO events VALUES('legacy','AAPL','2026-11-10','pending','{}',?)", (now,))
+        store.execute("INSERT INTO events VALUES('current','AAPL','2026-11-10','analyzing','{}',?)", (now,))
+
+        def abort_during_alert():
+            if len(channel.sent) == 2:
+                raise SystemExit(71)
+
+        channel.after_send = abort_during_alert
+        try:
+            with patch('time.time', return_value=now):
+                with self.assertRaises(SystemExit):
+                    app.tick(now)
+            self.assertEqual(store.execute('SELECT status FROM brief_alerts')[0]['status'], 'sending')
+            app.close()
+            channel.after_send = None
+            with self.assertLogs('stockman.service', level='INFO') as logs:
+                app = build_synthetic(config, channel)
+                app.tick_daily(now+60)
+            self.assertEqual(app.runtime.store.execute('SELECT status FROM brief_alerts')[0]['status'], 'unknown')
+            self.assertEqual(daily_logs(logs.records, 'daily_alert')[0]['reason'], 'interrupted')
+            self.assertEqual(len(channel.sent), 2)
+            self.assertEqual([row['status'] for row in app.runtime.store.execute('SELECT status FROM updates ORDER BY id')],
+                             ['unknown','interrupted'])
+            self.assertEqual([row['status'] for row in app.runtime.store.execute('SELECT status FROM events ORDER BY id')],
+                             ['interrupted','unknown'])
+        finally:
+            app.close()
+
     def test_automatic_report_and_on_demand_text_are_separate(self):
         with patch('socket.socket.connect',side_effect=AssertionError('network')):result=service_demo('service')
         self.assertEqual(result['automatic_reports_without_input'],1);self.assertEqual(result['on_demand_responses'],1)

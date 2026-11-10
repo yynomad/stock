@@ -21,6 +21,7 @@ class BriefingConfig:
     max_research_queries:int=3
     max_report_model_calls:int=4
     research_timeout:int=90
+    alerts_enabled:bool=False
     def __post_init__(self):
         for name in ('budget','input_rate','output_rate'):
             value=getattr(self,name)
@@ -31,6 +32,7 @@ class BriefingConfig:
             value=getattr(self,name)
             if type(value) is not int or not 1<=value<=limit:raise ValueError('invalid briefing '+name)
         ZoneInfo(self.timezone)
+        if type(self.alerts_enabled) is not bool:raise ValueError('invalid briefing alerts setting')
         if not re.fullmatch(r'(?:[01][0-9]|2[0-3]):[0-5][0-9]',self.at) or type(self.enabled) is not bool:raise ValueError('invalid briefing schedule')
     @classmethod
     def load(cls,env=None):

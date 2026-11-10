@@ -41,7 +41,8 @@ def _delivery_result(response, delivered):
 class Telegram:
     def __init__(self,token=TG_BOT_TOKEN,chat=TG_CHAT_ID,proxy=None):
         if not token or not str(chat).lstrip('-').isdigit():raise ValueError('请配置 TG_BOT_TOKEN 和 TG_CHAT_ID')
-        logging.getLogger('urllib3.connectionpool').addFilter(_hide_bot_url)
+        for logger_name in ('urllib3.connectionpool', 'urllib3.util.retry'):
+            logging.getLogger(logger_name).addFilter(_hide_bot_url)
         self.base='https://api.telegram.org/bot'+token
         self.chat=int(chat);proxy=YF_PROXY if proxy is None else proxy
         self.proxies={'http':proxy,'https':proxy} if proxy else None

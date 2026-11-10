@@ -67,7 +67,7 @@ SCHEMA={
  'broker':{'provider','account_env','client_id_env','consumer_key_env','sync_interval_seconds'},
  'model':{'name','api_key_env','max_calls','max_tools','supervisor_model','portfolio_model','research_model','monitor_model','task_budget_usd','price_model','input_rate','output_rate','max_research_queries','research_timeout_seconds','context_bytes'},
  'notification':{'provider','token_env','chat_id_env','allowed_users_env','interactive'},
- 'briefing':{'enabled','time','daily_budget_usd','max_calls','max_output_tokens','max_events','lookback_hours','retention_days','input_rate','output_rate','max_research_queries','max_report_model_calls','research_timeout_seconds'},
+ 'briefing':{'enabled','alerts_enabled','time','daily_budget_usd','max_calls','max_output_tokens','max_events','lookback_hours','retention_days','input_rate','output_rate','max_research_queries','max_report_model_calls','research_timeout_seconds'},
  'monitor':{'interval_seconds','buffer_pct','max_daily_alerts','quote_max_age_seconds'},
  'sources':{'file','sec_user_agent_env'}}
 
@@ -129,7 +129,8 @@ def load_config(path,env=None):
           input_rate=number('briefing','input_rate',0.30,0.000001,10000),output_rate=number('briefing','output_rate',2.50,0.000001,10000),
           max_research_queries=number('briefing','max_research_queries',3,1,12,True),
           max_report_model_calls=number('briefing','max_report_model_calls',4,1,20,True),
-          research_timeout=number('briefing','research_timeout_seconds',90,1,600,True))
+          research_timeout=number('briefing','research_timeout_seconds',90,1,600,True),
+          alerts_enabled=boolean('briefing','alerts_enabled',False))
     except (ValueError,KeyError):raise ConfigError('invalid briefing/timezone configuration') from None
     level=value('service','log_level','INFO').upper()
     if level not in ('DEBUG','INFO','WARNING','ERROR'):raise ConfigError('invalid service.log_level')

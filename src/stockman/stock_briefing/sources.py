@@ -62,6 +62,7 @@ class PublicHTTP:
         raise RuntimeError('source unavailable')
 
 class SECSource:
+    kind = 'sec'
     def __init__(self,symbol,cik,http):
         if not re.fullmatch(r'[A-Z][A-Z0-9.-]{0,14}',symbol) or not re.fullmatch(r'[0-9]{1,10}',str(cik)):raise ValueError('invalid SEC issuer')
         self.symbol=symbol;self.cik=str(int(cik));self.http=http
@@ -82,6 +83,7 @@ class SECSource:
         return result
 
 class RSSSource:
+    kind = 'rss'
     def __init__(self,source,url,policy,entities,http,macro=False):
         if policy.source!=source:raise ValueError('RSS policy identity mismatch')
         policy.validate();self.url=canonical_url(url);self.policy=policy;self.entities=tuple(entities);self.http=http;self.macro=macro

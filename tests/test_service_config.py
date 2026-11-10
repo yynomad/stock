@@ -11,6 +11,17 @@ class ServiceConfigTest(unittest.TestCase):
         self.temp=tempfile.TemporaryDirectory();self.config=fixture(self.temp.name);self.path=self.config.path;self.original=self.path.read_text()
     def tearDown(self):self.temp.cleanup()
 
+    def test_daily_alerts_are_disabled_for_legacy_config_and_require_opt_in(self):
+        self.assertFalse(self.config.briefing.alerts_enabled)
+        prefix = self.original.replace('alerts_enabled = false\n', '')
+        self.path.write_text(prefix)
+        self.assertFalse(load_config(self.path, ENV).briefing.alerts_enabled)
+        self.path.write_text(prefix.replace('[briefing]', '[briefing]\nalerts_enabled = true'))
+        self.assertTrue(load_config(self.path, ENV).briefing.alerts_enabled)
+        self.path.write_text(prefix.replace('[briefing]', '[briefing]\nalerts_enabled = always'))
+        with self.assertRaises(ConfigError):
+            load_config(self.path, ENV)
+
     def test_context_budget_is_optional_and_validated(self):
         prefix = self.original.replace('context_bytes = 49152\n', '')
         self.path.write_text(prefix)

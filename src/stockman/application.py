@@ -31,8 +31,8 @@ class Application:
         self.stop_event=threading.Event()
         self.runtime.store.execute('CREATE TABLE IF NOT EXISTS updates(id INTEGER PRIMARY KEY,status TEXT)')
         self.runtime.store.execute('CREATE TABLE IF NOT EXISTS settings(key TEXT PRIMARY KEY,value TEXT)')
-        self.runtime.store.execute("UPDATE updates SET status='interrupted' WHERE status='processing'")
-        self.runtime.store.execute("UPDATE updates SET status='unknown' WHERE status='sending'")
+        self.runtime.store.execute("UPDATE updates SET status='interrupted' WHERE status='handling'")
+        self.runtime.store.execute("UPDATE updates SET status='unknown' WHERE status IN ('processing','sending')")
         configured=os.getenv('TG_ALLOWED_USERS','')
         self.allowed={int(x.strip()) for x in configured.split(',') if x.strip().isdigit()}
         if not self.allowed and str(TG_CHAT_ID).isdigit() and int(TG_CHAT_ID)>0:self.allowed={int(TG_CHAT_ID)}
@@ -56,7 +56,7 @@ class Application:
     def handle_event(self,event):
         identity=event.identity;user=event.sender;chat=event.target
         with self.runtime.store.lock,self.runtime.store.conn:
-            cursor=self.runtime.store.conn.execute("INSERT OR IGNORE INTO updates VALUES(?,'processing')",(identity,))
+            cursor=self.runtime.store.conn.execute("INSERT OR IGNORE INTO updates VALUES(?,'handling')",(identity,))
             if not cursor.rowcount:return 'duplicate'
         if user not in self.allowed or chat!=self.transport.chat:
             self.runtime.store.execute("UPDATE updates SET status='ignored' WHERE id=?",(identity,));return 'unauthorized'

@@ -30,7 +30,7 @@ class StockBriefing:
         self.store=store;self.config=config or BriefingConfig.load();self.registry=registry if registry is not None else load_registry()
         self.history=History(store);self.relations=Relations(store);self.budget=Budget(store,self.config)
         self.research=ResearchAgent(store,self.config,model,model_factory);self.http=http or PublicHTTP()
-    def generate(self,owner,snapshot,now=None,day=None,sources=None):
+    def generate(self,owner,snapshot,now=None,day=None,sources=None,observe_sources=None):
         now=time.time() if now is None else now;config=self.config
         day=day or datetime.fromtimestamp(now,ZoneInfo(config.timezone)).date().isoformat()
         task=self.store.create_task(owner,'daily stock briefing')
@@ -42,6 +42,7 @@ class StockBriefing:
             if auto_sources:sources,missing=configured_sources(self.registry,symbols,self.http)
             else:missing=[]
             items,policies,health=collect(sources,now,config.lookback_hours*3600)
+            if observe_sources is not None:observe_sources(day,task,health)
             self.relations.discover(holdings['symbols'],items,policies,self.registry.get('issuers',{}),now)
             for proposal in self.registry.get('relationship_proposals',[]):self.relations.verify(proposal,items,policies,self.registry.get('issuers',{}),now)
             relations=self.relations.direct(holdings['symbols'],now)
@@ -53,6 +54,7 @@ class StockBriefing:
                     room=max(0,20-len(policies))
                     if len(extra)>room:extra_missing.append('new relation sources exceed per-run cap; partial coverage')
                     more,more_policies,more_health=collect(extra[:room],now,config.lookback_hours*3600)
+                    if observe_sources is not None:observe_sources(day,task,more_health)
                     items.extend(more);policies.update(more_policies);health.extend(more_health);missing.extend(extra_missing)
             scoped=relevant(items,holdings['symbols'],relations)
             reasons={i.identity:reason for i,reason in scoped}
