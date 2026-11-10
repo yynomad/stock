@@ -116,8 +116,8 @@ class ServiceRuntimeTest(unittest.TestCase):
         store = app.runtime.store
         store.execute("INSERT INTO updates VALUES(900,'processing')")
         store.execute("INSERT INTO updates VALUES(901,'handling')")
-        store.execute("INSERT INTO events VALUES('legacy','AAPL','2026-11-10','pending','{}',?)", (now,))
-        store.execute("INSERT INTO events VALUES('current','AAPL','2026-11-10','analyzing','{}',?)", (now,))
+        store.execute("INSERT INTO events VALUES('legacy','AAPL','2026-11-10','pending','{}',%s)", (now,))
+        store.execute("INSERT INTO events VALUES('current','AAPL','2026-11-10','analyzing','{}',%s)", (now,))
 
         def abort_during_alert():
             if len(channel.sent) == 2:
@@ -141,6 +141,17 @@ class ServiceRuntimeTest(unittest.TestCase):
                              ['unknown','interrupted'])
             self.assertEqual([row['status'] for row in app.runtime.store.execute('SELECT status FROM events ORDER BY id')],
                              ['interrupted','unknown'])
+        finally:
+            app.close()
+
+    def test_delivery_requires_the_database_writer_lease(self):
+        from stockman.database import DatabaseUnavailable
+        app=build_synthetic(self.config)
+        try:
+            app.runtime.database_lease.close()
+            with self.assertRaises(DatabaseUnavailable):
+                app.deliver({'text':'synthetic'})
+            self.assertEqual(app.transport.sent, [])
         finally:
             app.close()
 

@@ -45,7 +45,7 @@ def create_offline_app(directory,transport=None):
 
 
 def end_to_end(directory):
-    """Actual LangChain tool loops + SQLite + business services, with all I/O replaced."""
+    """Actual LangChain tool loops + PostgreSQL + business services, with all I/O replaced."""
     app=create_offline_app(directory)
     results=[]
     try:
@@ -73,5 +73,5 @@ def end_to_end(directory):
         assert len(sent)==1
         return {'synthetic':True,'tasks':len(results)+len(sent),'deliveries':len(sent),
                 'sources':['snaptrade (synthetic)'],'restart_and_dedup':'passed',
-                'database':str(app.directory/'stockman.sqlite')}
+                'database':'postgresql'}
     finally:app.runtime.close()

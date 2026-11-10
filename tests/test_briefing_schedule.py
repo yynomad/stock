@@ -112,14 +112,14 @@ os._exit(71)
                 self.scheduler.recover()
                 result = self.scheduler.tick(now + 900)
                 self.assertEqual(result['status'], expected)
-                report = self.store.execute('SELECT status FROM brief_reports WHERE id=?', (result['report_id'],))[0]
+                report = self.store.execute('SELECT status FROM brief_reports WHERE id=%s', (result['report_id'],))[0]
                 self.assertEqual(report['status'], expected)
         self.assertFalse(self.sent)
         self.assertEqual(len((Path(self.temp.name) / 'outbound').read_text().splitlines()), 2)
 
     def test_legacy_generation_is_unknown_and_terminal_report_reconciles(self):
         first = at('2026-10-22T08:00:00')
-        self.store.execute("INSERT INTO brief_daily VALUES('123','2026-10-22',?,?,NULL,'generating',1,0,NULL)", (first, first))
+        self.store.execute("INSERT INTO brief_daily VALUES('123','2026-10-22',%s,%s,NULL,'generating',1,0,NULL)", (first, first))
         self.scheduler.recover()
         self.assertEqual(self.scheduler.tick(first + 900)['status'], 'unknown')
         second = at('2026-10-23T08:00:00')
@@ -130,8 +130,15 @@ os._exit(71)
         self.assertEqual(len(self.sent), 1)
 
     def test_concurrent_tick_claims_exactly_one_generation(self):
-        with ThreadPoolExecutor(max_workers=4) as pool:list(pool.map(lambda _:self.scheduler.tick(at('2026-10-22T08:00:00')),range(4)))
-        self.assertEqual(len(self.sent),1);self.assertEqual(len(self.built),1)
+        other_store = Store(Path(self.temp.name)/'db')
+        try:
+            other = Scheduler(other_store,self.config,'123',{'123'},self.build,self.scheduler.send)
+            with ThreadPoolExecutor(max_workers=4) as pool:
+                list(pool.map(lambda scheduler:scheduler.tick(at('2026-10-22T08:00:00')),
+                              [self.scheduler, other, self.scheduler, other]))
+            self.assertEqual(len(self.sent),1);self.assertEqual(len(self.built),1)
+        finally:
+            other_store.close()
     def test_no_network_disabled_unauthorized_or_before_due(self):
         scheduler=Scheduler(self.store,BriefingConfig(),'123',{'123'},lambda *a:self.fail('build'),lambda *a:self.fail('send'))
         self.assertEqual(scheduler.tick(at('2026-10-22T12:00:00'))['status'],'disabled')

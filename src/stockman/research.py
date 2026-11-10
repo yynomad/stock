@@ -42,7 +42,7 @@ def task_symbol(store, task, session, request):
         except ValueError:return None
     if not re.search(r'它|这只|该股|刚才|上一|上个|呢|\bit\b|\bits\b',request,re.IGNORECASE):
         return None
-    rows=store.execute("SELECT input FROM tasks WHERE session=? AND id<>? AND status IN ('completed','partial') ORDER BY created DESC,rowid DESC LIMIT 20",(session,task))
+    rows=store.execute("SELECT input FROM tasks WHERE session=%s AND id<>%s AND status IN ('completed','partial') ORDER BY created DESC,seq DESC LIMIT 20",(session,task))
     for row in rows:
         previous=json.loads(row['input'])
         if isinstance(previous,str) and mentioned_symbols(previous):

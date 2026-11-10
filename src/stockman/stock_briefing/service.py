@@ -88,7 +88,7 @@ class StockBriefing:
             lines=[f'Stock 持仓简报 · {day}',f'资料截止：{stamp(now,config.timezone)}；主要覆盖最近 {config.lookback_hours} 小时。',
                 f'持仓：{holdings["source"]}，时点 {stamp(holdings["asof"],config.timezone)}'+('（缓存）' if holdings['cached'] else '')+('（超过一天，需更新）' if holdings['stale'] else '')]
             lines.append(coverage_notice(holdings['coverage']))
-            previous=self.store.execute("SELECT at FROM brief_reports WHERE owner=? AND status='sent' ORDER BY at DESC LIMIT 1",(owner,))
+            previous=self.store.execute("SELECT at FROM brief_reports WHERE owner=%s AND status='sent' ORDER BY at DESC LIMIT 1",(owner,))
             if previous and now-previous[0]['at']>config.lookback_hours*3600:lines.append('覆盖缺口：上次成功投递早于当前窗口，未补抓全部历史。')
             if not selected and not groups:
                 lines.append('成功取得的来源和窗口内没有筛选出新增；不代表市场没有新闻。' if any(h['status']=='ok' for h in health) else '本次没有取得可核验的新增材料。')

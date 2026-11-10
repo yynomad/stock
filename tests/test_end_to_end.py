@@ -5,6 +5,7 @@ import tempfile
 import unittest
 from unittest.mock import patch,Mock
 import requests
+from stockman.database import Database
 from stockman.offline import end_to_end,create_offline_app
 from stockman.telegram import Telegram
 from stockman.research import SECClient
@@ -15,7 +16,10 @@ class EndToEndTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as d,patch.object(socket.socket,'connect',side_effect=AssertionError('offline network attempt')):
             result=end_to_end(d)
             self.assertTrue(result['synthetic']);self.assertEqual(result['deliveries'],1)
-            self.assertTrue((Path(d)/'stockman.sqlite').is_file())
+            self.assertEqual(result['database'], 'postgresql')
+            with Database(Path(d)/'stockman').read_only() as conn:
+                self.assertGreater(conn.execute('SELECT count(*) AS total FROM tasks').fetchone()['total'], 0)
+            self.assertFalse(list(Path(d).glob('*.sqlite*')))
 
     def test_photos_and_image_documents_never_download_invoke_or_write(self):
         for media in ({'photo':[{'file_id':'synthetic'}]}, {'document':{'file_id':'synthetic','mime_type':'image/png'}}):

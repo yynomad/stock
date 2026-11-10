@@ -152,7 +152,7 @@ class AgentTest(unittest.TestCase):
             task=runtime.store.create_task('owner','检查截图持仓')
             runtime.store.execute('CREATE TABLE task_context(task_id TEXT PRIMARY KEY,snapshot TEXT)')
             snapshot=runtime.store.snapshot('image','owner',{'NVDA':{'shares':2}})
-            runtime.store.execute('INSERT INTO task_context VALUES(?,?)',(task,snapshot))
+            runtime.store.execute('INSERT INTO task_context VALUES(%s,%s)',(task,snapshot))
             runtime.store.finish(task,'interrupted');runtime.close()
             runtime=AgentRuntime(d,OfflineModel())
             try:
@@ -172,7 +172,7 @@ class AgentTest(unittest.TestCase):
                 task=runtime.store.create_task('owner','研究 AAPL')
                 if legacy_table:
                     runtime.store.execute('CREATE TABLE task_context(task_id TEXT PRIMARY KEY,snapshot TEXT)')
-                    runtime.store.execute('INSERT INTO task_context VALUES(?,NULL)',(task,))
+                    runtime.store.execute('INSERT INTO task_context VALUES(%s,NULL)',(task,))
                 runtime.store.finish(task,'interrupted')
                 def invoke(payload,config):
                     scope=CURRENT.get();observed.append((scope.session,scope.request))

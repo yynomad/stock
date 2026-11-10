@@ -31,7 +31,7 @@ class MonitoringService:
         symbols=[valid_symbol(s) for s in re.findall(r'(?<![A-Za-z0-9])([A-Z][A-Z0-9.-]{0,14})(?![A-Za-z0-9])',context.request if action else request) if s not in ('ETF','PA','IBKR','USD')]
         if action=='stop':
             if symbols:
-                for symbol in symbols:self.store.execute('UPDATE rules SET enabled=0 WHERE symbol=?',(symbol,))
+                for symbol in symbols:self.store.execute('UPDATE rules SET enabled=0 WHERE symbol=%s',(symbol,))
             else:self.store.execute('UPDATE rules SET enabled=0')
             return json.dumps({'status':'stopped','symbols':symbols or 'all'},ensure_ascii=False)
         if action=='start':
@@ -53,7 +53,7 @@ class MonitoringService:
                       'created_at':time.time(),'bars_asof':bars[-1].get('date') if bars else None,'source':source['source'] if source else 'explicit-symbol',
                       'source_asof':source['asof'] if source else None}
                 if coverage is not None:spec['coverage']=coverage
-                self.store.execute("INSERT INTO rules(symbol,spec,enabled) VALUES(?,?,1) ON CONFLICT(symbol) DO UPDATE SET spec=excluded.spec,enabled=1",(symbol,json.dumps(spec)))
+                self.store.execute("INSERT INTO rules(symbol,spec,enabled) VALUES(%s,%s,1) ON CONFLICT(symbol) DO UPDATE SET spec=excluded.spec,enabled=1",(symbol,json.dumps(spec)))
                 rules.append(spec)
             result={'status':'configured' if rules else 'not_configured','rules':rules,'errors':errors}
             if coverage is not None:result.update(coverage=coverage,note=coverage_notice(coverage))
@@ -69,19 +69,19 @@ class MonitoringService:
         stamp=quote.get('asof');price=quote.get('price')
         if not quote.get('valid') or isinstance(stamp,bool) or isinstance(price,bool) or not isinstance(stamp,(float,int)) or not isinstance(price,(float,int)):return None
         if not math.isfinite(price) or price<=0 or not math.isfinite(stamp) or not 0<=now-stamp<=(self.settings.quote_age if self.settings else float(os.getenv('STOCKMAN_QUOTE_MAX_AGE','900'))):return None
-        with self.store.lock,self.store.conn:
-            rule=self.store.conn.execute('SELECT * FROM rules WHERE symbol=? AND enabled=1',(symbol,)).fetchone()
+        with self.store.lock,self.store.conn.transaction():
+            rule=self.store.conn.execute('SELECT * FROM rules WHERE symbol=%s AND enabled=1 FOR UPDATE',(symbol,)).fetchone()
             if not rule or stamp<=rule['last_time']:return None
             spec=json.loads(rule['spec'])
             state='below_support' if price<spec['support']*(1-spec['buffer']) else 'above_resistance' if price>spec['resistance']*(1+spec['buffer']) else 'normal'
-            self.store.conn.execute('UPDATE rules SET state=?,last_time=? WHERE symbol=?',(state,stamp,symbol))
+            self.store.conn.execute('UPDATE rules SET state=%s,last_time=%s WHERE symbol=%s',(state,stamp,symbol))
             if state=='normal' or state==rule['state']:return None
             day=datetime.fromtimestamp(now,ZoneInfo('America/New_York')).date().isoformat()
-            count=self.store.conn.execute('SELECT COUNT(*) FROM events WHERE symbol=? AND day=?',(symbol,day)).fetchone()[0]
+            count=self.store.conn.execute('SELECT COUNT(*) AS count FROM events WHERE symbol=%s AND day=%s',(symbol,day)).fetchone()['count']
             if count>=(self.settings.max_alerts if self.settings else int(os.getenv('MONITOR_MAX_DAILY_ALERTS','5'))):return None
             identity=hashlib.sha256(f'{symbol}:{state}:{stamp}'.encode()).hexdigest()
             payload={'symbol':symbol,'event':state,'quote':quote,'levels':spec}
-            cursor=self.store.conn.execute("INSERT OR IGNORE INTO events VALUES(?,?,?,'analyzing',?,?)",(identity,symbol,day,json.dumps(payload),now))
+            cursor=self.store.conn.execute("INSERT INTO events VALUES(%s,%s,%s,'analyzing',%s,%s) ON CONFLICT(id) DO NOTHING",(identity,symbol,day,json.dumps(payload),now))
             return {'id':identity,**payload} if cursor.rowcount else None
 
     def tick(self,runtime,send,session='owner',now=None):
@@ -103,14 +103,14 @@ class MonitoringService:
                         if result.get('task_id'):runtime.store.finish(result['task_id'],result['status'],result)
                 except Exception as exc:
                     self.store.trace(event['id'],'monitor','analysis','failed',{'error_type':type(exc).__name__})
-                    self.store.execute("UPDATE events SET status='failed' WHERE id=?", (event['id'],))
+                    self.store.execute("UPDATE events SET status='failed' WHERE id=%s", (event['id'],))
                     continue
-                self.store.execute("UPDATE events SET status='sending' WHERE id=?", (event['id'],))
+                self.store.execute("UPDATE events SET status='sending' WHERE id=%s", (event['id'],))
                 try:
                     status=send(result)
                 except Exception:
                     status='unknown'
                 if status not in ('sent','failed','unknown'):status='unknown'
-                self.store.execute('UPDATE events SET status=? WHERE id=?',(status,event['id']))
+                self.store.execute('UPDATE events SET status=%s WHERE id=%s',(status,event['id']))
             except Exception as exc:self.store.trace('poller','monitor','quote','failed',{'error_type':type(exc).__name__})
         return events

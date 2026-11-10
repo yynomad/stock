@@ -209,7 +209,7 @@ def run_daily(case, options, journal, directory):
     model, _ = observed_model(case, options, journal)
     # Reservation rates bound the existing daily protocol, not eval invoice estimates.
     config = BriefingConfig(budget=10, max_calls=min(options['max_calls'], 100), input_rate=1, output_rate=1)
-    store = Store(Path(directory)/'daily.sqlite')
+    store = Store(Path(directory)/'daily')
     try:
         task = store.create_task('eval', case['task'])
         items = evidence(case)

@@ -74,6 +74,6 @@ class BriefingCoreTest(unittest.TestCase):
             self.assertEqual(history.deliver(result['report_id'],result,lambda x:(_ for _ in ()).throw(TimeoutError())),'unknown')
             self.assertEqual(history.deliver(result['report_id'],result,lambda x:self.fail('replayed')),'unknown')
             result=preview(store,[SyntheticSource()],now=1000)
-            store.execute("UPDATE brief_reports SET status='sending' WHERE id=?",(result['report_id'],));history.recover()
+            store.execute("UPDATE brief_reports SET status='sending' WHERE id=%s",(result['report_id'],));history.recover()
             self.assertEqual(history.deliver(result['report_id'],result,lambda x:self.fail('replayed')),'unknown')
             store.close()

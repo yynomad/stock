@@ -14,7 +14,7 @@ class BrokenSource:
     def fetch(self,now):raise TimeoutError()
 
 def sources_demo(directory):
-    store=Store(Path(directory)/'stockman.sqlite')
+    store=Store(Path(directory)/'stockman')
     try:
         now=2000000000
         items,policies,health=collect([StockSource(),BrokenSource()],now)
@@ -40,7 +40,7 @@ def research_demo(directory,budget_zero=False):
             item=json.loads(messages[-1].content)['evidence'][0]
             output={'events':[{'id':item['id'],'quote':item['body'],'impact':'供应关系可能影响订单，需核实。','unknown':'未取得财务影响证据。','watch':'关注后续公告。'}]}
             return ChatResult(generations=[ChatGeneration(message=AIMessage(content=json.dumps(output),usage_metadata={'input_tokens':100,'output_tokens':100,'total_tokens':200}))])
-    store=Store(Path(directory)/'stockman.sqlite')
+    store=Store(Path(directory)/'stockman')
     try:
         service=StockBriefing(store,BriefingConfig(budget=0 if budget_zero else 0.20),model=SyntheticResearch(),registry={'issuers':{'AAA':{'name':'Alpha Corp'},'BBB':{'name':'Beta Corp'}},'rss':[]})
         snapshot={'source':'snaptrade','asof':2000000000,'positions':{'AAA':{'shares':2}}}
@@ -59,7 +59,7 @@ def schedule_demo(directory):
     from ..briefing.config import BriefingConfig
     from ..briefing.schedule import Scheduler
     from ..briefing.pipeline import preview
-    store=Store(Path(directory)/'stockman.sqlite');sent=[]
+    store=Store(Path(directory)/'stockman');sent=[]
     def at(value):return datetime.fromisoformat(value).replace(tzinfo=ZoneInfo('Asia/Shanghai')).timestamp()
     try:
         scheduler=Scheduler(store,BriefingConfig(enabled=True),'123',{'123'},lambda owner,now,day:preview(store,[StockSource()],owner,day,now),lambda r:sent.append(r) or 'sent')
@@ -107,7 +107,7 @@ def end_to_end(directory):
     registry={'issuers':{'AAA':{'name':'Alpha Corp','cik':'123'},'BBB':{'name':'Beta Corp','cik':'456'}},'rss':[
         {'url':'https://example.com/relationships','symbols':['AAA'],'relationships':True,'policy':{'source':'synthetic-relations','review_url':'https://example.com/policy','reviewed':True,'analyze':True,'store_metadata':True,'store_analysis':True}},
         {'url':'https://example.com/broken','macro':True,'policy':{'source':'synthetic-unavailable','review_url':'https://example.com/policy','reviewed':True,'analyze':True,'store_metadata':True,'store_analysis':True}}]}
-    store=Store(Path(directory)/'stockman.sqlite')
+    store=Store(Path(directory)/'stockman')
     try:
         portfolio=PortfolioService(store,reader=lambda account:{'AAA':{'shares':0.5}})
         service=StockBriefing(store,config,Model(),registry,http)
@@ -125,7 +125,7 @@ def end_to_end(directory):
         # Same facts are not suppressed just because a preview ran, but sent evidence is.
         http.now=at('2026-10-22T09:00:00')
         preview=build('123',http.now,'2026-10-22');assert preview['meta']['selected']==0
-        store.close();store=Store(Path(directory)/'stockman.sqlite')
+        store.close();store=Store(Path(directory)/'stockman')
         service=StockBriefing(store,config,Model(),registry,http)
         portfolio=PortfolioService(store,reader=lambda account:{'AAA':{'shares':0.5}})
         scheduler=Scheduler(store,config,'123',{'123'},build,lambda result:sent.append(result) or 'sent')

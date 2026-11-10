@@ -21,11 +21,11 @@ class Scheduler:
         self.build = build
         self.send = send
         self.history = History(store)
-        store.execute('CREATE TABLE IF NOT EXISTS brief_daily(owner TEXT,day TEXT,scheduled REAL,actual REAL,report TEXT,status TEXT,attempts INTEGER,next_try REAL,error TEXT,PRIMARY KEY(owner,day))')
+        store.execute('CREATE TABLE IF NOT EXISTS brief_daily(owner TEXT,day TEXT,scheduled DOUBLE PRECISION,actual DOUBLE PRECISION,report TEXT,status TEXT,attempts INTEGER,next_try DOUBLE PRECISION,error TEXT,PRIMARY KEY(owner,day))')
 
     def recover(self):
         """Run after taking the directory lock. Old claims do not prove no send occurred."""
-        with self.store.lock, self.store.conn:
+        with self.store.lock, self.store.conn.transaction():
             conn = self.store.conn
             conn.execute("""UPDATE brief_reports SET status='unknown' WHERE status='sending'""")
             # A linked terminal report can resolve a legacy claim left in flight.
@@ -35,47 +35,41 @@ class Scheduler:
                 error=NULL, next_try=0 WHERE status IN ('generating','sending')""")
             # An unlinked building claim proves the send boundary was never reached.
             conn.execute("""UPDATE brief_daily SET status='failed', error='generation_interrupted',
-                next_try=CASE WHEN attempts < ? THEN actual + ? ELSE 0 END
+                next_try=CASE WHEN attempts < %s THEN actual + %s ELSE 0 END
                 WHERE status='building' AND report IS NULL""", (MAX_ATTEMPTS, RETRY_SECONDS))
             conn.execute("""UPDATE brief_daily SET status='unknown', error=NULL, next_try=0
                 WHERE status='building'""")
 
     def _budget_exhausted(self, conn, day):
         if not self.config.budget or not conn.execute(
-            "SELECT 1 FROM sqlite_master WHERE name='brief_budget' AND type='table'"
-        ).fetchone():
+            "SELECT to_regclass('brief_budget') IS NOT NULL AS present"
+        ).fetchone()['present']:
             return False
-        calls, cost = conn.execute(
-            'SELECT COUNT(*),COALESCE(SUM(charge),0) FROM brief_budget WHERE day=?', (day,)
+        row = conn.execute(
+            'SELECT COUNT(*) AS calls,COALESCE(SUM(charge),0) AS cost FROM brief_budget WHERE day=%s', (day,)
         ).fetchone()
-        return calls >= self.config.max_calls or cost >= math.floor(self.config.budget * 1_000_000)
+        return row['calls'] >= self.config.max_calls or row['cost'] >= math.floor(self.config.budget * 1_000_000)
 
     def _claim(self, day, scheduled, now):
-        with self.store.lock:
+        with self.store.lock, self.store.conn.transaction():
             conn = self.store.conn
-            # Lock the claim across SQLite connections before checking for an existing run.
-            conn.execute('BEGIN IMMEDIATE')
-            try:
-                row = conn.execute('SELECT * FROM brief_daily WHERE owner=? AND day=?', (self.owner, day)).fetchone()
-                if row:
-                    # An interrupted model call may still have a reservation in the daily ledger.
-                    if row['error'] == 'generation_interrupted' and row['next_try'] and self._budget_exhausted(conn, day):
-                        conn.execute("UPDATE brief_daily SET next_try=0,error='budget_exhausted' WHERE owner=? AND day=?",
-                                     (self.owner, day))
-                        row = conn.execute('SELECT * FROM brief_daily WHERE owner=? AND day=?', (self.owner, day)).fetchone()
-                    if not self._can_retry(row) or now < row['next_try']:
-                        conn.commit()
-                        return row
-                    conn.execute("""UPDATE brief_daily SET status='building',attempts=attempts+1,actual=?,
-                        next_try=0,error=NULL WHERE owner=? AND day=?""", (now, self.owner, day))
-                else:
-                    conn.execute('INSERT INTO brief_daily VALUES(?,?,?,?,?,?,?,?,?)',
-                                 (self.owner, day, scheduled, now, None, 'building', 1, 0, None))
-                conn.commit()
-                return None
-            except BaseException:
-                conn.rollback()
-                raise
+            # Lock the claim across connections before checking for an existing run.
+            self.store.lock_transaction('briefing:' + self.owner + ':' + day)
+            row = conn.execute('SELECT * FROM brief_daily WHERE owner=%s AND day=%s', (self.owner, day)).fetchone()
+            if row:
+                # An interrupted model call may still have a reservation in the daily ledger.
+                if row['error'] == 'generation_interrupted' and row['next_try'] and self._budget_exhausted(conn, day):
+                    conn.execute("UPDATE brief_daily SET next_try=0,error='budget_exhausted' WHERE owner=%s AND day=%s",
+                                 (self.owner, day))
+                    row = conn.execute('SELECT * FROM brief_daily WHERE owner=%s AND day=%s', (self.owner, day)).fetchone()
+                if not self._can_retry(row) or now < row['next_try']:
+                    return row
+                conn.execute("""UPDATE brief_daily SET status='building',attempts=attempts+1,actual=%s,
+                    next_try=0,error=NULL WHERE owner=%s AND day=%s""", (now, self.owner, day))
+            else:
+                conn.execute('INSERT INTO brief_daily VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s)',
+                             (self.owner, day, scheduled, now, None, 'building', 1, 0, None))
+            return None
 
     @staticmethod
     def _can_retry(row):
@@ -91,7 +85,7 @@ class Scheduler:
         return result
 
     def _row(self, day):
-        return self.store.execute('SELECT * FROM brief_daily WHERE owner=? AND day=?', (self.owner, day))[0]
+        return self.store.execute('SELECT * FROM brief_daily WHERE owner=%s AND day=%s', (self.owner, day))[0]
 
     def _generation_failed(self, day, now, exc):
         row = self._row(day)
@@ -104,26 +98,26 @@ class Scheduler:
             code = 'generation_invalid'
         else:
             code = 'generation_failed'
-        self.store.execute("""UPDATE brief_daily SET status='failed',next_try=?,error=?
-            WHERE owner=? AND day=? AND status='building'""",
+        self.store.execute("""UPDATE brief_daily SET status='failed',next_try=%s,error=%s
+            WHERE owner=%s AND day=%s AND status='building'""",
                            (now + RETRY_SECONDS if retry else 0, code, self.owner, day))
         return self._result(self._row(day))
 
     def _begin_delivery(self, day, identity, text, metadata):
-        with self.store.lock, self.store.conn:
+        with self.store.lock, self.store.conn.transaction():
             conn = self.store.conn
             row = conn.execute("""SELECT text,meta FROM brief_reports
-                WHERE id=? AND owner=? AND day=? AND status='preview'""", (identity, self.owner, day)).fetchone()
+                WHERE id=%s AND owner=%s AND day=%s AND status='preview' FOR UPDATE""", (identity, self.owner, day)).fetchone()
             if not row:
                 raise ValueError('report owner, date or state mismatch')
             meta = json.loads(row['meta'])
             meta.update(metadata)
             # Scheduling metadata may be stored even when source policy bars storing the report text.
             persisted = row['text'] if row['text'].startswith('[analysis display-only:') else text
-            conn.execute("UPDATE brief_reports SET text=?,meta=?,status='sending' WHERE id=?",
+            conn.execute("UPDATE brief_reports SET text=%s,meta=%s,status='sending' WHERE id=%s",
                          (persisted, json.dumps(meta), identity))
-            claimed = conn.execute("""UPDATE brief_daily SET report=?,status='sending'
-                WHERE owner=? AND day=? AND status='building'""", (identity, self.owner, day))
+            claimed = conn.execute("""UPDATE brief_daily SET report=%s,status='sending'
+                WHERE owner=%s AND day=%s AND status='building'""", (identity, self.owner, day))
             if claimed.rowcount != 1:
                 raise ValueError('report was not claimed')
 
@@ -159,7 +153,7 @@ class Scheduler:
         if status not in DELIVERY_RESULTS:
             status = 'unknown'
         # Keep the report and scheduler outcome in sync if the process stops during the write.
-        with self.store.lock, self.store.conn:
-            self.store.conn.execute('UPDATE brief_reports SET status=? WHERE id=?', (status, identity))
-            self.store.conn.execute('UPDATE brief_daily SET status=? WHERE owner=? AND day=?', (status, self.owner, day))
+        with self.store.lock, self.store.conn.transaction():
+            self.store.conn.execute('UPDATE brief_reports SET status=%s WHERE id=%s', (status, identity))
+            self.store.conn.execute('UPDATE brief_daily SET status=%s WHERE owner=%s AND day=%s', (status, self.owner, day))
         return {**self._result(self._row(day)), 'delayed':delayed}

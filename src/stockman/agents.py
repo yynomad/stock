@@ -7,7 +7,6 @@ import json
 import math
 import os
 from pathlib import Path
-import sqlite3
 import threading
 import time
 from typing import Any
@@ -18,7 +17,9 @@ from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 from langchain_core.outputs import ChatGeneration, ChatResult
 from langchain_core.tools import StructuredTool
-from langgraph.checkpoint.sqlite import SqliteSaver
+from langgraph.checkpoint.postgres import PostgresSaver
+from langgraph.checkpoint.serde.jsonplus import JsonPlusSerializer
+from .database import Database
 from .config import GEMINI_API_KEY, GEMINI_MODEL
 from .harness import ContextOverflow, DEFAULT_CONTEXT_BYTES, MAX_CONTEXT_BYTES, MIN_CONTEXT_BYTES, prepare_context
 from .sec_filings import citation_lines, filing_metadata_lines, guard_summary, validate_citations
@@ -153,23 +154,27 @@ def create_research_agent(model,tools=(),system_prompt='',middleware=()):
                         name='research',checkpointer=False)
 
 class AgentRuntime:
-    def __init__(self, data_dir=None, model=None, services=None, settings=None, research=None):
+    def __init__(self, data_dir=None, model=None, services=None, settings=None, research=None, database_url=None):
         from .briefing.locking import DirectoryLock
         self.research_service=research
         self.process_lock=DirectoryLock(data_dir or os.getenv('STOCKMAN_DATA_DIR','runtime'))
-        try:self._initialize(data_dir,model,services,settings)
+        try:self._initialize(data_dir,model,services,settings,database_url)
         except BaseException:
             if hasattr(self,'conn'):self.conn.close()
             if hasattr(self,'store'):self.store.close()
+            if hasattr(self,'database_lease'):self.database_lease.close()
             self.process_lock.close();raise
 
-    def _initialize(self, data_dir=None, model=None, services=None, settings=None):
+    def _initialize(self, data_dir=None, model=None, services=None, settings=None, database_url=None):
         directory=Path(data_dir or os.getenv('STOCKMAN_DATA_DIR','runtime'))
         directory.mkdir(parents=True,exist_ok=True)
-        self.store=Store(directory/'stockman.sqlite')
+        database=Database(directory/'stockman',database_url)
+        self.database_lease=database.writer()
+        self.store=Store(directory/'stockman',database)
         self.store.execute("UPDATE tasks SET status='interrupted' WHERE status='running'")
-        self.conn=sqlite3.connect(str(directory/'checkpoints.sqlite'),check_same_thread=False,timeout=30)
-        self.checkpointer=SqliteSaver(self.conn)
+        self.conn=database.connect(prepare_threshold=0)
+        self.checkpointer=PostgresSaver(self.conn,serde=JsonPlusSerializer(allowed_msgpack_modules=None))
+        self.checkpointer.setup()
         self.session_locks={};self.lock=threading.Lock()
         self.max_models=settings.max_calls if settings else int(os.getenv('STOCKMAN_MAX_MODEL_CALLS','8'))
         self.max_tools=settings.max_tools if settings else int(os.getenv('STOCKMAN_MAX_TOOL_CALLS','12'))
@@ -324,16 +329,17 @@ class AgentRuntime:
 
     def run(self, text, session='local'):
         with self._session_lock(session):
+            self.database_lease.check()
             task=self.store.create_task(session,text)
             return self._invoke(task,session,{'messages':[HumanMessage(content=text)]})
 
     def _invoke(self, task, session, payload):
         original = payload["messages"][0].content if payload else json.loads(self.store.task(task)["input"])
         if self.task_budget is not None:
-            self.store.execute('INSERT OR IGNORE INTO task_budget_limits(task_id,limit_micro_usd) VALUES(?,?)',(task,int(Decimal(str(self.task_budget))*1000000)))
-            persisted=self.store.execute('SELECT limit_micro_usd FROM task_budget_limits WHERE task_id=?',(task,))[0]['limit_micro_usd']
+            self.store.execute('INSERT INTO task_budget_limits(task_id,limit_micro_usd) VALUES(%s,%s) ON CONFLICT(task_id) DO NOTHING',(task,int(Decimal(str(self.task_budget))*1000000)))
+            persisted=self.store.execute('SELECT limit_micro_usd FROM task_budget_limits WHERE task_id=%s',(task,))[0]['limit_micro_usd']
         else:
-            limits=self.store.execute('SELECT limit_micro_usd FROM task_budget_limits WHERE task_id=?',(task,))
+            limits=self.store.execute('SELECT limit_micro_usd FROM task_budget_limits WHERE task_id=%s',(task,))
             persisted=limits[0]['limit_micro_usd'] if limits else None
         current=Invocation(task,session,request=str(original),max_models=self.max_models,store=self.store,budget_micro=persisted,price_model=self.price_model,input_rate=self.input_rate,output_rate=self.output_rate)
         current.response_style = self.store.response_style(session)
@@ -410,6 +416,7 @@ class AgentRuntime:
         finally:CURRENT.reset(token)
 
     def resume(self, task):
+        self.database_lease.check()
         row=self.store.task(task)
         if not row or row['status']!='interrupted':raise ValueError('没有可恢复的中断任务')
         with self._session_lock(row['session']):
@@ -419,11 +426,11 @@ class AgentRuntime:
         if self.store.task(task)['status'] != 'interrupted':
             raise ValueError('没有可恢复的中断任务')
         # Keep old local records, but never resume an image task against broker holdings.
-        if self.store.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='task_context'"):
-            legacy=self.store.execute('SELECT snapshot FROM task_context WHERE task_id=?',(task,))
+        if self.store.execute("SELECT to_regclass('task_context') IS NOT NULL AS present")[0]['present']:
+            legacy=self.store.execute('SELECT snapshot FROM task_context WHERE task_id=%s',(task,))
             if legacy and legacy[0]['snapshot']:
                 raise ValueError('截图任务功能已移除，不能恢复旧图片任务；请重新发起文字请求')
-        newer=self.store.execute('SELECT id FROM tasks WHERE session=? AND rowid>(SELECT rowid FROM tasks WHERE id=?) LIMIT 1',(session,task))
+        newer=self.store.execute('SELECT id FROM tasks WHERE session=%s AND seq>(SELECT seq FROM tasks WHERE id=%s) LIMIT 1',(session,task))
         if newer:raise ValueError('会话已有后续任务，不能重放旧检查点')
         state=self.agent.get_state({'configurable':{'thread_id':session}})
         if not state.next:raise ValueError('没有待执行检查点，不能宣称已恢复')
@@ -431,4 +438,9 @@ class AgentRuntime:
         return self._invoke(task,session,None)
 
     def close(self):
-        self.conn.close();self.store.close();self.process_lock.close()
+        try:
+            self.conn.close()
+            self.store.close()
+        finally:
+            self.database_lease.close()
+            self.process_lock.close()

@@ -33,7 +33,6 @@ def main(argv=None):
                 elif args.scenario=='schedule':result=schedule_demo(directory)
                 else:result=end_to_end(directory)
         else:
-            if args.status:os.environ['STOCKMAN_OFFLINE']='1'
             from stockman.stock_briefing.cli import live
             result=live(args)
         print(json.dumps(result,ensure_ascii=False,indent=2))

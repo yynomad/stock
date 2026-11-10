@@ -13,7 +13,7 @@ from stockman.stock_briefing.demo import end_to_end
 
 class BriefingCLITest(unittest.TestCase):
     def setUp(self):
-        self.temp=tempfile.TemporaryDirectory();self.store=Store(Path(self.temp.name)/'stockman.sqlite')
+        self.temp=tempfile.TemporaryDirectory();self.store=Store(Path(self.temp.name)/'stockman')
         self.args=Namespace(send=False,session='123',public_symbols=['AAPL'],data_dir=self.temp.name)
     def tearDown(self):self.store.close();self.temp.cleanup()
     def test_public_preview_never_uses_broker_or_telegram_and_source_is_explicit(self):

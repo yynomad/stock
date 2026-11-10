@@ -14,7 +14,7 @@ class MonitorTest(unittest.TestCase):
     def setUp(self):
         self.directory=tempfile.TemporaryDirectory();self.store=Store(Path(self.directory.name)/'db.sqlite')
         self.service=MonitoringService(self.store,None,in_session=lambda now:True)
-        self.store.execute('INSERT INTO rules(symbol,spec) VALUES(?,?)',('AAPL',json.dumps({'support':100,'resistance':120,'buffer':0.02})))
+        self.store.execute('INSERT INTO rules(symbol,spec) VALUES(%s,%s)',('AAPL',json.dumps({'support':100,'resistance':120,'buffer':0.02})))
     def tearDown(self):self.store.close();self.directory.cleanup()
     def quote(self,price,stamp=1000):return {'price':price,'asof':stamp,'kind':'regular','valid':True}
     def test_breakout_then_same_state_does_not_repeat_after_restart(self):
@@ -44,7 +44,7 @@ class MonitorTest(unittest.TestCase):
             self.assertEqual(self.store.execute('SELECT enabled FROM rules')[0]['enabled'],1)
         finally:CURRENT.reset(token)
     def test_delegate_cannot_change_user_authorized_target(self):
-        self.store.execute('INSERT INTO rules(symbol,spec) VALUES(?,?)',('NVDA',json.dumps({'support':100,'resistance':120,'buffer':0.02})))
+        self.store.execute('INSERT INTO rules(symbol,spec) VALUES(%s,%s)',('NVDA',json.dumps({'support':100,'resistance':120,'buffer':0.02})))
         token=CURRENT.set(Invocation('task','owner',request='停止监控 AAPL'))
         try:self.service.command('停止监控 NVDA')
         finally:CURRENT.reset(token)

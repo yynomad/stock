@@ -26,6 +26,21 @@ class PostgresStorageTest(unittest.TestCase):
             with self.assertRaises(psycopg.errors.ReadOnlySqlTransaction), conn.transaction():
                 conn.execute('INSERT INTO probe VALUES (2)')
 
+    def test_business_store_preserves_timestamp_precision_and_stable_order(self):
+        from stockman.storage import Store
+        store = Store(self.directory.name, self.database)
+        try:
+            first = store.create_task('session', 'first')
+            second = store.create_task('session', 'second')
+            self.assertLess(store.task(first)['seq'], store.task(second)['seq'])
+            stamp = 1794350000.125
+            old = store.snapshot('snaptrade', 'owner', {'AAPL': {'shares': 1}}, stamp)
+            new = store.snapshot('snaptrade', 'owner', {'AAPL': {'shares': 2}}, stamp)
+            self.assertEqual(store.latest('snaptrade', 'owner')['id'], new)
+            self.assertEqual(store.get_snapshot(old)['asof'], stamp)
+        finally:
+            store.close()
+
     def test_writer_lease_is_shared_across_connections_and_released_on_close(self):
         other = Database(Path(self.directory.name))
         with self.database.writer() as lease:

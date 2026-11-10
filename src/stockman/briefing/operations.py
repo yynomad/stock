@@ -34,12 +34,12 @@ class DailyOperations:
         self.send_alert = send_alert
         self.last_daily = None
         store.execute("""CREATE TABLE IF NOT EXISTS brief_source_health(
-            source TEXT PRIMARY KEY, reference TEXT NOT NULL, last_success REAL)""")
+            source TEXT PRIMARY KEY, reference TEXT NOT NULL, last_success DOUBLE PRECISION)""")
         store.execute("""CREATE TABLE IF NOT EXISTS brief_alerts(
-            day TEXT NOT NULL, kind TEXT NOT NULL, status TEXT NOT NULL, at REAL NOT NULL,
+            day TEXT NOT NULL, kind TEXT NOT NULL, status TEXT NOT NULL, at DOUBLE PRECISION NOT NULL,
             PRIMARY KEY(day,kind))""")
         # A previous alert may have reached Telegram before its outcome was recorded.
-        with store.lock, store.conn:
+        with store.lock, store.conn.transaction():
             rows = store.conn.execute("SELECT day,kind FROM brief_alerts WHERE status='sending'").fetchall()
             store.conn.execute("UPDATE brief_alerts SET status='unknown' WHERE status='sending'")
         for row in rows:
@@ -56,14 +56,14 @@ class DailyOperations:
             # The local mapping retains the configured source key. Only its random alias
             # reaches the log because the key itself can include a held ticker.
             success = source['attempted_at'] if source['status'] == 'ok' or source.get('data_asof') else None
-            with self.store.lock, self.store.conn:
+            with self.store.lock, self.store.conn.transaction():
                 conn = self.store.conn
-                conn.execute("""INSERT INTO brief_source_health VALUES(?,?,?)
+                conn.execute("""INSERT INTO brief_source_health VALUES(%s,%s,%s)
                     ON CONFLICT(source) DO UPDATE SET last_success=excluded.last_success
                     WHERE excluded.last_success IS NOT NULL
-                      AND (last_success IS NULL OR excluded.last_success > last_success)""",
+                      AND (brief_source_health.last_success IS NULL OR excluded.last_success > brief_source_health.last_success)""",
                              (source['source'], uuid4().hex[:12], success))
-                row = conn.execute('SELECT reference,last_success FROM brief_source_health WHERE source=?',
+                row = conn.execute('SELECT reference,last_success FROM brief_source_health WHERE source=%s',
                                    (source['source'],)).fetchone()
             self._log('daily_source', day=day, task_id=task, source_ref=row['reference'],
                       source_type=source['source_type'], status=source['status'], reason=source.get('error_type'),
@@ -73,7 +73,7 @@ class DailyOperations:
     def _report_summary(self, report_id):
         if not report_id:
             return {}
-        rows = self.store.execute('SELECT meta FROM brief_reports WHERE id=?', (report_id,))
+        rows = self.store.execute('SELECT meta FROM brief_reports WHERE id=%s', (report_id,))
         if not rows:
             return {}
         try:
@@ -143,8 +143,8 @@ class DailyOperations:
 
     def _alert(self, day, kind, now):
         # Commit the day-and-kind claim first so even a crash during send cannot replay the alert.
-        with self.store.lock, self.store.conn:
-            claimed = self.store.conn.execute("INSERT OR IGNORE INTO brief_alerts VALUES(?,?,'sending',?)",
+        with self.store.lock, self.store.conn.transaction():
+            claimed = self.store.conn.execute("INSERT INTO brief_alerts VALUES(%s,%s,'sending',%s) ON CONFLICT(day,kind) DO NOTHING",
                                               (day, kind, now))
             if claimed.rowcount != 1:
                 return
@@ -154,7 +154,7 @@ class DailyOperations:
             status = 'unknown'
         if status not in ('sent', 'failed', 'unknown'):
             status = 'unknown'
-        self.store.execute('UPDATE brief_alerts SET status=?,at=? WHERE day=? AND kind=?',
+        self.store.execute('UPDATE brief_alerts SET status=%s,at=%s WHERE day=%s AND kind=%s',
                            (status, time.time(), day, kind))
         self._log('daily_alert', day=day, kind=kind, status=status,
                   reason={'sent':None, 'failed':'alert_rejected', 'unknown':'alert_delivery_unknown'}[status])

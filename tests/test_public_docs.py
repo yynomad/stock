@@ -26,7 +26,9 @@ class PublicDocumentationTest(unittest.TestCase):
         with patch.object(validator, "ROOT", self.root), patch.object(validator.subprocess, "run", return_value=subprocess.CompletedProcess([], 0)) as run:
             self.assertEqual(validator.main(), 0)
         self.assertEqual(run.call_count, 2)
-        self.assertIn("unittest", run.call_args_list[0].args[0][3])
+        command = run.call_args_list[0].args[0]
+        self.assertEqual(Path(command[1]).name, "test_postgres.py")
+        self.assertIn("unittest", command[command.index("-c") + 1])
         self.assertEqual(run.call_args_list[1].args[0][-2:], ["pip", "check"])
 
     def test_missing_readme_is_still_rejected(self):

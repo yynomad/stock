@@ -21,6 +21,10 @@ def main(argv=None):
             return subprocess.call(args)
 
     bin_dir = os.getenv('STOCKMAN_POSTGRES_BIN')
+    if not bin_dir and shutil.which('pg_config'):
+        probe = subprocess.run(['pg_config', '--bindir'], capture_output=True, text=True)
+        if probe.returncode == 0 and (Path(probe.stdout.strip()) / 'initdb').is_file():
+            bin_dir = probe.stdout.strip()
     initdb = str(Path(bin_dir) / 'initdb') if bin_dir else shutil.which('initdb')
     pg_ctl = str(Path(bin_dir) / 'pg_ctl') if bin_dir else shutil.which('pg_ctl')
     if not initdb or not pg_ctl:

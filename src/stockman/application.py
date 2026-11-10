@@ -29,7 +29,7 @@ class Application:
         self.monitor=MonitoringService(self.runtime.store,self.portfolio,market=market)
         self.transport=transport
         self.stop_event=threading.Event()
-        self.runtime.store.execute('CREATE TABLE IF NOT EXISTS updates(id INTEGER PRIMARY KEY,status TEXT)')
+        self.runtime.store.execute('CREATE TABLE IF NOT EXISTS updates(id BIGINT PRIMARY KEY,status TEXT)')
         self.runtime.store.execute('CREATE TABLE IF NOT EXISTS settings(key TEXT PRIMARY KEY,value TEXT)')
         self.runtime.store.execute("UPDATE updates SET status='interrupted' WHERE status='handling'")
         self.runtime.store.execute("UPDATE updates SET status='unknown' WHERE status IN ('processing','sending')")
@@ -42,9 +42,13 @@ class Application:
                 from .briefing.schedule import Scheduler
                 from .stock_briefing.service import StockBriefing
                 self.briefing=StockBriefing(self.runtime.store,self.briefing_config)
-                self.daily=Scheduler(self.runtime.store,self.briefing_config,str(self.transport.chat),self.allowed,self.build_daily,self.transport.deliver)
+                self.daily=Scheduler(self.runtime.store,self.briefing_config,str(self.transport.chat),self.allowed,self.build_daily,self.deliver)
                 self.daily.recover()
             except BaseException:self.runtime.close();raise
+
+    def deliver(self,result):
+        self.runtime.database_lease.check()
+        return self.transport.deliver(result)
 
     def handle(self,text,session='local'):
         return self.runtime.run(text,session)
@@ -55,16 +59,16 @@ class Application:
 
     def handle_event(self,event):
         identity=event.identity;user=event.sender;chat=event.target
-        with self.runtime.store.lock,self.runtime.store.conn:
-            cursor=self.runtime.store.conn.execute("INSERT OR IGNORE INTO updates VALUES(?,'handling')",(identity,))
+        with self.runtime.store.lock,self.runtime.store.conn.transaction():
+            cursor=self.runtime.store.conn.execute("INSERT INTO updates VALUES(%s,'handling') ON CONFLICT(id) DO NOTHING",(identity,))
             if not cursor.rowcount:return 'duplicate'
         if user not in self.allowed or chat!=self.transport.chat:
-            self.runtime.store.execute("UPDATE updates SET status='ignored' WHERE id=?",(identity,));return 'unauthorized'
+            self.runtime.store.execute("UPDATE updates SET status='ignored' WHERE id=%s",(identity,));return 'unauthorized'
         try:
             if event.text:
                 result=self.handle(event.text,str(chat))
             else:
-                self.runtime.store.execute("UPDATE updates SET status='ignored' WHERE id=?",(identity,))
+                self.runtime.store.execute("UPDATE updates SET status='ignored' WHERE id=%s",(identity,))
                 return 'ignored'
             task_failed = False
         except Exception as exc:
@@ -73,16 +77,16 @@ class Application:
             result = {'text':text}
             task_failed = True
         # An ambiguous send stays unknown. Sending an error reply could duplicate the response.
-        self.runtime.store.execute("UPDATE updates SET status='sending' WHERE id=?", (identity,))
+        self.runtime.store.execute("UPDATE updates SET status='sending' WHERE id=%s", (identity,))
         try:
-            status = self.transport.deliver(result)
+            status = self.deliver(result)
         except Exception:
             status = 'unknown'
         if status not in ('sent','failed','unknown'):
             status = 'unknown'
         if task_failed and status == 'sent':
             status = 'failed'
-        self.runtime.store.execute('UPDATE updates SET status=? WHERE id=?',(status,identity))
+        self.runtime.store.execute('UPDATE updates SET status=%s WHERE id=%s',(status,identity))
         return status
 
     def build_daily(self,owner,now,day):
@@ -97,7 +101,7 @@ class Application:
 
     def poll_prices(self):
         while not self.stop_event.is_set():
-            self.monitor.tick(self.runtime,self.transport.deliver,session=str(self.transport.chat))
+            self.monitor.tick(self.runtime,self.deliver,session=str(self.transport.chat))
             self.stop_event.wait(MONITOR_INTERVAL*60)
 
     def run(self):
@@ -113,7 +117,7 @@ class Application:
                     for update in self.transport.updates(offset):
                         self.handle_update(update)
                         offset=update['update_id']+1
-                        self.runtime.store.execute("INSERT OR REPLACE INTO settings VALUES('telegram_offset',?)",(str(offset),))
+                        self.runtime.store.execute("INSERT INTO settings VALUES('telegram_offset',%s) ON CONFLICT(key) DO UPDATE SET value=excluded.value",(str(offset),))
                 except Exception as exc:
                     self.runtime.store.trace('telegram','transport','poll','failed',{'error_type':type(exc).__name__})
                     self.stop_event.wait(5)
@@ -121,7 +125,7 @@ class Application:
         finally:
             self.stop_event.set()
             for worker in workers:worker.join(timeout=30)
-            # Do not close SQLite underneath a still-running network/tool call.
+            # Do not close the database underneath a still-running network/tool call.
             if not any(worker.is_alive() for worker in workers):self.runtime.close()
 
 
