@@ -183,7 +183,7 @@ class USDScopeTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             runtime=AgentRuntime(directory,OfflineModel())
             runtime.close()
-            store=Store(Path(directory)/'business.sqlite')
+            store=Store(Path(directory)/'business')
             broker=BrokerService(store,SnapTradeBroker(Config(),mixed_client()))
             market=Mock(side_effect=bars);portfolio=PortfolioService(store,broker=broker,bars=market)
             runtime=AgentRuntime(directory,OmittingModel(),{'portfolio':portfolio.report})

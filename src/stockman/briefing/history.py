@@ -1,4 +1,4 @@
-"""Shared history and honest delivery outcomes, built on the existing SQLite store."""
+"""Shared history and honest delivery outcomes, stored in PostgreSQL."""
 import json
 import time
 import uuid

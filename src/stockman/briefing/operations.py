@@ -115,7 +115,7 @@ class DailyOperations:
         reason = result.get('error_type')
         next_try = result.get('next_try')
         report = result.get('report_id')
-        # Polling the same outcome should not repeat the log. Alert deduplication lives in SQLite.
+        # Polling the same outcome should not repeat the log. Alert deduplication is persisted in PostgreSQL.
         key = (day, status, reason, next_try, result['attempts'], report)
         if key == self.last_daily:
             return
