@@ -9,6 +9,7 @@ from langchain_core.messages import AIMessage, ToolMessage
 from langchain_core.outputs import ChatGeneration, ChatResult
 from requests import HTTPError, Response, Timeout
 
+from test_postgres_storage import assert_text_not_persisted
 from stockman.agents import AgentRuntime, OfflineModel
 from stockman.briefing.config import BriefingConfig
 from stockman.briefing.models import Evidence, SourcePolicy
@@ -220,8 +221,7 @@ class SECAgentTest(unittest.TestCase):
                     self.assertNotIn(CANARY,str(result))
                 finally:
                     runtime.close()
-                for file in Path(directory).glob('*.sqlite*'):
-                    self.assertTrue(CANARY.encode() not in file.read_bytes(),f'uncited passage persisted in {file.name}')
+                assert_text_not_persisted(self,runtime.store.database,CANARY)
 
     def test_interrupted_question_keeps_filing_metadata_without_claiming_citation(self):
         with TemporaryDirectory() as directory:

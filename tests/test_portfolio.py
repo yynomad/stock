@@ -26,7 +26,7 @@ class PortfolioTest(unittest.TestCase):
 
     def test_broker_load_ignores_and_preserves_legacy_image_records(self):
         with tempfile.TemporaryDirectory() as d:
-            store=Store(Path(d)/'data.sqlite')
+            store=Store(Path(d)/'data')
             legacy=store.snapshot('image','chat',{'NVDA':{'shares':2,'avg_cost':90}})
             service=PortfolioService(store,reader=lambda account:{'AAPL':{'shares':0.5,'avg_cost':100}},bars=bars)
             try:
@@ -38,7 +38,7 @@ class PortfolioTest(unittest.TestCase):
 
     def test_disconnect_reports_cache_and_never_another_account(self):
         with tempfile.TemporaryDirectory() as d:
-            store=Store(Path(d)/'data.sqlite');store.snapshot('snaptrade','U1234567',{},asof=100)
+            store=Store(Path(d)/'data');store.snapshot('snaptrade','U1234567',{},asof=100)
             def broken(account):raise TimeoutError()
             service=PortfolioService(store,reader=broken,bars=bars)
             with patch.dict(os.environ,{'SNAPTRADE_ACCOUNT_ID':'U1234567'}):
@@ -49,7 +49,7 @@ class PortfolioTest(unittest.TestCase):
 
     def test_unknown_and_short_positions_are_not_long_decisions(self):
         with tempfile.TemporaryDirectory() as d:
-            store=Store(Path(d)/'data.sqlite')
+            store=Store(Path(d)/'data')
             service=PortfolioService(store,reader=lambda account:{'AAPL':{'shares':None},'NVDA':{'shares':-2}},bars=bars)
             result=json.loads(service.report('检查持仓'))
             self.assertEqual([r['decision']['action'] for r in result['positions']],['wait_position','unsupported_short'])
@@ -71,7 +71,7 @@ class PortfolioTest(unittest.TestCase):
 
     def test_real_agent_uses_broker_snapshot(self):
         with tempfile.TemporaryDirectory() as d:
-            store=Store(Path(d)/'stockman.sqlite')
+            store=Store(Path(d)/'stockman')
             service=PortfolioService(store,reader=lambda account:{'AAPL':{'shares':2,'avg_cost':100}},bars=bars)
             runtime=AgentRuntime(d,OfflineModel(),{'portfolio':service.report})
             try:

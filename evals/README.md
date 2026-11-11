@@ -59,7 +59,7 @@ pass**, with `needs_human_review` tracked separately.
 
 For end-to-end evaluation, a fresh temporary data directory and mock services
 are injected into the real Supervisor. Prompts/data are fixed; model choices
-can vary. Do not use the normal service's SQLite or task/session directories.
+can vary. Do not use the production PostgreSQL schema or task/session directories.
 
 Current limitations: cross-provider comparisons, semantic labels, live
 subsystem costs, full model response metadata, and broad production

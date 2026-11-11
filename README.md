@@ -91,7 +91,7 @@ Gemini 版本对应 `[model.gemini]`、`https://generativelanguage.googleapis.co
 | `TG_ALLOWED_USERS` | 可选，逗号分隔的授权用户 ID；本人私聊可默认使用目标 ID |
 | `SEC_USER_AGENT` | 应用名与可联系邮箱，例如 `StockMan your-email@example.com` |
 
-使用 Neon 的直连地址。应用会验证 TLS 主机名并用数据库会话锁保证同库单写入者。首次切换需核对旧服务与当天的日报投递，停用旧实例后再启用新实例。历史 SQLite 文件可独立留档。
+使用 Neon 的直连地址。应用会验证 TLS 主机名并用数据库会话锁保证同库单写入者。首次切换需核对旧服务与当天的日报投递，停用旧实例后再启用新实例。旧版运行数据文件可独立留档。
 
 这些环境变量名可在 `.conf` 中调整。密钥、真实 `stock.conf`、数据库和日志不要提交 Git 或粘贴到 Issue。
 

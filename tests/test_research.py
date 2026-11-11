@@ -1,6 +1,7 @@
 import json
 import unittest
 from types import SimpleNamespace as NS
+from test_postgres_storage import assert_text_not_persisted
 from stockman.market import choose_quote,regular_session
 from stockman.research import financial_facts,parse_grounding,news_html,ResearchService,symbol_from_request
 
@@ -51,7 +52,6 @@ class ResearchTest(unittest.TestCase):
 
     def test_grounded_news_is_not_put_in_checkpoints_or_business_records(self):
         import tempfile
-        from pathlib import Path
         from stockman.agents import AgentRuntime,OfflineModel
         class Market:
             def info(self,symbol):return {'quoteType':'ETF'}
@@ -64,6 +64,6 @@ class ResearchTest(unittest.TestCase):
             result=runtime.run('研究 QQQ')
             self.assertEqual(result['news'][0]['text'],'UNIQUE-GROUNDED-TEXT')
             self.assertNotIn('UNIQUE-GROUNDED-TEXT',str(runtime.store.task(result['task_id'])))
+            database=runtime.store.database
             runtime.close()
-            for path in Path(d).glob('*.sqlite'):
-                self.assertNotIn(b'UNIQUE-GROUNDED-TEXT',path.read_bytes())
+            assert_text_not_persisted(self,database,'UNIQUE-GROUNDED-TEXT')

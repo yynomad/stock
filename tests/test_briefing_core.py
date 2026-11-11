@@ -29,7 +29,7 @@ class BriefingCoreTest(unittest.TestCase):
         self.assertEqual(collect([Empty()],1000)[2][0]['status'],'ok')
     def test_preview_does_not_suppress_later_delivery_and_body_not_saved(self):
         with tempfile.TemporaryDirectory() as d:
-            store=Store(Path(d)/'db.sqlite')
+            store=Store(Path(d)/'db')
             try:
                 first=preview(store,[SyntheticSource()],now=1000)
                 self.assertEqual(preview(store,[SyntheticSource()],now=1001)['item_count'],1)
@@ -40,7 +40,7 @@ class BriefingCoreTest(unittest.TestCase):
             finally:store.close()
     def test_display_only_analysis_does_not_leak_through_report_metadata(self):
         with tempfile.TemporaryDirectory() as directory:
-            store = Store(Path(directory) / 'db.sqlite')
+            store = Store(Path(directory) / 'db')
             try:
                 item = SyntheticSource().fetch(1000)[0]
                 policy = replace(SyntheticSource().policy, store_analysis=False)
@@ -59,17 +59,17 @@ class BriefingCoreTest(unittest.TestCase):
         self.assertNotEqual(item.fingerprint,replace(item,body='New factual update 42').fingerprint)
     def test_concurrent_delivery_is_claimed_once_and_survives_restart(self):
         with tempfile.TemporaryDirectory() as d:
-            store=Store(Path(d)/'db.sqlite');history=History(store)
+            store=Store(Path(d)/'db');history=History(store)
             result=preview(store,[SyntheticSource()],now=1000);sent=[]
             def send(r):sent.append(r);return 'sent'
             with ThreadPoolExecutor(max_workers=4) as pool:list(pool.map(lambda x:history.deliver(result['report_id'],result,send),range(4)))
             self.assertEqual(len(sent),1)
-            store.close();store=Store(Path(d)/'db.sqlite')
+            store.close();store=Store(Path(d)/'db')
             try:self.assertEqual(History(store).deliver(result['report_id'],result,send),'sent');self.assertEqual(len(sent),1)
             finally:store.close()
     def test_unknown_delivery_and_interruption_are_never_replayed(self):
         with tempfile.TemporaryDirectory() as d:
-            store=Store(Path(d)/'db.sqlite');history=History(store)
+            store=Store(Path(d)/'db');history=History(store)
             result=preview(store,[SyntheticSource()],now=1000)
             self.assertEqual(history.deliver(result['report_id'],result,lambda x:(_ for _ in ()).throw(TimeoutError())),'unknown')
             self.assertEqual(history.deliver(result['report_id'],result,lambda x:self.fail('replayed')),'unknown')

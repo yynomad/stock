@@ -67,6 +67,6 @@ def main():
             assert runtime.store.task(result['task_id'])['status']=='completed'
             state=runtime.agent.get_state({'configurable':{'thread_id':'demo'}})
             assert len(state.values['messages'])==2
-            print('PASS: SQLite business state and LangChain conversation survived restart')
+            print('PASS: PostgreSQL business state and LangChain conversation survived restart')
         runtime.close()
 if __name__=='__main__':main()

@@ -21,7 +21,7 @@ class UsageTest(unittest.TestCase):
 
     def test_known_and_unknown_usage_are_not_conflated(self):
         with tempfile.TemporaryDirectory() as d:
-            store=Store(Path(d)/"stockman.sqlite")
+            store=Store(Path(d)/"stockman")
             try:
                 task=store.create_task("local","test")
                 record(store,task,"research","daily_model","gemini-test",time.monotonic(),
@@ -80,7 +80,7 @@ class UsageTest(unittest.TestCase):
             def __exit__(self,*args): pass
             def generate_content(self, **kwargs): return SimpleNamespace(usage_metadata=Metadata())
         with tempfile.TemporaryDirectory() as d:
-            store=Store(Path(d)/"stockman.sqlite")
+            store=Store(Path(d)/"stockman")
             token=CURRENT.set(Invocation("task","local",store=store))
             try:
                 with patch("google.genai.Client",Client), patch("stockman.research.parse_grounding",side_effect=ValueError("invalid citation")):
@@ -155,7 +155,7 @@ class UsageTest(unittest.TestCase):
 
     def test_google_thought_tokens_are_included_without_inventing_missing_usage(self):
         with tempfile.TemporaryDirectory() as d:
-            store=Store(Path(d)/"stockman.sqlite")
+            store=Store(Path(d)/"stockman")
             try:
                 record(store,"a","research","grounded_search","gemini-test",time.monotonic(),
                     {"prompt_token_count":5,"candidates_token_count":3,"thoughts_token_count":2,"total_token_count":10},extra_unknown=True)

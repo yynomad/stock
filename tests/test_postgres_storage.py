@@ -5,8 +5,25 @@ from unittest.mock import patch
 
 from langgraph.checkpoint.postgres import PostgresSaver
 import psycopg
+from psycopg import sql
 
 from stockman.database import Database, DatabaseUnavailable, validate_url
+
+
+def assert_text_not_persisted(test, database, text):
+    """Inspect business rows and binary checkpoints in the actual PostgreSQL schema."""
+    with database.read_only() as conn:
+        tables=[row['tablename'] for row in conn.execute(
+            'SELECT tablename FROM pg_tables WHERE schemaname=current_schema()')]
+        test.assertIn('tasks',tables)
+        test.assertIn('checkpoint_blobs',tables)
+        count=conn.execute('SELECT count(*) AS total FROM checkpoint_blobs').fetchone()['total']
+        test.assertGreater(count,0)
+        for table in tables:
+            query=sql.SQL('SELECT row_to_json(record)::text AS payload FROM {} AS record').format(sql.Identifier(table))
+            for row in conn.execute(query):
+                test.assertNotIn(text,row['payload'],table)
+                test.assertNotIn(text.encode().hex(),row['payload'],table)
 
 
 class PostgresStorageTest(unittest.TestCase):

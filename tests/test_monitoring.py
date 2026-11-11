@@ -12,7 +12,7 @@ from stockman.agents import OfflineModel
 
 class MonitorTest(unittest.TestCase):
     def setUp(self):
-        self.directory=tempfile.TemporaryDirectory();self.store=Store(Path(self.directory.name)/'db.sqlite')
+        self.directory=tempfile.TemporaryDirectory();self.store=Store(Path(self.directory.name)/'db')
         self.service=MonitoringService(self.store,None,in_session=lambda now:True)
         self.store.execute('INSERT INTO rules(symbol,spec) VALUES(%s,%s)',('AAPL',json.dumps({'support':100,'resistance':120,'buffer':0.02})))
     def tearDown(self):self.store.close();self.directory.cleanup()
@@ -20,7 +20,7 @@ class MonitorTest(unittest.TestCase):
     def test_breakout_then_same_state_does_not_repeat_after_restart(self):
         self.assertIsNotNone(self.service.check('AAPL',self.quote(125),1001))
         self.assertIsNone(self.service.check('AAPL',self.quote(126,1002),1003))
-        self.store.close();self.store=Store(Path(self.directory.name)/'db.sqlite')
+        self.store.close();self.store=Store(Path(self.directory.name)/'db')
         self.service=MonitoringService(self.store,None,in_session=lambda now:True)
         self.assertIsNone(self.service.check('AAPL',self.quote(127,1004),1005))
     def test_stale_out_of_order_and_missing_times(self):
